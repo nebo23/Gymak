@@ -41,6 +41,25 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RefreshRequest(BaseModel):
+    """§5.5. The opaque refresh token is the only field -- there is no bearer here."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    """§5's /auth/logout. The access token identifies the caller; it carries no
+    family_id (P1-ADR-02's claim list), so the refresh token is what tells the server
+    which family to revoke.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    refresh_token: str
+
+
 class UserSummary(BaseModel):
     id: uuid.UUID
     email: str

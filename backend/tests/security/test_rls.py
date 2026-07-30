@@ -157,33 +157,72 @@ async def test_rls_with_no_app_user_id_set_returns_zero_rows_not_all_rows(
     assert visible == []
 
 
-async def test_rls_also_scopes_refresh_tokens(db_session: AsyncSession) -> None:
+async def test_refresh_tokens_writes_still_scope_to_the_owner(db_session: AsyncSession) -> None:
     """profiles' owner policy is spelled out explicitly in spec 4.7; refresh_tokens' was
     inferred from the same pattern in T-02, since the spec enables RLS on it but only
-    shows the CREATE POLICY line for profiles. Confirm the inference actually holds."""
+    shows the CREATE POLICY line for profiles. INSERT/UPDATE/DELETE are unchanged by
+    migration 6b18a9095bb4 (see the next test) -- confirm the owner policy still governs
+    writes: user_b's session cannot revoke user_a's token.
+    """
     user_a = await _insert_user_with_profile(db_session)
     user_b = await _insert_user_with_profile(db_session)
+    user_a_id, user_b_id = user_a.id, user_b.id
 
     # Same WITH CHECK reasoning as _insert_user_with_profile: re-establish app.user_id
     # to match whichever user's own token is being inserted next.
-    await set_rls_user(db_session, str(user_a.id))
+    await set_rls_user(db_session, str(user_a_id))
     db_session.add(
         RefreshToken(
             id=new_id(),
-            user_id=user_a.id,
+            user_id=user_a_id,
             token_hash="token-hash-a",
             family_id=new_id(),
             expires_at=datetime.now(UTC) + timedelta(days=60),
         )
     )
-    await db_session.flush()
+    await db_session.commit()
 
-    await set_rls_user(db_session, str(user_b.id))
+    await set_rls_user(db_session, str(user_b_id))
+    update_result = cast(
+        CursorResult[Any],
+        await db_session.execute(
+            text("UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = :uid"),
+            {"uid": user_a_id},
+        ),
+    )
+    assert update_result.rowcount == 0
+    await db_session.commit()
+
+    await set_rls_user(db_session, str(user_a_id))
+    revoked_at = (
+        await db_session.execute(
+            text("SELECT revoked_at FROM refresh_tokens WHERE user_id = :uid"),
+            {"uid": user_a_id},
+        )
+    ).scalar_one_or_none()
+    assert revoked_at is None
+
+
+async def test_refresh_tokens_select_is_permissive_by_design(db_session: AsyncSession) -> None:
+    """Migration 6b18a9095bb4 deliberately widens refresh_tokens' SELECT policy to
+    `USING (true)`: /auth/refresh must look up a token by hash before it knows which
+    user it belongs to (spec 5.5 step 1), and with app.user_id unset the original
+    owner-only policy returned zero rows for every lookup -- see
+    test_rls_with_no_app_user_id_set_returns_zero_rows_not_all_rows above, which proves
+    that failure mode against `profiles`, still ungrouped by design. Confirm the
+    widened policy is what's actually in force for refresh_tokens: a row inserted under
+    one user is still SELECT-able with app.user_id bound to a *different* user, or
+    unset entirely -- the opposite of profiles' behaviour, and intentionally so.
+    """
+    user_a = await _insert_user_with_profile(db_session)
+    user_b = await _insert_user_with_profile(db_session)
+
+    await set_rls_user(db_session, str(user_a.id))
     db_session.add(
         RefreshToken(
             id=new_id(),
-            user_id=user_b.id,
-            token_hash="token-hash-b",
+            user_id=user_a.id,
+            token_hash="token-hash-lookup-a",
             family_id=new_id(),
             expires_at=datetime.now(UTC) + timedelta(days=60),
         )
@@ -191,6 +230,25 @@ async def test_rls_also_scopes_refresh_tokens(db_session: AsyncSession) -> None:
     await db_session.commit()
 
     await set_rls_user(db_session, str(user_b.id))
-    visible = (await db_session.execute(select(RefreshToken))).scalars().all()
+    visible_as_other_user = (
+        (
+            await db_session.execute(
+                select(RefreshToken).where(RefreshToken.token_hash == "token-hash-lookup-a")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [row.user_id for row in visible_as_other_user] == [user_a.id]
 
-    assert [row.user_id for row in visible] == [user_b.id]
+    await set_rls_user(db_session, None)
+    visible_unset = (
+        (
+            await db_session.execute(
+                select(RefreshToken).where(RefreshToken.token_hash == "token-hash-lookup-a")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [row.user_id for row in visible_unset] == [user_a.id]

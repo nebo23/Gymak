@@ -1,6 +1,6 @@
 # Gymak — Phase 1 Build Specification
 
-> **Document ID** GYMAK-P1-SPEC-001 · **Version** 1.1 · **Date** 30 July 2026
+> **Document ID** GYMAK-P1-SPEC-001 · **Version** 1.2 · **Date** 30 July 2026
 > **Owner** Nabil — sole developer · **Phase** 1 of N — authentication, session management, one-time profile capture
 > **Stack** FastAPI · PostgreSQL · Firebase Auth (social sign-in only) · React Native (Expo)
 > **Derives from** AIFC-SRS-TDD-001 v1.0 (Vol. 2, 4, 5) · Gymak Color System
@@ -13,7 +13,7 @@
 > user-id-salted reset code that P1-ADR-07 rejects. Delete it. If two versions of this document
 > are reachable by a coding agent, the single-source-of-truth rule is already broken.
 
-### Amendments in v1.1
+### Amendments in v1.2
 
 | ID   | Section                     | Change                                                                                                   |
 |------|-----------------------------|----------------------------------------------------------------------------------------------------------|
@@ -31,6 +31,7 @@
 | A-11 | §0.3                        | Build status added. T-01, T-01b, T-02, T-03 are complete.                                                |
 | A-12 | §4.7, §6.5, §13.2           | The `gymak_migrator` / `gymak_app` role split recorded as required before any production data.            |
 | A-13 | §12 T-09                    | `ruff format --check` added to the gate.                                                                  |
+| A-14 | §0.3, §A.5                  | T-04, T-04b and T-04c complete. Two defects surfaced only by running the application for real: it could not start under uvicorn at all, and the migration needs privileges the application is forbidden from holding. Recorded as §A.5 items 10 and 11. |
 
 ---
 
@@ -77,7 +78,7 @@ This is not a design essay. It is an **execution contract**. Every section eithe
 
 Steps run in order. Step 3 depends on step 1 and 2 being reachable from the phone (local network or staging). Do not begin step 3 while any step-1 test is red.
 
-#### Build status at v1.1
+#### Build status at v1.2
 
 | Task | Status | Note                                                                                                     |
 |------|--------|----------------------------------------------------------------------------------------------------------|
@@ -85,9 +86,14 @@ Steps run in order. Step 3 depends on step 1 and 2 being reachable from the phon
 | T-01b| Done   | Remediation. `set_rls_user` was executing successfully while protecting nothing under `AUTOCOMMIT`.        |
 | T-02 | Done   | Six tables, 18 tests, migration forward and backward three cycles. See A-02 for what the DDL now records.  |
 | T-03 | Done   | Security primitives, including the ADR-07 reset-code primitive. Coverage gate met after the A-08 fix.      |
-| T-04 | Next   | Register and login. Must also emit `Retry-After` — see A-06.                                              |
+| T-04 | Done   | Register and login. 22 integration tests, `Retry-After` on every 429. RLS blocked the refresh-token insert in the pre-auth flow — the first time the barrier stopped real code rather than passing a test. |
+| T-04b| Done   | Defect. `database.py` called `asyncio.run()` at import time, so the application could not start under uvicorn at all. Moved into a FastAPI lifespan handler. See §A.5 item 10. |
+| T-04c| Done   | Device milestone met. `GET /api/v1/health` returns 200 in a phone browser over the LAN. |
+| T-05 | Next   | Refresh rotation, logout, logout-all.                                                                     |
 
-> **Interleave one device milestone after T-04.** Before T-05, put a single login screen in Expo talking to the backend over the LAN address. Not T-10, not the design system, not a component library — one screen that submits a real request. §13.2 item 8 and §0.3 both say the backend has to be reachable from the phone before step 3 begins; discovering LAN, CORS and uvicorn binding problems then is much cheaper than discovering them five frontend tasks in.
+> **The device milestone after T-04 is met, and it earned its place.** One health check reached from a phone browser over the LAN surfaced two defects that 196 passing tests could not: an import-time `asyncio.run()` that made the application unable to start under uvicorn at all, and a migration that needs `CREATE EXTENSION` privileges the application role must never hold. Neither was visible from the suite, because the suite drives the ASGI app through httpx and never touches uvicorn or a standalone database.
+>
+> Keep the rule for every remaining backend task: start the server, reach `/api/v1/health` from the device that will consume it, and only then commit. A green suite is not evidence that the application runs.
 
 ## 1 · Phase 1 scope
 
@@ -435,6 +441,14 @@ CREATE POLICY p_profiles_owner ON profiles
   USING (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
 CREATE POLICY p_refresh_tokens_owner ON refresh_tokens
   USING (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
+
+-- T-05 addition. SELECT ... FOR UPDATE is checked against the UPDATE policy,
+-- not the SELECT one, so a pre-auth lookup could not lock its own row: the
+-- owner is unknown until the row is found, and the row is invisible until the
+-- owner is bound. Resolved with a permissive read policy plus a two-phase
+-- lookup in token_repo (unscoped peek to discover the owner, bind, then a
+-- correctly scoped locking read).
+CREATE POLICY p_refresh_tokens_lookup ON refresh_tokens FOR SELECT USING (true);
 
 -- audit_log has no RLS. Its protection is the grant: INSERT and SELECT only.
 -- users, user_identities and password_reset_codes have no RLS either: all three
@@ -1676,7 +1690,7 @@ Nothing else without asking. In particular: no UI kit, no component library, no 
 
 ### A.5 Carried-forward technical debt (A-10)
 
-Recorded here so it stops living only in chat history. Each item has an owning task. §11.3 item 11 requires every one of these to be closed or explicitly re-deferred before Phase 1 baselines at v1.2.
+Recorded here so it stops living only in chat history. Each item has an owning task. §11.3 item 11 requires every one of these to be closed or explicitly re-deferred before Phase 1 baselines at v1.3.
 
 | # | Item                                                                                                                                                                                                 | Owner | Severity |
 |---|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------|----------|
@@ -1684,9 +1698,14 @@ Recorded here so it stops living only in chat history. Each item has an owning t
 | 2 | **Password denylist.** The vendored list has 313 entries, not the ~1000 §6.2 asks for. Replace with the SecLists top-1000 file named in §6.2 — one static-asset change, no code change.                 | T-09  | Low      |
 | 3 | **Real key parse at startup.** `config.py` normalises and shape-checks the PEM but does not call `load_pem_private_key`, so a structurally valid, cryptographically broken key still fails at first sign. | T-09  | Medium   |
 | 4 | **`ruff format`.** The gate runs `ruff check` only, so formatting drifts and the agent occasionally reformats unrelated files as a side effect. Add `--check` to the gate and format once.               | T-09  | Low      |
-| 5 | **Session-scoped event loop.** Chosen to avoid `Event loop is closed`. If flakiness appears in T-04 or T-05, suspect this first.                                                                        | —     | Watch    |
-| 6 | **Managed-host compatibility.** Confirm the chosen provider allows a non-superuser application role and `CREATE EXTENSION citext` before committing to it — see §13.2 item 8.                            | T-09  | Medium   |
+| 5 | **Session-scoped event loop.** Chosen to avoid `Event loop is closed`. No flakiness appeared through T-04. Still the first thing to suspect if any appears. | — | Watch |
+| 6 | **Managed-host compatibility.** Confirm the chosen provider allows a non-superuser application role and `CREATE EXTENSION citext` before committing to it — see §13.2 item 8 and item 11 below.            | T-09  | Medium   |
+| 7 | **`onboarding_completed` is hardcoded false** in the register and login responses. Correct today, because nothing touches `profiles` yet — and wrong the moment something does: `/auth/me` will report false for a fully onboarded user and the client will route them back into onboarding. No test will fail when it breaks. | T-08 | **Medium** |
+| 8 | **Login exponential backoff.** §6.4 asks for backoff after 10 attempts per 15 minutes; `rate_limit.py` implements fixed windows only. The base limits are enforced, the escalation is not. | T-09 | Low |
+| 9 | **`set_rls_user` in pre-auth flows.** `refresh_tokens` carries FORCE RLS, so `_issue_session` binds `app.user_id` by hand before inserting — there is no bearer token to bind it from yet. T-06 and T-07 write to the same table under the same conditions. If the pattern repeats, put it behind one helper rather than trusting each service to remember. | T-06 | Watch |
+| 10 | **Nothing exercises the real ASGI startup path.** The suite drives the app through httpx inside `conftest`, so uvicorn was never run from T-01 through T-04 — and an import-time `asyncio.run()` in `database.py` meant the application could not start under uvicorn for four consecutive tasks while every test stayed green. Fixed in T-04b by moving the privilege assertion into a lifespan handler. The standing rule that replaces it: after every backend task, start uvicorn and curl `/api/v1/health` before committing. | — | **Standing** |
+| 11 | **The migration needs privileges the application must not have.** `CREATE EXTENSION citext` requires a superuser; the startup assertion refuses to serve as one. Locally this is bridged by a manual `psql` step as the superuser before `alembic upgrade head`, which makes item 1 a blocker rather than hardening. It also answers §13.2 item 8 concretely: a managed host must offer both a superuser-capable migration path and a non-superuser application role, or it is disqualified. Verify on Railway or Fly before choosing one. | T-09 | **High** |
 
 ---
 
-**End of GYMAK-P1-SPEC-001 v1.1** · Phase 1 only: authentication, session management, and one-time profile capture. Nothing in §1.2 gets built. When §11.3 is fully satisfied, baseline this document at v1.2 with whatever reality changed, and only then open Phase 2.
+**End of GYMAK-P1-SPEC-001 v1.2** · Phase 1 only: authentication, session management, and one-time profile capture. Nothing in §1.2 gets built. When §11.3 is fully satisfied, baseline this document at v1.3 with whatever reality changed, and only then open Phase 2.

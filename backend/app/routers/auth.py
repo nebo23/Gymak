@@ -9,9 +9,17 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_db
+from app.core.dependencies import get_db, require_active
 from app.core.rate_limit import enforce, ip_key, key_for_email, rate_limit
-from app.schemas.auth import LoginRequest, RegisterRequest, TokenPairResponse, UserSummary
+from app.models.user import User
+from app.schemas.auth import (
+    LoginRequest,
+    LogoutRequest,
+    RefreshRequest,
+    RegisterRequest,
+    TokenPairResponse,
+    UserSummary,
+)
 from app.services import auth_service
 from app.services.auth_service import IssuedSession
 
@@ -71,3 +79,45 @@ async def login_route(
         session, body, ip=_client_ip(request), user_agent=request.headers.get("user-agent")
     )
     return _to_response(issued)
+
+
+@router.post("/refresh", response_model=TokenPairResponse)
+async def refresh_route(
+    body: RefreshRequest,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> TokenPairResponse:
+    # §6.4's 60/hour-per-user limit can't be applied as a route-level dependency: the
+    # user isn't known until the service looks the token up, so enforce() runs from
+    # inside auth_service.refresh() itself once that lookup resolves a user.
+    issued = await auth_service.refresh(
+        session, body, ip=_client_ip(request), user_agent=request.headers.get("user-agent")
+    )
+    return _to_response(issued)
+
+
+@router.post("/logout", status_code=204)
+async def logout_route(
+    body: LogoutRequest,
+    request: Request,
+    user: Annotated[User, Depends(require_active)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    await auth_service.logout(
+        session,
+        user,
+        body,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+
+
+@router.post("/logout-all", status_code=204)
+async def logout_all_route(
+    request: Request,
+    user: Annotated[User, Depends(require_active)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    await auth_service.logout_all(
+        session, user, ip=_client_ip(request), user_agent=request.headers.get("user-agent")
+    )
