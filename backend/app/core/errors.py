@@ -191,7 +191,18 @@ def _problem_response(error: AppError, trace_id: str) -> JSONResponse:
         body["detail"] = error.detail
     if error.errors:
         body["errors"] = error.errors
-    return JSONResponse(status_code=error.status, content=body, media_type=PROBLEM_CONTENT_TYPE)
+    response = JSONResponse(status_code=error.status, content=body, media_type=PROBLEM_CONTENT_TYPE)
+    # §6.4/§7.3/A-06: every 429 carries Retry-After. `RateLimited` (core/rate_limit.py)
+    # already carries a tested `retry_after_seconds`; this was the missing line. Read
+    # with getattr rather than an isinstance import, so this stays generic for any
+    # future AppError subclass that wants the same header (e.g. T-07's
+    # RESET_CODE_ATTEMPTS_EXCEEDED, per §7.3's table) without errors.py needing to know
+    # about rate_limit.py -- which would otherwise be a back-reference, since
+    # rate_limit.py already imports from errors.py.
+    retry_after_seconds = getattr(error, "retry_after_seconds", None)
+    if retry_after_seconds is not None:
+        response.headers["Retry-After"] = str(retry_after_seconds)
+    return response
 
 
 def register_exception_handlers(app: FastAPI) -> None:
