@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
+import secrets
 from collections.abc import AsyncGenerator
 
 import asyncpg
@@ -11,17 +13,45 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from testcontainers.community.postgres import PostgresContainer
 
-# Dummy, non-functional values so pydantic-settings' required fields (Settings() fails
-# fast on anything genuinely missing) are satisfied in tests. Nothing in T-01 parses these;
-# they exist only so config.py can load. Real secrets are never committed (see .env.example).
+def _generate_ed25519_pem_pair() -> tuple[str, str]:
+    """A real, freshly generated Ed25519 keypair for the suite.
+
+    T-01 could get away with PEM-*shaped* placeholders because nothing parsed them. T-03
+    signs and verifies with these, so they must be genuine keys. Generated per run rather
+    than committed: §6.5 forbids a private key in the repository, and a per-run key also
+    means no test can accidentally depend on a fixed `kid` or signature.
+
+    The private half is handed over base64-wrapped and the public half as raw PEM, so the
+    suite exercises *both* branches of config.py's `_normalise_pem` the way real deployments
+    do -- backend/.env supplies both keys base64-encoded (Appendix A.1 permits it).
+    """
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    private_key = ed25519.Ed25519PrivateKey.generate()
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+    public_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    return base64.b64encode(private_pem.encode()).decode(), public_pem
+
+
+_TEST_PRIVATE_KEY_PEM_B64, _TEST_PUBLIC_KEY_PEM = _generate_ed25519_pem_pair()
+
+# Values so pydantic-settings' required fields (Settings() fails fast on anything genuinely
+# missing) are satisfied in tests. Real secrets are never committed (see .env.example).
 _REQUIRED_TEST_ENV = {
     "ENV": "test",
-    "JWT_PRIVATE_KEY_PEM": (
-        "-----BEGIN PRIVATE KEY-----\ntest-key-not-a-real-secret\n-----END PRIVATE KEY-----\n"
-    ),
-    "JWT_PUBLIC_KEY_PEM": (
-        "-----BEGIN PUBLIC KEY-----\ntest-key-not-a-real-secret\n-----END PUBLIC KEY-----\n"
-    ),
+    "JWT_PRIVATE_KEY_PEM": _TEST_PRIVATE_KEY_PEM_B64,
+    "JWT_PUBLIC_KEY_PEM": _TEST_PUBLIC_KEY_PEM,
+    # P1-ADR-07: required, no default, so the suite cannot even import app.config without
+    # it. Throwaway and per-run; a pepper is a secret and none is committed.
+    "RESET_CODE_PEPPER": secrets.token_urlsafe(32),
     "FIREBASE_PROJECT_ID": "gymak-2d4ab-test",
     "FIREBASE_CREDENTIALS_JSON": '{"type": "service_account", "project_id": "gymak-2d4ab-test"}',
     "EMAIL_BACKEND": "console",

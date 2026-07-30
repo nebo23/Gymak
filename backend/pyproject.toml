@@ -11,6 +11,11 @@ dependencies = [
   "sqlalchemy[asyncio]>=2.0.36",
   "asyncpg>=0.30",
   "alembic>=1.13",
+  "argon2-cffi>=23.1",
+  # pyjwt, not python-jose (Appendix A.2 permits either). [crypto] pulls `cryptography`,
+  # which supplies the Ed25519 backend EdDSA signing needs.
+  "pyjwt[crypto]>=2.9",
+  "cryptography>=43.0",
   "uuid6>=2024.7.10",
   "structlog>=24.4",
   "httpx>=0.27",
