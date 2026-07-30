@@ -388,8 +388,12 @@ CREATE TABLE users (
   created_at     timestamptz NOT NULL DEFAULT now(),
   updated_at     timestamptz NOT NULL DEFAULT now(),
   deleted_at     timestamptz,
-  CONSTRAINT chk_credential_present
-    CHECK (password_hash IS NOT NULL OR email_verified = true)
+-- chk_credential_present was DROPPED in T-06 (migration 2b58d76b93fb).
+  -- §5.4 step 5 requires a user with no password and an unverified placeholder
+  -- email, which the constraint rejected. The real invariant is three-way —
+  -- password, OR verified email, OR a linked identity — and Postgres cannot
+  -- express it in a single-table CHECK. It now lives in social_service.py,
+  -- which writes the user and identity rows in one transaction. See A.5 item 14.
 );
 CREATE UNIQUE INDEX uq_users_email_live ON users (email) WHERE deleted_at IS NULL;
 
@@ -1717,6 +1721,8 @@ Recorded here so it stops living only in chat history. Each item has an owning t
 | 9 | **`set_rls_user` in pre-auth flows.** `refresh_tokens` carries FORCE RLS, so `_issue_session` binds `app.user_id` by hand before inserting — there is no bearer token to bind it from yet. T-06 and T-07 write to the same table under the same conditions. If the pattern repeats, put it behind one helper rather than trusting each service to remember. | T-06 | Watch |
 | 10 | **Nothing exercises the real ASGI startup path.** The suite drives the app through httpx inside `conftest`, so uvicorn was never run from T-01 through T-04 — and an import-time `asyncio.run()` in `database.py` meant the application could not start under uvicorn for four consecutive tasks while every test stayed green. Fixed in T-04b by moving the privilege assertion into a lifespan handler. The standing rule that replaces it: after every backend task, start uvicorn and curl `/api/v1/health` before committing. | — | **Standing** |
 | 11 | **The migration needs privileges the application must not have.** `CREATE EXTENSION citext` requires a superuser; the startup assertion refuses to serve as one. Locally this is bridged by a manual `psql` step as the superuser before `alembic upgrade head`, which makes item 1 a blocker rather than hardening. It also answers §13.2 item 8 concretely: a managed host must offer both a superuser-capable migration path and a non-superuser application role, or it is disqualified. Verify on Railway or Fly before choosing one. | T-09 | **High** |
+| 14 | **`chk_credential_present` is gone, and nothing replaced it at the database layer.** T-06 dropped it because §5.4 step 5 needs a row it rejected. The three-way invariant (password, OR verified email, OR linked identity) now lives only in `social_service.py` writing both rows in one transaction — a guarantee §6.5 says should not live in convention. Two gaps confirmed: **(a)** the placeholder-account branch has no test forcing the identity insert to fail and asserting the user row does not survive alone; only the sibling verified-email-collision branch proves the rollback happens. **(b)** `test_no_password_unverified_email_is_allowed_at_the_db_layer` now asserts the *absence* of the barrier, so a future narrower CHECK would break it and read as a regression. Narrower options: a CHECK that also permits the `@social.gymak.local` placeholder domain, or a DEFERRABLE trigger evaluating all three at commit. Every later write to `users` — T-07 password reset, T-09 deletion — depends on this being remembered. | T-09 | **High** |
+| 15 | **`firebase.py` initialises the SDK at import time.** The same shape as the `database.py` defect T-04b fixed, minus the event-loop crash: importing `app.main` now requires a valid service-account JSON, so `scripts/export_openapi.py` and any CLI that imports the app will fail without one. Move the initialisation into the lifespan handler beside the privilege assertion. | T-09 | Medium |
 
 ---
 

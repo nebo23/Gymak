@@ -110,14 +110,25 @@ async def test_soft_deleted_email_can_be_reused(db_session: AsyncSession) -> Non
     await db_session.flush()  # must not raise
 
 
-async def test_credential_present_check_rejects_no_password_unverified_email(
+async def test_no_password_unverified_email_is_allowed_at_the_db_layer(
     db_session: AsyncSession,
 ) -> None:
-    db_session.add(
-        User(id=new_id(), email=_new_email(), password_hash=None, email_verified=False)
-    )
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
+    """T-02 shipped chk_credential_present -- "password_hash IS NOT NULL OR
+    email_verified = true" -- on the assumption that a password and a verified email
+    were the only two ways into an account. T-06 (§5.4 step 5) added a third: a social
+    sign-in with no usable email creates a user reachable only through a linked
+    user_identities row, with password_hash NULL and email_verified false -- exactly
+    the row this CHECK used to reject. Postgres CHECK constraints cannot see across
+    tables, so the three-way invariant (password, OR verified email, OR a linked
+    identity) cannot be enforced at this layer without a trigger; the constraint was
+    removed rather than left checking only two of the three cases (see
+    app/models/user.py's comment). This test documents that removal is deliberate: a
+    row that would have raised IntegrityError before T-06 now does not, and
+    social_service.py -- not the database -- is what guarantees every such row gets a
+    matching identity, by inserting both in one transaction.
+    """
+    db_session.add(User(id=new_id(), email=_new_email(), password_hash=None, email_verified=False))
+    await db_session.flush()  # must not raise -- see docstring
 
 
 async def test_credential_present_check_accepts_social_only_verified_account(

@@ -17,11 +17,14 @@ from app.schemas.auth import (
     LogoutRequest,
     RefreshRequest,
     RegisterRequest,
+    SocialSignInRequest,
+    SocialSignInResponse,
     TokenPairResponse,
     UserSummary,
 )
-from app.services import auth_service
+from app.services import auth_service, social_service
 from app.services.auth_service import IssuedSession
+from app.services.social_service import SocialSignInResult
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -79,6 +82,34 @@ async def login_route(
         session, body, ip=_client_ip(request), user_agent=request.headers.get("user-agent")
     )
     return _to_response(issued)
+
+
+def _to_social_response(result: SocialSignInResult) -> SocialSignInResponse:
+    pair = _to_response(result.issued)
+    return SocialSignInResponse(**pair.model_dump(), is_new_user=result.is_new_user)
+
+
+@router.post(
+    "/social/{provider}",
+    response_model=SocialSignInResponse,
+    # §6.4: 20/hour, keyed on IP -- enforced before social_service ever calls Firebase,
+    # same shape as /auth/register's limit above.
+    dependencies=[Depends(rate_limit("auth.social", limit=20, window_seconds=3600))],
+)
+async def social_sign_in_route(
+    provider: str,
+    body: SocialSignInRequest,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> SocialSignInResponse:
+    result = await social_service.sign_in(
+        session,
+        provider,
+        body.id_token,
+        ip=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    return _to_social_response(result)
 
 
 @router.post("/refresh", response_model=TokenPairResponse)

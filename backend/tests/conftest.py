@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
 import secrets
 from collections.abc import AsyncGenerator
@@ -48,6 +49,45 @@ def _generate_ed25519_pem_pair() -> tuple[str, str]:
 
 _TEST_PRIVATE_KEY_PEM_B64, _TEST_PUBLIC_KEY_PEM = _generate_ed25519_pem_pair()
 
+
+def _generate_fake_service_account_json(project_id: str) -> str:
+    """A structurally valid, offline-only service-account credential.
+
+    T-06's app/integrations/firebase.py initialises firebase-admin eagerly, at import,
+    mirroring config.py's own "fail fast at import" posture for its other secrets. That
+    means firebase_admin.credentials.Certificate() must be able to *parse* whatever
+    FIREBASE_CREDENTIALS_JSON holds in every test run, even though -- per T-06 -- the
+    suite mocks app.integrations.firebase.verify_id_token and never calls Firebase for
+    real. A minimal placeholder (just type + project_id, as this used to be) is not
+    enough: Certificate() validates the required fields (token_uri, client_email,
+    private_key, ...) at construction time, entirely locally, no network involved --
+    confirmed empirically against firebase-admin 7.5, not assumed. So this needs a real,
+    freshly generated RSA key for the same reason conftest generates a real Ed25519 pair
+    above: something has to actually parse as the shape it claims to be.
+    """
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+    return json.dumps(
+        {
+            "type": "service_account",
+            "project_id": project_id,
+            "private_key_id": "test-key-id",
+            "private_key": private_pem,
+            "client_email": f"test@{project_id}.iam.gserviceaccount.com",
+            "client_id": "000000000000000000000",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+    )
+
+
 # Values so pydantic-settings' required fields (Settings() fails fast on anything genuinely
 # missing) are satisfied in tests. Real secrets are never committed (see .env.example).
 _REQUIRED_TEST_ENV = {
@@ -58,7 +98,7 @@ _REQUIRED_TEST_ENV = {
     # it. Throwaway and per-run; a pepper is a secret and none is committed.
     "RESET_CODE_PEPPER": secrets.token_urlsafe(32),
     "FIREBASE_PROJECT_ID": "gymak-2d4ab-test",
-    "FIREBASE_CREDENTIALS_JSON": '{"type": "service_account", "project_id": "gymak-2d4ab-test"}',
+    "FIREBASE_CREDENTIALS_JSON": _generate_fake_service_account_json("gymak-2d4ab-test"),
     "EMAIL_BACKEND": "console",
 }
 

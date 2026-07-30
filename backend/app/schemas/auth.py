@@ -60,6 +60,20 @@ class LogoutRequest(BaseModel):
     refresh_token: str
 
 
+class SocialSignInRequest(BaseModel):
+    """§5.4. "The body carries exactly one field: id_token." Deliberately NOT
+    extra="forbid" like this module's other request schemas: §5.4's own security note --
+    "the provider, the uid, and the email all come from the verified token -- never from
+    the request body" -- means an attacker-supplied `email` or `provider` alongside a
+    valid id_token must be silently ignored, not rejected as an unknown field. See
+    test_social_auth.py's body-field-ignored control test.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    id_token: str
+
+
 class UserSummary(BaseModel):
     id: uuid.UUID
     email: str
@@ -75,6 +89,14 @@ class TokenPairResponse(BaseModel):
     refresh_token: str
     refresh_expires_in: int
     user: UserSummary
+
+
+class SocialSignInResponse(TokenPairResponse):
+    """§5.4: identical shape to register/login's token pair, plus is_new_user so the
+    client knows whether to route to onboarding or home.
+    """
+
+    is_new_user: bool
 
 
 def normalise_email(raw: str) -> str:

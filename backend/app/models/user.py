@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, Integer, Text, func, text
+from sqlalchemy import Boolean, DateTime, Index, Integer, Text, func, text
 from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
@@ -17,10 +17,25 @@ class User(Base):
 
     __tablename__ = "users"
     __table_args__ = (
-        CheckConstraint(
-            "password_hash IS NOT NULL OR email_verified = true",
-            name="chk_credential_present",
-        ),
+        # No chk_credential_present CHECK here. T-02 shipped one --
+        # "password_hash IS NOT NULL OR email_verified = true" -- on the assumption that
+        # a password and a verified email were the only two ways into an account. T-06
+        # (§5.4 step 5, social sign-in with no usable email) creates a third: a user
+        # reachable only through a linked user_identities row, with password_hash NULL
+        # AND email_verified false -- e.g. a placeholder-email account, or the "separate
+        # account" the unverified-email control test requires rather than a takeover.
+        # Postgres CHECK constraints cannot reference another table, so the three-way
+        # invariant this really is (password, OR verified email, OR a linked identity)
+        # cannot be expressed as one; encoding just the first two and leaving the third
+        # unchecked would make an account created purely by a bug -- no password, no
+        # verified email, no identity, truly unreachable -- indistinguishable from the
+        # legitimate third case at the database level. Removed instead of narrowed, per
+        # migration 6b18a9095bb4's own reasoning about not leaving a check that looks
+        # protective but isn't; social_service.py carries the real guarantee instead, by
+        # always inserting the users row and its user_identities row in the same
+        # transaction and rolling back both together if either fails (see
+        # social_service._create_identity_or_conflict).
+        #
         # Partial, not a blanket UNIQUE: a soft-deleted row's email must be reusable by a
         # new registration (spec 4.1: "A row with deleted_at IS NOT NULL is invisible to
         # every query except the purge job"). A blanket UNIQUE on email would silently
