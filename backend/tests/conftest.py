@@ -149,6 +149,23 @@ def postgres_url() -> str:
     return os.environ["DATABASE_URL"]
 
 
+@pytest.fixture(scope="session")
+def superuser_database_url() -> str:
+    """A DATABASE_URL for the same database, authenticated as the testcontainer's
+    bootstrap superuser role -- the role app/database.py's
+    assert_connection_is_not_privileged must refuse to start against. Used only by the
+    startup privilege-check tests; every other fixture and test connects as the
+    unprivileged `_APP_ROLE` (see the module docstring above `_provision_app_role`).
+    """
+    assert _container is not None
+    host = _container.get_container_host_ip()
+    port = int(_container.get_exposed_port(5432))
+    return (
+        f"postgresql+asyncpg://{_container.username}:{_container.password}"
+        f"@{host}:{port}/{_container.dbname}"
+    )
+
+
 @pytest_asyncio.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
     from app.main import create_app

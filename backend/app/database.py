@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncGenerator
 
 from sqlalchemy import text
@@ -88,14 +87,14 @@ async def database_is_reachable() -> bool:
         return bool(result.scalar_one() == 1)
 
 
-async def _fetch_connection_role_privileges() -> tuple[bool, bool]:
+async def _fetch_connection_role_privileges(database_url: str) -> tuple[bool, bool]:
     # A dedicated, disposable engine -- never the shared module-level `engine` -- so this
-    # one-off asyncio.run() check cannot leave a pooled connection bound to the throwaway
-    # event loop it creates and then closes. That exact pattern (a connection pooled under
-    # one event loop, reused after that loop is gone) is what breaks asyncpg elsewhere in
-    # this codebase; touching the shared pool here would reintroduce it for whatever event
-    # loop actually serves the real app or test suite afterwards.
-    probe_engine = create_async_engine(settings.DATABASE_URL)
+    # one-off probe cannot leave a pooled connection bound to whatever event loop happens
+    # to be running when it is awaited. That exact pattern (a connection pooled under one
+    # event loop, reused after that loop is gone) is what breaks asyncpg elsewhere in this
+    # codebase; touching the shared pool here would reintroduce it for whatever event loop
+    # actually serves the real app or test suite afterwards.
+    probe_engine = create_async_engine(database_url)
     try:
         async with probe_engine.connect() as connection:
             result = await connection.execute(
@@ -107,18 +106,30 @@ async def _fetch_connection_role_privileges() -> tuple[bool, bool]:
         await probe_engine.dispose()
 
 
-def _assert_connection_is_not_privileged() -> None:
+async def assert_connection_is_not_privileged(database_url: str | None = None) -> None:
     """Spec 4.7: 'The application must connect as a NON-superuser role, asserted at
     startup, otherwise RLS is silently bypassed and this whole barrier is decorative.'
 
-    Runs eagerly at import time -- every process that uses this module (the app, the
-    test suite, Alembic's env.py) transitively imports app.database before doing
-    anything else, so this is the one place a 'startup' check reaches all of them.
+    Awaited from the FastAPI lifespan handler in main.py, not run at import time: this
+    module is imported before any event loop exists under pytest (collection is
+    synchronous) but *inside* an already-running loop under uvicorn (the app import
+    string is resolved from within `Server.serve()`), so a self-contained
+    `asyncio.run()` here would work under one runner and crash under the other with
+    "asyncio.run() cannot be called from a running event loop". Awaiting it from a
+    lifespan handler works under both, because both drive the app through a loop that
+    is already running.
+
+    `database_url` defaults to `settings.DATABASE_URL`, read at call time (not bound as
+    a default at import time) so a test can pass a different URL -- e.g. a superuser
+    role -- without mutating global settings.
+
     Superuser and BYPASSRLS are the two role attributes that silently bypass every RLS
     policy regardless of what the policy says; either one makes profiles/refresh_tokens
     RLS decorative, so either one is fatal here.
     """
-    is_superuser, bypasses_rls = asyncio.run(_fetch_connection_role_privileges())
+    is_superuser, bypasses_rls = await _fetch_connection_role_privileges(
+        database_url if database_url is not None else settings.DATABASE_URL
+    )
     if is_superuser or bypasses_rls:
         raise RuntimeError(
             "Refusing to start: the database connection is a superuser or BYPASSRLS "
@@ -127,6 +138,3 @@ def _assert_connection_is_not_privileged() -> None:
             "refresh_tokens RLS policies would never actually apply. Connect as a "
             "dedicated, unprivileged application role instead (see .env.example)."
         )
-
-
-_assert_connection_is_not_privileged()
