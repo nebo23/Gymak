@@ -56,7 +56,9 @@ async def get_current_user(
     T-04 implements it separately. Both readings are correct in their own place.
     """
     if credentials is None or not credentials.credentials.strip():
-        raise TokenMissingError(detail="An Authorization: Bearer <access_token> header is required.")
+        raise TokenMissingError(
+            detail="An Authorization: Bearer <access_token> header is required."
+        )
 
     claims = verify_access_token(credentials.credentials)
 

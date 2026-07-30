@@ -53,6 +53,13 @@ addopts = "--cov=app --cov-report=term-missing"
 
 [tool.coverage.run]
 source = ["app"]
+# SQLAlchemy's asyncio layer is implemented with greenlets (greenlet_spawn), and coverage.py
+# does not follow a greenlet switch unless told to. Without this, every line after the first
+# awaited database call is reported as unexecuted even though the test that proves its
+# behaviour passes -- get_current_user showed 73% while all 18 of its tests were green.
+# A coverage gate that undercounts the DB paths is worse than no gate: it invites chasing
+# phantom gaps and hides real ones.
+concurrency = ["thread", "greenlet"]
 
 [tool.ruff]
 line-length = 100
