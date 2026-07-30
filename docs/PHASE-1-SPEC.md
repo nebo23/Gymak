@@ -1,7 +1,7 @@
 # Gymak — Phase 1 Build Specification
 
-> **Document ID** GYMAK-P1-SPEC-001 · **Version** 1.0 (baseline) · **Date** 30 July 2026
-> **Owner** Nabil · **Phase** 1 of N — authentication, session management, one-time profile capture
+> **Document ID** GYMAK-P1-SPEC-001 · **Version** 1.1 · **Date** 30 July 2026
+> **Owner** Nabil — sole developer · **Phase** 1 of N — authentication, session management, one-time profile capture
 > **Stack** FastAPI · PostgreSQL · Firebase Auth (social sign-in only) · React Native (Expo)
 > **Derives from** AIFC-SRS-TDD-001 v1.0 (Vol. 2, 4, 5) · Gymak Color System
 >
@@ -9,9 +9,28 @@
 > disagree, the document wins. Build nothing from the section 1.2 out-of-scope list. Execute one
 > task from section 12 at a time, touching only the files that task names.
 >
-> **Amendments since the v1.0 baseline** — an amendment overrides the section it amends:
-> **P1-ADR-07** (reset-code hashing; amends §4.5, §5.6, §7.1, §9.3, §10.5) — raised at T-02 review,
-> owned by T-07.
+> **v1.0 is superseded and must not be used.** Any copy dated v1.0 still describes the 6-digit,
+> user-id-salted reset code that P1-ADR-07 rejects. Delete it. If two versions of this document
+> are reachable by a coding agent, the single-source-of-truth rule is already broken.
+
+### Amendments in v1.1
+
+| ID   | Section                     | Change                                                                                                   |
+|------|-----------------------------|----------------------------------------------------------------------------------------------------------|
+| **P1-ADR-07** | §4.5, §5.6, §7.1, §9.3, §10.5, §12 T-03, §12 T-07 | Reset codes are peppered with a key outside the database. 8 characters from a reduced Base32 alphabet, stored as HMAC-SHA256. Raised at T-02 review, owned by T-07. |
+| A-01 | §5.6                        | The `verify-code` request example carried a 6-digit code. Replaced with the ADR-07 format.                |
+| A-02 | §4.7, §4.6                  | DDL corrected to what T-02 actually shipped: `FORCE ROW LEVEL SECURITY`, the `NULLIF` guard, the `refresh_tokens` owner policy, and no foreign key on `audit_log.actor_user_id`. |
+| A-03 | §12 T-13                    | Auto-submit on the eighth character, not the sixth digit.                                                |
+| A-04 | §12 T-11                    | `GOtpInput` is eight alphanumeric boxes.                                                                 |
+| A-05 | §12 T-12                    | Done-when referenced check 12; the checks it describes are 5 and 6.                                      |
+| A-06 | §12 T-04                    | `app/core/errors.py` added to the file list so the `Retry-After` header §6.4 requires can actually be emitted. |
+| A-07 | §6.2                        | The common-password denylist is pinned to a named source instead of an invented list.                     |
+| A-08 | §11.1, §11.3                | Coverage must be measured with greenlet concurrency enabled, or every line after the first database `await` is reported as unexecuted. |
+| A-09 | §4.3, §13.1                 | Decision 13.1.1 resolved: `weight_kg` and `activity_level` are in, and shipped in T-02. `[confirm]` markers removed. |
+| A-10 | §A.5 (new)                  | Carried-forward technical debt recorded with an owning task, so it stops living only in chat history.     |
+| A-11 | §0.3                        | Build status added. T-01, T-01b, T-02, T-03 are complete.                                                |
+| A-12 | §4.7, §6.5, §13.2           | The `gymak_migrator` / `gymak_app` role split recorded as required before any production data.            |
+| A-13 | §12 T-09                    | `ruff format --check` added to the gate.                                                                  |
 
 ---
 
@@ -26,26 +45,27 @@ This is not a design essay. It is an **execution contract**. Every section eithe
 - **3** — Repository layout — backend and mobile trees
 - **4** — Data model — full DDL, constraints, indexes, RLS
 - **5** — API contract — every endpoint, request, response, error
-- **6** — Security requirements — hashing, tokens, OTP, rate limits
+- **6** — Security requirements — hashing, tokens, codes, rate limits
 - **7** — Validation rules and the error code catalogue
 - **8** — Firebase configuration — Google and Facebook
 - **9** — Mobile application — screens, states, navigation, i18n
 - **10** — Design tokens — the complete Gymak palette and type scale
 - **11** — Testing requirements and Phase 1 definition of done
 - **12** — Task pack — ordered, copy-paste prompts T-01 … T-14
-- **13** — Decisions Nabil must confirm before T-01
-- **A** — Appendix — environment variables, dependency list, glossary
+- **13** — Decisions Nabil must confirm
+- **A** — Appendix — environment variables, dependency list, open debt, glossary
 
 ### 0.2 Rules of engagement for the coding agent
 
 > **These rules override any instinct to be helpful beyond the task.**
 >
 > 1.  **One task at a time.** Execute exactly one task from section 12. Do not start the next task, do not "also fix" an adjacent file, do not refactor code you were not asked about.
-> 2.  **Named files only.** Each task lists the files it may create or modify. Touching any other file is a failure of the task, even if the change is an improvement.
+> 2.  **Named files only.** Each task lists the files it may create or modify. Touching any other file is a failure of the task, even if the change is an improvement. **Standing exception:** `pyproject.toml` and `tests/**` are always in scope, because a task that cannot adjust its own test configuration will delete a test instead.
 > 3.  **No scope invention.** If a feature is not in section 1's "in scope" list, it does not get built, stubbed, or scaffolded — not workouts, not nutrition, not AI, not payments.
 > 4.  **Ask, don't assume.** If a required detail is genuinely absent from this document, stop and ask one specific question. Do not invent a schema column, an endpoint, or a library.
 > 5.  **No new dependencies** beyond Appendix A.2 without asking first.
-> 6.  **Every task ends with its tests passing** and the diff summarised in plain language: files touched, what changed, what to verify manually.
+> 6.  **Report before changing.** State what the current implementation actually does before you modify it. Four separate corrections in this project were prevented by that single sentence, and five real defects were found because of it.
+> 7.  **Every task ends with its tests passing** and the diff summarised in plain language: files touched, what changed, what to verify manually, and what you deliberately did not do. Paste real command output with exit codes — `ruff`, `mypy --strict`, `pytest`.
 
 ### 0.3 The three steps this document covers
 
@@ -55,7 +75,19 @@ This is not a design essay. It is an **execution contract**. Every section eithe
 | **Step 2** | Backend profile: the one-time settings capture, read and edit, account deletion request, audit log                  | T-08 … T-09 | Profile endpoints green, cross-tenant matrix passes  |
 | **Step 3** | React Native client: design system primitives, auth screens, onboarding flow, secure token storage, session refresh | T-10 … T-14 | A real device completes register → onboarding → home |
 
-Steps run in order. Step 3 depends on step 1 and 2 being deployed to a reachable environment (local network or staging). Do not begin step 3 while any step-1 test is red.
+Steps run in order. Step 3 depends on step 1 and 2 being reachable from the phone (local network or staging). Do not begin step 3 while any step-1 test is red.
+
+#### Build status at v1.1
+
+| Task | Status | Note                                                                                                     |
+|------|--------|----------------------------------------------------------------------------------------------------------|
+| T-01 | Done   | 11 files. Skeleton, error contract, structured logging, health, testcontainers.                            |
+| T-01b| Done   | Remediation. `set_rls_user` was executing successfully while protecting nothing under `AUTOCOMMIT`.        |
+| T-02 | Done   | Six tables, 18 tests, migration forward and backward three cycles. See A-02 for what the DDL now records.  |
+| T-03 | Done   | Security primitives, including the ADR-07 reset-code primitive. Coverage gate met after the A-08 fix.      |
+| T-04 | Next   | Register and login. Must also emit `Retry-After` — see A-06.                                              |
+
+> **Interleave one device milestone after T-04.** Before T-05, put a single login screen in Expo talking to the backend over the LAN address. Not T-10, not the design system, not a component library — one screen that submits a real request. §13.2 item 8 and §0.3 both say the backend has to be reachable from the phone before step 3 begins; discovering LAN, CORS and uvicorn binding problems then is much cheaper than discovering them five frontend tasks in.
 
 ## 1 · Phase 1 scope
 
@@ -66,7 +98,7 @@ Steps run in order. Step 3 depends on step 1 and 2 being deployed to a reachable
 | P1-FR-001  | Register an account with email and password                                       | API + app |
 | P1-FR-002  | Log in with email and password, receiving an access/refresh token pair            | API + app |
 | P1-FR-003  | Sign in or register with Google, brokered through Firebase Auth                   | API + app |
-| P1-FR-004  | Sign in or register with Facebook, brokered through Firebase Auth                 | API + app |
+| P1-FR-004  | Sign in or register with Facebook, brokered through Firebase Auth — **conditional on decision 13.1.2** | API + app |
 | P1-FR-005  | Issue short-lived access tokens and single-use rotating refresh tokens            | API       |
 | P1-FR-006  | Detect refresh-token reuse and invalidate the whole token family                  | API       |
 | P1-FR-007  | Log out of the current device; log out of all devices                             | API + app |
@@ -88,9 +120,6 @@ Steps run in order. Step 3 depends on step 1 and 2 being deployed to a reachable
 > - Nutrition targets, food search, meal logging
 > - Any LLM call, RAG pipeline, or AI coach surface
 > - Subscriptions, receipt validation, paywalls
->
-> <!-- -->
->
 > - Push notifications and FCM wiring
 > - Progress photos, charts, analytics, dashboards
 > - Apple Health / Google Fit integration
@@ -101,14 +130,14 @@ Steps run in order. Step 3 depends on step 1 and 2 being deployed to a reachable
 
 | ID        | Target                                                                                               | Verified by                              |
 |-----------|------------------------------------------------------------------------------------------------------|------------------------------------------|
-| P1-NFR-01 | p95 under 400 ms for every endpoint in this phase, excluding email dispatch                          | Manual timing plus a locust/k6 smoke run |
+| P1-NFR-01 | p95 under 400 ms for every endpoint in this phase, excluding email dispatch                          | Manual timing plus a locust/k6 smoke run |
 | P1-NFR-02 | Passwords hashed with Argon2id at the parameters in §6.1; never logged, never returned               | Unit test plus grep gate in CI           |
 | P1-NFR-03 | No user can read or write another user's row through any endpoint                                    | Generated cross-tenant test matrix       |
 | P1-NFR-04 | All traffic over TLS in staging and production; no plaintext fallback                                | Deployment configuration review          |
-| P1-NFR-05 | Backend line coverage at or above 80%, and at or above 95% in the auth and security modules          | pytest-cov gate                          |
+| P1-NFR-05 | Backend line coverage at or above 80%, and at or above 95% in the auth and security modules          | pytest-cov gate, greenlet-aware (A-08)   |
 | P1-NFR-06 | Health fields and secrets are redacted at the logging boundary by an allowlist serialiser            | Unit test asserting redaction            |
 | P1-NFR-07 | The generated OpenAPI document is committed and matches the code                                     | Schema drift check                       |
-| P1-NFR-08 | Every interactive element is at least 48 dp, labelled for screen readers, and meets WCAG AA contrast | Manual audit against §10.6               |
+| P1-NFR-08 | Every interactive element is at least 48 dp, labelled for screen readers, and meets WCAG AA contrast | Manual audit against §10.6               |
 
 ## 2 · Architecture decisions
 
@@ -116,24 +145,20 @@ These seven decisions are settled. They are recorded here so the agent does not 
 
 ### P1-ADR-01 · PostgreSQL is the single source of truth. Firebase is an identity broker only.
 
-|                 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-|-----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Decision**    | Every user record, credential hash, profile field, session, and audit entry lives in PostgreSQL. Firebase Auth is used for exactly one job: verifying that a Google or Facebook sign-in really happened. Firestore, Firebase Realtime Database, and Firebase-managed email/password accounts are **not** used.                                                                                                                                                                      |
+| | |
+|---|---|
+| **Decision**    | Every user record, credential hash, profile field, session, and audit entry lives in PostgreSQL. Firebase Auth is used for exactly one job: verifying that a Google or Facebook sign-in really happened. Firestore, Firebase Realtime Database, and Firebase-managed email/password accounts are **not** used. |
 | **Why**         | Two writable stores holding the same user means a permanent reconciliation problem — which one is authoritative when they disagree? A fitness app also stores special-category health data (weight, injuries, body composition later), and keeping it inside one boundary we control is the simpler privacy story. Firebase earns its place because Google and Facebook OAuth done by hand is fiddly and easy to get subtly wrong, and because FCM will be wanted in a later phase. |
-| **Shape**       | Mobile app runs the Firebase client SDK → obtains a Firebase ID token → posts it to our API → `firebase-admin` verifies the signature server-side → we find or create the Postgres user → **we** issue our own Gymak token pair. The Firebase token never travels further than that one endpoint and is never trusted as a session.                                                                                                                                                 |
-| **Consequence** | Email/password registration does not touch Firebase at all. There is one Postgres `users` row per human, and social identities hang off it in a child table, so one person signing in with Google and later with email lands on the same account.                                                                                                                                                                                                                                   |
-
-> **Confirm before T-01**
->
-> This reads Nabil's "Firebase and Postgres for the database" as *Firebase for social auth, Postgres for data*. If the intent was Firestore as a second datastore, say so now — it changes the schema work substantially and, for this product, is not recommended.
+| **Shape**       | Mobile app runs the Firebase client SDK → obtains a Firebase ID token → posts it to our API → `firebase-admin` verifies the signature server-side → we find or create the Postgres user → **we** issue our own Gymak token pair. The Firebase token never travels further than that one endpoint and is never trusted as a session. |
+| **Consequence** | Email/password registration does not touch Firebase at all. There is one Postgres `users` row per human, and social identities hang off it in a child table, so one person signing in with Google and later with email lands on the same account. |
 
 ### P1-ADR-02 · Self-issued JWT access tokens with opaque rotating refresh tokens
 
-|              |                                                                                                                                                                                                                                                                                                         |
-|--------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Decision** | Access token: JWT, 15-minute lifetime, signed with Ed25519 (EdDSA). Carries `sub`, `tv` (token version), `iat`, `exp`, `jti`, `aud` and nothing else. Refresh token: 256 bits of opaque entropy, stored only as a SHA-256 hash, 60-day lifetime, single-use, rotated on every exchange.                 |
+| | |
+|---|---|
+| **Decision** | Access token: JWT, 15-minute lifetime, signed with Ed25519 (EdDSA). Carries `sub`, `tv` (token version), `iat`, `exp`, `jti`, `aud` and nothing else. Refresh token: 256 bits of opaque entropy, stored only as a SHA-256 hash, 60-day lifetime, single-use, rotated on every exchange. |
 | **Why**      | A stateless access token keeps the hot path free of database reads. Statefulness lives in the refresh token, which is where revocation actually needs to work. Reuse of a consumed refresh token is the standard signal of theft, and invalidating the entire family on reuse is the standard response. |
-| **Rules**    | No profile data, no email, and no health field ever goes inside a token. Bumping `users.token_version` invalidates every outstanding access token for that user instantly — used on password reset, logout-all, and account deletion.                                                                   |
+| **Rules**    | No profile data, no email, and no health field ever goes inside a token. Bumping `users.token_version` invalidates every outstanding access token for that user instantly — used on password reset, logout-all, and account deletion. |
 
 ### P1-ADR-03 · `users` and `profiles` are separate tables
 
@@ -157,15 +182,15 @@ Keys are UUID v7 — time-ordered, so index locality stays close to a sequence, 
 
 > **This ADR amends §4.5, §5.6, §7.1, §9.3 and §10.5. It was raised during T-02 review, before any reset code was implemented. T-07 must not ship the superseded design.**
 
-|                          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Superseded design**    | 6 decimal digits, stored as `SHA-256(user_id ‖ code)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| | |
+|---|---|
+| **Superseded design**    | 6 decimal digits, stored as `SHA-256(user_id ‖ code)`. |
 | **Why it fails**         | The salt is `user_id`, which is stored **in the same row** as the hash, and the search space is 10⁶ with no key stretching. Anyone who can read one row recovers the plaintext code offline in well under a second — a single SHA-256 pass over a million candidates. Hashing therefore contributes almost nothing against the attacker who matters here. Worse, it is not limited to accounts already mid-reset: `/auth/password/forgot` is unauthenticated and always returns `202`, so an attacker with read access can **induce** a fresh code for any address, read it, and take over that account on demand. Read access to `password_reset_codes` is account takeover of arbitrary users, not a data leak. |
-| **Decision**             | Two independent changes. **(a) Keyed hash:** store `HMAC-SHA256(key=RESET_CODE_PEPPER, msg=user_id ‖ code)`. `RESET_CODE_PEPPER` is a required environment variable (Appendix A.1) and never enters the database. **(b) Longer code:** 8 characters drawn with `secrets.choice` from the 30-character reduced Base32 alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ234567` — RFC 4648 Base32 (`A–Z`, `2–7`) with the visually ambiguous `I` and `O` removed. `0`, `1` and lowercase `l` are absent from that alphabet already; input is uppercased before comparison.                                                    |
-| **Which one carries it** | Be precise about this, because it decides what may be traded away. **The pepper is the control that defeats offline recovery**: without the key, an attacker holding the whole table cannot compute a single candidate hash, whatever the code length. **The code length defeats online guessing** and buys margin if the pepper is ever compromised too — 30⁸ ≈ 6.6 × 10¹¹ (~39 bits) against 10⁶ (~20 bits). Note that 39 bits is *not* itself sufficient against offline search on a fast unkeyed hash, so length is defence in depth and the pepper is load-bearing, not the reverse.                    |
-| **If UX keeps 6 digits** | Acceptable, but then **(a) is mandatory rather than defence-in-depth**, and the §5.6 attempt cap plus the per-email rate limit become the only barriers to online guessing. Do not drop both.                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **Decision**             | Two independent changes. **(a) Keyed hash:** store `HMAC-SHA256(key=RESET_CODE_PEPPER, msg=user_id ‖ code)`. `RESET_CODE_PEPPER` is a required environment variable (Appendix A.1) and never enters the database. **(b) Longer code:** 8 characters drawn with `secrets.choice` from the 30-character reduced Base32 alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ234567` — RFC 4648 Base32 (`A–Z`, `2–7`) with the visually ambiguous `I` and `O` removed. `0`, `1` and lowercase `l` are absent from that alphabet already; input is uppercased before comparison. |
+| **Which one carries it** | Be precise about this, because it decides what may be traded away. **The pepper is the control that defeats offline recovery**: without the key, an attacker holding the whole table cannot compute a single candidate hash, whatever the code length. **The code length defeats online guessing** and buys margin if the pepper is ever compromised too — 30⁸ ≈ 6.6 × 10¹¹ (~39 bits) against 10⁶ (~20 bits). Note that 39 bits is *not* itself sufficient against offline search on a fast unkeyed hash, so length is defence in depth and the pepper is load-bearing, not the reverse. |
+| **If UX keeps 6 digits** | Acceptable, but then **(a) is mandatory rather than defence-in-depth**, and the §5.6 attempt cap plus the per-email rate limit become the only barriers to online guessing. Do not drop both. |
 | **Rejected alternative** | A random link token — `secrets.token_urlsafe(32)`, 256 bits, stored as a plain SHA-256 — would make the brute-force concern moot outright: no pepper needed, no code length to argue about, because 2²⁵⁶ is not searchable whether or not the hash is keyed. It was **not** chosen, for four reasons. **1.** P1-ADR-04 deliberately picked a typed code exchanged for a reset token so the code never sits in app state and is never re-sent over the wire; a link inverts that. **2.** A 43-character token cannot be typed, so the flow becomes click-a-link, which requires universal links / Android App Links — native configuration that is out of Phase 1 scope. **3.** A link breaks when the user reads mail on a different device from the app. **4.** Mail scanners and corporate proxies pre-fetch links and can silently consume a single-use token. **Revisit in Phase 2**, where email verification (Appendix A.3) needs link infrastructure anyway — at that point the reset flow can share it and this ADR should be reopened. |
-| **Consequence**          | `RESET_CODE_PEPPER` joins the fail-fast required secrets, so a deployment missing it will not start rather than silently falling back to an unkeyed hash. Rotating the pepper invalidates every outstanding reset code, which is acceptable against a 10-minute TTL. The client-side input is no longer digits-only: §7.1's `code` rule, §9.3 screen 5 and §10.5's `GOtpInput` contract are amended to 8 alphanumeric boxes, uppercase-normalised, ambiguous characters rejected on paste.                                                                                                                    |
+| **Consequence**          | `RESET_CODE_PEPPER` joins the fail-fast required secrets, so a deployment missing it will not start rather than silently falling back to an unkeyed hash. Rotating the pepper invalidates every outstanding reset code, which is acceptable against a 10-minute TTL. The client-side input is no longer digits-only: §7.1's `code` rule, §9.3 screen 5 and §10.5's `GOtpInput` contract are amended to 8 alphanumeric boxes, uppercase-normalised, ambiguous characters rejected on paste. |
 
 ## 3 · Repository layout
 
@@ -251,16 +276,17 @@ A row with `deleted_at IS NOT NULL` is invisible to every query except the purge
 
 ### 4.2 user_identities
 
-| Column                                                                                          | Type        | Constraints                    | Notes                                                                       |
-|-------------------------------------------------------------------------------------------------|-------------|--------------------------------|-----------------------------------------------------------------------------|
-| id                                                                                              | uuid        | PK                             |                                                                             |
-| user_id                                                                                         | uuid        | FK users(id) ON DELETE CASCADE |                                                                             |
-| provider                                                                                        | text        | CHECK IN ('google','facebook') | `'apple'` is allowed by the check now so the later phase needs no migration |
-| provider_uid                                                                                    | text        | NOT NULL                       | The provider's stable subject identifier                                    |
-| firebase_uid                                                                                    | text        | NOT NULL                       | Kept for support and debugging                                              |
-| email_at_provider                                                                               | citext      | NULL                           | Facebook may not return one; that is expected, not an error                 |
-| created_at                                                                                      | timestamptz | NOT NULL DEFAULT now()         |                                                                             |
-| **UNIQUE (provider, provider_uid)** — the same Google account cannot attach to two Gymak users. |             |                                |                                                                             |
+| Column            | Type        | Constraints                    | Notes                                                                       |
+|-------------------|-------------|--------------------------------|-----------------------------------------------------------------------------|
+| id                | uuid        | PK                             |                                                                             |
+| user_id           | uuid        | FK users(id) ON DELETE CASCADE |                                                                             |
+| provider          | text        | CHECK IN ('google','facebook','apple') | `'apple'` is allowed by the check now so the later phase needs no migration |
+| provider_uid      | text        | NOT NULL                       | The provider's stable subject identifier                                    |
+| firebase_uid      | text        | NOT NULL                       | Kept for support and debugging                                              |
+| email_at_provider | citext      | NULL                           | Facebook may not return one; that is expected, not an error                 |
+| created_at        | timestamptz | NOT NULL DEFAULT now()         |                                                                             |
+
+**UNIQUE (provider, provider_uid)** — the same Google account cannot attach to two Gymak users.
 
 ### 4.3 profiles — the Settings data
 
@@ -271,10 +297,10 @@ A row with `deleted_at IS NOT NULL` is invisible to every query except the purge
 | gender                  | text         | CHECK IN ('male','female')                                   | Required: it selects the Mifflin-St Jeor branch in a later phase, and is not a social question here |
 | birth_date              | date         | NOT NULL, age 13–100                                         | Drives P1-SAF-001; stored as a date, never as an age                                                |
 | height_cm               | numeric(5,1) | CHECK BETWEEN 100 AND 250                                    | Always centimetres on the wire, regardless of display units                                         |
-| weight_kg               | numeric(5,2) | CHECK BETWEEN 30 AND 300                                     | \[confirm\] Recommended addition — see §13.1                                                        |
+| weight_kg               | numeric(5,2) | CHECK BETWEEN 30 AND 300                                     | Confirmed by decision 13.1.1 and shipped in T-02                                                    |
 | goal                    | text         | CHECK IN ('lose','gain','maintain')                          |                                                                                                     |
 | experience_level        | text         | CHECK IN ('beginner','intermediate','advanced')              | Maps to the SRS volume landmark bands in a later phase                                              |
-| activity_level          | text         | CHECK IN ('sedentary','light','moderate','high','very_high') | \[confirm\] Recommended addition — see §13.1                                                        |
+| activity_level          | text         | CHECK IN ('sedentary','light','moderate','high','very_high') | Confirmed by decision 13.1.1 and shipped in T-02                                                    |
 | unit_system             | text         | CHECK IN ('metric','imperial') DEFAULT 'metric'              | Display concern only; storage and the API are always SI                                             |
 | language                | text         | CHECK IN ('ar','en') DEFAULT 'ar'                            |                                                                                                     |
 | onboarding_completed    | boolean      | NOT NULL DEFAULT false                                       | Flips true only when every NOT NULL field is satisfied                                              |
@@ -302,17 +328,18 @@ A row with `deleted_at IS NOT NULL` is invisible to every query except the purge
 
 > **Amended by P1-ADR-07.** The original `SHA-256(user_id ‖ 6 digits)` is **superseded** and must not be implemented: the salt lived in the same row as the hash over a 10⁶ space, making every code recoverable offline in under a second by anyone who could read the table. Read the ADR before writing T-07.
 
-| Column                                                                                                               | Type        | Notes                                                                                                              |
-|----------------------------------------------------------------------------------------------------------------------|-------------|--------------------------------------------------------------------------------------------------------------------|
-| id / user_id                                                                                                         | uuid        | PK / FK CASCADE                                                                                                    |
-| code_hash                                                                                                            | text        | `HMAC-SHA256(key=RESET_CODE_PEPPER, msg=user_id ‖ code)`. The pepper comes from the environment and is never stored. Never store the code itself. |
-| expires_at                                                                                                           | timestamptz | Issued at + `RESET_CODE_TTL_SECONDS` (default 10 minutes). Enforced in the SQL `WHERE`, never in Python after fetch. |
-| attempt_count                                                                                                        | int         | NOT NULL DEFAULT 0, hard stop at 5. Incremented on every failed verify, including expired ones.                     |
-| consumed_at                                                                                                          | timestamptz | Single use. Set in the same statement that redeems the code, so a concurrent second redemption updates zero rows.   |
-| requested_ip                                                                                                         | inet        | For abuse investigation                                                                                            |
-| Requesting a new code marks every previous unconsumed code for that user as consumed, so only the newest code works. |             |                                                                                                                    |
+| Column        | Type        | Notes                                                                                                              |
+|---------------|-------------|--------------------------------------------------------------------------------------------------------------------|
+| id / user_id  | uuid        | PK / FK CASCADE                                                                                                    |
+| code_hash     | text        | `HMAC-SHA256(key=RESET_CODE_PEPPER, msg=user_id ‖ code)`. The pepper comes from the environment and is never stored. Never store the code itself. |
+| expires_at    | timestamptz | Issued at + `RESET_CODE_TTL_SECONDS` (default 10 minutes). Enforced in the SQL `WHERE`, never in Python after fetch. |
+| attempt_count | int         | NOT NULL DEFAULT 0, hard stop at 5. Incremented on every failed verify, including expired ones.                     |
+| consumed_at   | timestamptz | Single use. Set in the same statement that redeems the code, so a concurrent second redemption updates zero rows.   |
+| requested_ip  | inet        | For abuse investigation                                                                                            |
 
-The column set is unchanged by the ADR — only what goes **into** `code_hash`, and how the other three columns are enforced. The T-02 migration therefore needs no amendment.
+Requesting a new code marks every previous unconsumed code for that user as consumed, so only the newest code works.
+
+The column set is unchanged by the ADR — only what goes **into** `code_hash`, and how the other three columns are enforced. The T-02 migration therefore needed no amendment.
 
 ### 4.6 audit_log
 
@@ -321,14 +348,18 @@ Append-only. The application role holds `INSERT` and `SELECT` only — no `UPDAT
 | Column             | Type        | Notes                                                                                                                                                                                                                                                                               |
 |--------------------|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | id                 | uuid        | PK                                                                                                                                                                                                                                                                                  |
-| actor_user_id      | uuid        | NULL for anonymous actions such as a failed login on an unknown email                                                                                                                                                                                                               |
+| actor_user_id      | uuid        | **No foreign key** — see the note below. NULL for anonymous actions such as a failed login on an unknown email.                                                                                                                                                                     |
 | action             | text        | `user.registered`, `user.login_succeeded`, `user.login_failed`, `user.social_linked`, `token.refreshed`, `token.reuse_detected`, `token.family_revoked`, `password.reset_requested`, `password.reset_completed`, `profile.created`, `profile.updated`, `account.deletion_requested` |
 | entity / entity_id | text / uuid | What was acted on                                                                                                                                                                                                                                                                   |
 | metadata           | jsonb       | Changed field names and values for profile edits. **Never** a password, token, or reset code.                                                                                                                                                                                       |
 | ip / user_agent    | inet / text |                                                                                                                                                                                                                                                                                     |
 | created_at         | timestamptz | NOT NULL DEFAULT now()                                                                                                                                                                                                                                                              |
 
-### 4.7 DDL extract — write the Alembic migration to match this exactly
+> **Why `actor_user_id` carries no foreign key (A-02)**
+>
+> Every referential action Postgres could take here needs a privilege this table deliberately withholds: `ON DELETE CASCADE` needs `DELETE`, `SET NULL` needs `UPDATE`, and even `NO ACTION` needs the check to run against a table the app role may only append to. Beyond the grants, the intent settles it — an audit row describing an account must survive that account. The column is a plain uuid, and referential integrity here is the application's job, not the database's.
+
+### 4.7 DDL extract — this is what the T-02 migration shipped
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS citext;
@@ -389,14 +420,31 @@ CREATE INDEX idx_rt_user_active ON refresh_tokens (user_id)
 CREATE INDEX idx_rt_family ON refresh_tokens (family_id);
 
 -- Row-level security: a second, independent barrier behind repository scoping.
+-- FORCE is not optional. Postgres exempts a table's OWNER from its own policies,
+-- and gymak_app both runs the migration and serves the application, so without
+-- FORCE the policies below are decorative: enabled, present, and protecting nothing.
 ALTER TABLE profiles       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles       FORCE  ROW LEVEL SECURITY;
 ALTER TABLE refresh_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE refresh_tokens FORCE  ROW LEVEL SECURITY;
+
+-- NULLIF is not cosmetic either. After a transaction ends, the reset value of
+-- app.user_id is the empty string, not NULL, and ''::uuid is a hard Postgres
+-- error. NULLIF makes an unset variable fail closed instead of raising.
 CREATE POLICY p_profiles_owner ON profiles
-  USING (user_id = current_setting('app.user_id', true)::uuid);
+  USING (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
+CREATE POLICY p_refresh_tokens_owner ON refresh_tokens
+  USING (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
+
+-- audit_log has no RLS. Its protection is the grant: INSERT and SELECT only.
+-- users, user_identities and password_reset_codes have no RLS either: all three
+-- are read in pre-auth flows where app.user_id does not exist yet.
 
 -- The application must connect as a NON-superuser role, asserted at startup,
 -- otherwise RLS is silently bypassed and this whole barrier is decorative.
 ```
+
+> **The role split is still owed (A-12).** Today `gymak_app` holds `GRANT ALL ON SCHEMA public`, which is full DDL: it could `DROP POLICY` or `ALTER TABLE ... NO FORCE` on itself. The correct shape is two roles — `gymak_migrator` owns the schema and runs Alembic, `gymak_app` gets DML only — and with that split `FORCE` becomes unnecessary rather than load-bearing. This must land before any production data exists. Tracked in §A.5.
 
 ## 5 · API contract
 
@@ -421,7 +469,7 @@ CREATE POLICY p_profiles_owner ON profiles
 | POST   | /auth/logout-all           | bearer      | Revoke every family and bump token_version               | P1-FR-007   |
 | POST   | /auth/password/forgot      | none        | Email a single-use reset code (format per P1-ADR-07)     | P1-FR-008   |
 | POST   | /auth/password/verify-code | none        | Exchange a valid code for a reset token                  | P1-FR-008   |
-| POST   | /auth/password/reset       | reset token | Set a new password, revoke all sessions                  | P1-FR-008   |
+| POST   | /auth/password/reset       | reset token | Set a new password, revoke all sessions                  | P1-FR-008   |
 | GET    | /auth/me                   | bearer      | Current user plus onboarding state — the app's boot call | P1-FR-010   |
 | POST   | /profile                   | bearer      | Complete onboarding, once                                | P1-FR-010   |
 | GET    | /profile                   | bearer      | Read the profile                                         | P1-FR-011   |
@@ -443,11 +491,11 @@ POST /api/v1/auth/register
             "onboarding_completed": false } }
 ```
 
-|               |                                                                                                                                                                                                                                                                                                                                                                                                           |
-|---------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| | |
+|---|---|
 | **Behaviour** | Lowercase and trim the email. If a live user already holds it, return `409 EMAIL_ALREADY_REGISTERED` — this endpoint is the one place account enumeration is accepted, because a registration form that silently succeeds on a taken email is worse for the user than the disclosure is for security. Hash the password, insert the user, issue the token pair, write `user.registered` to the audit log. |
-| **Errors**    | 409 EMAIL_ALREADY_REGISTERED · 422 VALIDATION_ERROR · 429 RATE_LIMIT_EXCEEDED                                                                                                                                                                                                                                                                                                                             |
-| **Note**      | No profile row is created here. The client sees `onboarding_completed: false` and routes into onboarding.                                                                                                                                                                                                                                                                                                 |
+| **Errors**    | 409 EMAIL_ALREADY_REGISTERED · 422 VALIDATION_ERROR · 429 RATE_LIMIT_EXCEEDED (with `Retry-After`) |
+| **Note**      | No profile row is created here. The client sees `onboarding_completed: false` and routes into onboarding. |
 
 ### 5.3 POST /auth/login
 
@@ -456,11 +504,11 @@ POST /api/v1/auth/register
 --- 200 OK ---  // identical shape to register
 ```
 
-|               |                                                                                                                                                                                                                                                                                                                                                                                     |
-|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| | |
+|---|---|
 | **Behaviour** | One generic failure for every cause: wrong password, unknown email, social-only account with no password, soft-deleted account. All return `401 INVALID_CREDENTIALS` with the same body and, as far as practical, similar timing — always run the hash verification against a dummy hash when the user is not found, so the response time does not reveal whether the email exists. |
-| **Inactive**  | `is_active = false` is the one exception: `403 ACCOUNT_DISABLED`, because the user needs to know why.                                                                                                                                                                                                                                                                               |
-| **Audit**     | `user.login_succeeded` or `user.login_failed` (with `actor_user_id` null when the email is unknown).                                                                                                                                                                                                                                                                                |
+| **Inactive**  | `is_active = false` is the one exception: `403 ACCOUNT_DISABLED`, because the user needs to know why. |
+| **Audit**     | `user.login_succeeded` or `user.login_failed` (with `actor_user_id` null when the email is unknown). |
 
 ### 5.4 POST /auth/social/{provider}
 
@@ -515,7 +563,7 @@ POST /api/v1/auth/password/forgot
 // Send the mail on a background task so a slow provider cannot be used as an oracle.
 
 POST /api/v1/auth/password/verify-code
-{ "email": "nabil@example.com", "code": "480913" }
+{ "email": "nabil@example.com", "code": "K7M2QXR4" }   // 8 chars, P1-ADR-07 alphabet
 --- 200 OK ---
 { "reset_token": "rt_7f2b...", "expires_in": 300 }
 // Opaque, single-purpose, single-use, 5 minutes. Not a JWT, not a session token.
@@ -546,14 +594,14 @@ POST /api/v1/auth/password/reset
 
 **Enforcement, all of it in SQL — implement in T-07 (error codes are already defined in `app/core/errors.py`):**
 
-| Case                                     | Rule                                                                                                                                                                     | Error                                     |
-|------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------|
-| Expired code                             | `expires_at > now()` belongs in the `WHERE` clause of the lookup, not in a Python check after the row is fetched. A fetch-then-compare leaves a window where a row that the database would have rejected is still acted upon. | `422 RESET_CODE_EXPIRED`                  |
-| Wrong or unknown code                    | No row matched the keyed digest                                                                                                                                          | `422 RESET_CODE_INVALID`                  |
-| Sixth attempt                            | `attempt_count` incremented on **every** failed verify — including a failure caused by expiry — and the code is dead once it passes the configured maximum                  | `429 RESET_CODE_ATTEMPTS_EXCEEDED`        |
-| Concurrent redemption                    | Set `consumed_at` in the **same** `UPDATE ... WHERE consumed_at IS NULL` that redeems the code, and treat a zero-row result as failure. Two simultaneous redemptions must leave exactly one winner; a read-then-write cannot guarantee that. | `422 RESET_CODE_INVALID`                  |
-| Spent or unknown reset token             | The 5-minute token from `verify-code`, hashed at rest, single use                                                                                                         | `401 RESET_TOKEN_INVALID`                 |
-| Per-email or per-IP limit tripped        | See the oracle note above                                                                                                                                                | `429 RATE_LIMIT_EXCEEDED` + `Retry-After` |
+| Case                              | Rule                                                                                                                                                                     | Error                                     |
+|-----------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------|
+| Expired code                      | `expires_at > now()` belongs in the `WHERE` clause of the lookup, not in a Python check after the row is fetched. A fetch-then-compare leaves a window where a row that the database would have rejected is still acted upon. | `422 RESET_CODE_EXPIRED`                  |
+| Wrong or unknown code             | No row matched the keyed digest                                                                                                                                           | `422 RESET_CODE_INVALID`                  |
+| Sixth attempt                     | `attempt_count` incremented on **every** failed verify — including a failure caused by expiry — and the code is dead once it passes the configured maximum                  | `429 RESET_CODE_ATTEMPTS_EXCEEDED`        |
+| Concurrent redemption             | Set `consumed_at` in the **same** `UPDATE ... WHERE consumed_at IS NULL` that redeems the code, and treat a zero-row result as failure. Two simultaneous redemptions must leave exactly one winner; a read-then-write cannot guarantee that. | `422 RESET_CODE_INVALID`                  |
+| Spent or unknown reset token      | The 5-minute token from `verify-code`, hashed at rest, single use                                                                                                         | `401 RESET_TOKEN_INVALID`                 |
+| Per-email or per-IP limit tripped | See the oracle note above                                                                                                                                                | `429 RATE_LIMIT_EXCEEDED` + `Retry-After` |
 
 ### 5.7 GET /auth/me — the app's boot call
 
@@ -582,11 +630,11 @@ POST /api/v1/profile
   "derived": { "age": 18 } }   // age is computed, never stored
 ```
 
-|                 |                                                                                                                                                                                                                                                                                                                                                    |
-|-----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Idempotency** | A profile already exists → `409 PROFILE_ALREADY_EXISTS`. Editing afterwards goes through `PATCH`. This is the "captured once" rule the spec asks for, enforced by the primary key rather than by application politeness.                                                                                                                           |
+| | |
+|---|---|
+| **Idempotency** | A profile already exists → `409 PROFILE_ALREADY_EXISTS`. Editing afterwards goes through `PATCH`. This is the "captured once" rule the spec asks for, enforced by the primary key rather than by application politeness. |
 | **Safety**      | P1-SAF-001: if the age implied by `birth_date` is under 18 and `goal == 'lose'`, reject with `422 GOAL_NOT_PERMITTED_FOR_MINOR` and a `detail` naming `maintain` and `gain` as the permitted values. This check lives in a pure function, is unit-tested against the boundary (17 years 364 days, exactly 18), and is re-checked on every `PATCH`. |
-| **Audit**       | `profile.created`                                                                                                                                                                                                                                                                                                                                  |
+| **Audit**       | `profile.created` |
 
 ### 5.9 PATCH /profile — the Settings surface
 
@@ -626,14 +674,14 @@ Sets `deleted_at`, bumps `token_version`, revokes every refresh family, audits `
 | Memory cost      | 65536 KiB (64 MiB)   | Per SRS §2.7                                                                                 |
 | Time cost        | 3 iterations         |                                                                                              |
 | Parallelism      | 4                    |                                                                                              |
-| Test override    | memory 8 MiB, time 1 | Only under `ENV=test`, or the suite takes minutes. Never in any other environment.           |
+| Test override    | memory 8 MiB, time 1 | Only under `ENV=test`, or the suite takes minutes. Never in any other environment, and a test asserts that the production values are the default. |
 | Rehash on verify | Yes                  | If `hasher.check_needs_rehash()`, transparently upgrade the stored hash on successful login. |
 
 ### 6.2 Password policy
 
 - Minimum 8 characters, maximum 128. Length is the only composition rule.
 - No forced symbols, no forced digits, no forced mixed case. Those rules produce `Password1!` and nothing safer.
-- Reject a small denylist of obvious values (the top ~1000 common passwords, plus the local part of the user's own email).
+- Reject the local part of the user's own email, and a denylist of common passwords. **(A-07)** The list is not to be invented or hand-written: use the top 1000 entries of SecLists — `https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10-million-password-list-top-1000.txt` — vendored as a static asset with its source and retrieval date recorded in a comment. A fabricated list is worse than a short one, because it looks complete.
 - Unicode is normalised NFKC before hashing so an Arabic or emoji password verifies consistently across devices.
 - The password is never written to a log, an error message, an audit entry, or a response body. A test greps the log output of the whole suite to prove it.
 
@@ -641,12 +689,16 @@ Sets `deleted_at`, bumps `token_version`, revokes every refresh family, audits `
 
 | Token       | Lifetime     | Form and storage                                                                                                                                                                                                                         |
 |-------------|--------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Access      | 15 minutes   | JWT, EdDSA (Ed25519). Private key from the environment, never in the repository. Claims: `sub`, `tv`, `jti`, `iat`, `exp`, `aud: "gymak-app"`. Verified on every request, including that `tv` equals the user's current `token_version`. |
+| Access      | 15 minutes   | JWT, EdDSA (Ed25519), with the algorithm pinned on verify. Private key from the environment, never in the repository. Claims: `sub`, `tv`, `jti`, `iat`, `exp`, `aud: "gymak-app"`. Verified on every request, including that `tv` equals the user's current `token_version`. |
 | Refresh     | 60 days      | 32 random bytes, URL-safe base64. Stored as SHA-256 only. Single use.                                                                                                                                                                    |
 | Reset       | 5 minutes    | Opaque random, hashed at rest, single use, accepted only by `/auth/password/reset`.                                                                                                                                                      |
 | Firebase ID | provider-set | Accepted only at `/auth/social/{provider}`, verified by the admin SDK, never stored.                                                                                                                                                     |
 
 Generate the Ed25519 keypair once with a documented command, keep the private key in the environment, and expose the public key at a `/.well-known`-style path only if a second service ever needs to verify tokens. In Phase 1 nothing does, so do not build it.
+
+`config.py` accepts either a raw PEM or a base64-wrapped one and normalises `\n` escapes, multiline values and CRLF. **A structurally valid but cryptographically broken key still fails late** — the real `load_pem_private_key` parse belongs at startup. Tracked in §A.5.
+
+> **Never let a key reach a log line.** `pydantic.ValidationError` embeds `input_value='...'` in its message text, so a bad key would otherwise be printed to the terminal and written to the crash log — exactly what §6.5 forbids. Settings construction raises a purpose-built `ConfigurationError` that names the offending field and never carries its value, including for pydantic's own missing-field errors.
 
 ### 6.4 Rate limits
 
@@ -654,7 +706,7 @@ Generate the Ed25519 keypair once with a documented command, keep the private ke
 |----------------------------|---------------------------------------|-----------------------------------|
 | /auth/register             | 5 / hour                              | IP                                |
 | /auth/login                | 10 / 15 min, then exponential backoff | IP + email, whichever trips first |
-| /auth/social/*            | 20 / hour                             | IP                                |
+| /auth/social/*             | 20 / hour                             | IP                                |
 | /auth/refresh              | 60 / hour                             | user                              |
 | /auth/password/forgot      | 3 / hour per email, 10 / hour per IP  | email, IP                         |
 | /auth/password/verify-code | 10 / hour                             | IP + email                        |
@@ -662,15 +714,18 @@ Generate the Ed25519 keypair once with a documented command, keep the private ke
 
 Every 429 carries a `Retry-After` header. Implement behind one decorator or dependency so a limit is a single line at the route. Redis if it is already running; otherwise an in-memory fixed-window limiter is acceptable for Phase 1, with a comment marking it as single-instance only.
 
+> **`Retry-After` is a Phase 1 requirement, not a nicety (A-06).** `RateLimited` already carries a tested `retry_after_seconds`, but the exception handler in `core/errors.py` does not yet emit the header, so §6.4, §7.3 and the §11.1 security row are all currently unmet in a way no existing test detects. T-04 owns the fix, and `app/core/errors.py` is in its file list for that reason.
+
 ### 6.5 Other required controls
 
 - **Authorisation at the repository layer.** Every user-scoped repository function takes `user_id` as its first parameter. Route handlers never build a query.
-- **Row-level security** as the second barrier, with the app connecting as a non-superuser role and asserting that at startup.
+- **Row-level security** as the second barrier, with `FORCE` enabled per §4.7, the app connecting as a non-superuser role and asserting that at startup. Until the §A.5 role split lands, `gymak_app` still holds DDL on its own tables — the barrier is real but self-revocable.
+- **Test that a control prevents, not that it functions.** RLS was enabled, policied, and protecting nothing for a full task because the tests only asserted that a permitted read succeeded. An RLS test that can never fail is decoration.
 - **Generic 404 over 403** for another user's resource, so the API does not confirm that the record exists.
-- **CORS** is closed by default. Allow only the local development origins and, later, the app's own domain. No `*`.
+- **CORS** is closed by default and configurable. Allow only the local development origins and, later, the app's own domain. No `*`.
 - **Security headers** on every response: `HSTS`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`.
-- **Structured logging with an allowlist serialiser.** Fields never logged: `password`, `new_password`, `id_token`, `access_token`, `refresh_token`, `reset_token`, `code`, `weight_kg`, `height_cm`, `birth_date`. A careless log statement must not be able to emit them.
-- **No secret in the repository.** `.env` is gitignored, `.env.example` is committed with placeholder values, and the Firebase service-account JSON is provided as an environment variable or a mounted file, never committed.
+- **Structured logging with an allowlist serialiser.** Fields never logged: `password`, `new_password`, `id_token`, `access_token`, `refresh_token`, `reset_token`, `code`, `weight_kg`, `height_cm`, `birth_date`. A careless log statement must not be able to emit them — and neither must a configuration error, per §6.3.
+- **No secret in the repository.** `.env` and `.coverage` are gitignored, `.env.example` is committed with placeholder values, and the Firebase service-account JSON is provided as an environment variable or a mounted file, never committed. Secrets are never pasted into a chat window either; anything that was is already burned and must be regenerated.
 
 ## 7 · Validation and error contract
 
@@ -679,7 +734,7 @@ Every 429 carries a `Retry-After` header. Implement behind one decorator or depe
 | Field            | Rule                                                                                                   | Error code                                         |
 |------------------|--------------------------------------------------------------------------------------------------------|----------------------------------------------------|
 | email            | RFC-shaped, ≤254 chars, lowercased and trimmed, MX not checked                                         | VALIDATION_ERROR / `email:INVALID`                 |
-| password         | 8–128 chars, not in the denylist, NFKC-normalised                                                      | VALIDATION_ERROR / `password:TOO_SHORT|TOO_COMMON` |
+| password         | 8–128 chars, not in the denylist, NFKC-normalised                                                      | VALIDATION_ERROR / `password:TOO_SHORT\|TOO_COMMON` |
 | name             | 2–60 chars after trimming; Arabic and Latin letters, spaces, hyphens, apostrophes; no digits, no emoji | VALIDATION_ERROR / `name:INVALID`                  |
 | gender           | `male` \| `female`                                                                                     | VALIDATION_ERROR / `gender:NOT_ALLOWED`            |
 | birth_date       | ISO date, age between 13 and 100, not in the future                                                    | VALIDATION_ERROR / `birth_date:OUT_OF_RANGE`       |
@@ -737,8 +792,8 @@ Content-Type: application/problem+json
 | 422  | GOAL_NOT_PERMITTED_FOR_MINOR | P1-SAF-001                                                                           |
 | 422  | RESET_CODE_INVALID           | Wrong or unknown code                                                                |
 | 422  | RESET_CODE_EXPIRED           | Past 10 minutes                                                                      |
-| 429  | RATE_LIMIT_EXCEEDED          | With `Retry-After`                                                                   |
-| 429  | RESET_CODE_ATTEMPTS_EXCEEDED | Sixth wrong attempt; the code is burned                                              |
+| 429  | RATE_LIMIT_EXCEEDED          | With `Retry-After` — see A-06                                                        |
+| 429  | RESET_CODE_ATTEMPTS_EXCEEDED | Sixth wrong attempt; the code is burned. With `Retry-After`                           |
 | 500  | INTERNAL_ERROR               | Never leaks a stack trace or a database message to the client                        |
 | 503  | UPSTREAM_UNAVAILABLE         | Firebase or the email provider is unreachable                                        |
 
@@ -749,12 +804,12 @@ Two consoles, one afternoon. Do this before T-06, and record every value in `.en
 ### 8.1 Firebase console
 
 1.  Reuse the existing project `gymak-2d4ab`. Do not create a second one.
-2.  Authentication → Sign-in method → enable **Google** and **Facebook**. Leave Email/Password **disabled**: our backend owns that path (P1-ADR-01).
+2.  Authentication → Sign-in method → enable **Google** (and **Facebook** only if decision 13.1.2 says yes). Leave Email/Password **disabled**: our backend owns that path (P1-ADR-01).
 3.  Register the Android app with package name `com.gymak.app`, and the iOS app with the matching bundle identifier. Download `google-services.json` and `GoogleService-Info.plist`.
 4.  Add the SHA-1 **and** SHA-256 fingerprints of both the debug keystore and the EAS release keystore. Google Sign-In on Android fails with an opaque error when a fingerprint is missing, and it is the single most common half-day lost in this setup.
 5.  Project settings → Service accounts → generate a private key. This JSON is what `firebase-admin` uses on the backend. It goes in the environment, never in git.
 
-### 8.2 Facebook developer console
+### 8.2 Facebook developer console — only if decision 13.1.2 is yes
 
 1.  Create an app of type **Consumer**, add the Facebook Login product.
 2.  Copy the App ID and App Secret into Firebase's Facebook provider settings.
@@ -764,7 +819,7 @@ Two consoles, one afternoon. Do this before T-06, and record every value in `.en
 
 ### 8.3 Client and server wiring
 
-```http
+```bash
 # backend/.env
 FIREBASE_CREDENTIALS_JSON='{"type":"service_account","project_id":"gymak-2d4ab",...}'
 FIREBASE_PROJECT_ID=gymak-2d4ab
@@ -781,7 +836,7 @@ EXPO_PUBLIC_API_BASE_URL=http://192.168.1.x:8000/api/v1
 
 > **Two things that will otherwise cost a day each**
 >
-> **1.** Google Sign-In and Facebook Login both need native code, so they do **not** work in Expo Go. Build a development build (`eas build --profile development`) before starting T-13. **2.** On a physical device, `localhost` is the phone, not the laptop. Use the laptop's LAN address in `EXPO_PUBLIC_API_BASE_URL` and bind uvicorn to `0.0.0.0`.
+> **1.** Google Sign-In and Facebook Login both need native code, so they do **not** work in Expo Go. Build a development build (`eas build --profile development`) before starting T-13. **2.** On a physical device, `localhost` is the phone, not the laptop. Use the laptop's LAN address in `EXPO_PUBLIC_API_BASE_URL` and bind uvicorn to `0.0.0.0`. The single-login-screen milestone after T-04 exists to hit this second problem early, while it is the only moving part.
 
 ## 9 · Mobile application
 
@@ -796,7 +851,7 @@ EXPO_PUBLIC_API_BASE_URL=http://192.168.1.x:8000/api/v1
 | Token storage  | `expo-secure-store`                                                                        | Keychain / Keystore. **Never** AsyncStorage for a token.                                                                 |
 | Forms          | react-hook-form + zod                                                                      | The zod schemas mirror §7.1 field-for-field                                                                              |
 | HTTP           | axios with one interceptor                                                                 | Single place for the bearer header and the refresh dance                                                                 |
-| i18n           | `i18n-js` + `expo-localization`                                                            | Arabic default, English second, RTL via `I18nManager`                                                                    |
+| i18n           | `i18n-js` + `expo-localization`                                                             | Arabic default, English second, RTL via `I18nManager`                                                                    |
 | Social sign-in | `@react-native-firebase/auth` or `@react-native-google-signin` + `react-native-fbsdk-next` | Requires a development build; not available in Expo Go                                                                   |
 
 ### 9.2 Navigation and the session gate
@@ -805,7 +860,7 @@ EXPO_PUBLIC_API_BASE_URL=http://192.168.1.x:8000/api/v1
 app/_layout.tsx
   └─ providers: QueryClient, i18n, Theme, SessionProvider
      └─ on mount: read tokens from SecureStore → if present call GET /auth/me
-        ├─ no token or 401                 → redirect to (auth)/welcome
+        ├─ no token or 401                   → redirect to (auth)/welcome
         ├─ token, onboarding_completed=false → redirect to (onboarding)/step-1
         └─ token, onboarding_completed=true  → redirect to (app)/home
 
@@ -816,22 +871,22 @@ signed-in user — it is the single most noticeable polish bug in an auth flow.
 ### 9.3 Screen inventory
 
 | #  | Screen               | Content and behaviour                                                                                                                                                                  |
-|-----|----------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1   | welcome              | Logo on sand background, one line of positioning copy, **Create account** (primary), **Log in** (secondary), then a divider and the two social buttons. Language toggle in the corner. |
-| 2   | register             | Email, password, confirm password, password-strength hint, terms checkbox with links, submit. Inline field errors below each input, never in an alert dialog.                          |
-| 3   | login                | Email, password with a reveal toggle, "Forgot password?" link, submit, social buttons.                                                                                                 |
-| 4   | forgot-password      | Email only. On 202, navigate to verify-code carrying the email. Copy states plainly that a code has been sent if the account exists.                                                   |
-| 5   | verify-code          | **Eight**-box OTP input (P1-ADR-07) with auto-advance, paste support, and auto-submit on the eighth character. Uppercases as the user types; rejects characters outside the §7.1 alphabet rather than accepting and failing server-side. A visible countdown, and a resend button that is disabled until the countdown ends. |
-| 6   | new-password         | New password, confirm. On success, show a confirmation and route to login — the user must sign in again, because every session was just revoked.                                       |
-| 7   | onboarding step 1    | Name and gender                                                                                                                                                                        |
-| 8   | onboarding step 2    | Birth date — a native date picker or three selects. Never a free-text field.                                                                                                           |
-| 9   | onboarding step 3    | Height and weight, with a unit toggle that converts live                                                                                                                               |
-| 10  | onboarding step 4    | Goal — three cards: lose, gain, maintain. Under 18, `lose` is disabled with a short explanation shown inline, not hidden.                                                              |
-| 11  | onboarding step 5    | Experience level — three cards with one clarifying line each ("trained consistently for under 6 months")                                                                               |
-| 12  | onboarding step 6    | Units and language                                                                                                                                                                     |
-| 13  | onboarding review    | Everything collected, each row tappable to jump back, then one **Finish** that makes the single POST /profile call                                                                     |
-| 14  | home \[placeholder\] | "Welcome, {name}" and an explicit "your training plan arrives in the next phase" panel. No fake charts, no dummy workout cards.                                                        |
-| 15  | settings             | Reads GET /profile, edits through PATCH. Sections: profile, preferences (units, language), account (log out, log out of all devices, delete account with a typed confirmation).        |
+|----|----------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1  | welcome              | Logo on sand background, one line of positioning copy, **Create account** (primary), **Log in** (secondary), then a divider and the social buttons. Language toggle in the corner.      |
+| 2  | register             | Email, password, confirm password, password-strength hint, terms checkbox with links, submit. Inline field errors below each input, never in an alert dialog.                          |
+| 3  | login                | Email, password with a reveal toggle, "Forgot password?" link, submit, social buttons.                                                                                                 |
+| 4  | forgot-password      | Email only. On 202, navigate to verify-code carrying the email. Copy states plainly that a code has been sent if the account exists.                                                   |
+| 5  | verify-code          | **Eight**-box OTP input (P1-ADR-07) with auto-advance, paste support, and auto-submit on the eighth character. Uppercases as the user types; rejects characters outside the §7.1 alphabet rather than accepting and failing server-side. A visible countdown, and a resend button that is disabled until the countdown ends. |
+| 6  | new-password         | New password, confirm. On success, show a confirmation and route to login — the user must sign in again, because every session was just revoked.                                       |
+| 7  | onboarding step 1    | Name and gender                                                                                                                                                                        |
+| 8  | onboarding step 2    | Birth date — a native date picker or three selects. Never a free-text field.                                                                                                           |
+| 9  | onboarding step 3    | Height and weight, with a unit toggle that converts live                                                                                                                               |
+| 10 | onboarding step 4    | Goal — three cards: lose, gain, maintain. Under 18, `lose` is disabled with a short explanation shown inline, not hidden.                                                              |
+| 11 | onboarding step 5    | Experience level — three cards with one clarifying line each ("trained consistently for under 6 months")                                                                               |
+| 12 | onboarding step 6    | Units and language                                                                                                                                                                     |
+| 13 | onboarding review    | Everything collected, each row tappable to jump back, then one **Finish** that makes the single POST /profile call                                                                     |
+| 14 | home [placeholder]   | "Welcome, {name}" and an explicit "your training plan arrives in the next phase" panel. No fake charts, no dummy workout cards.                                                        |
+| 15 | settings             | Reads GET /profile, edits through PATCH. Sections: profile, preferences (units, language), account (log out, log out of all devices, delete account with a typed confirmation).        |
 
 > **Onboarding progress is held on the device, not on the server**
 >
@@ -880,81 +935,81 @@ The full Gymak palette. Copy this into `src/theme/tokens.ts` verbatim. Do not in
 
 ### 10.1 Rust scale — accent and strength
 
-| 50       | 100      | 200      | 300      | 400      | 500 · core   | 600      | 700      | 800      | 900      |
-|----------|----------|----------|----------|----------|--------------|----------|----------|----------|----------|
+| 50      | 100     | 200     | 300     | 400     | 500 · core  | 600     | 700     | 800     | 900     |
+|---------|---------|---------|---------|---------|-------------|---------|---------|---------|---------|
 | #FBEDE6 | #F6D3C3 | #EDA98A | #E2835A | #D5642F | **#C4491F** | #A63C18 | #832E12 | #5E210D | #3B1508 |
 
 ### 10.2 Sand scale — warm neutral
 
-| 50       | 100      | 200      | 300      | 400      | 500      | 600      | 700      | 800      | 900      | 950      |
-|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
+| 50      | 100     | 200     | 300     | 400     | 500     | 600     | 700     | 800     | 900     | 950     |
+|---------|---------|---------|---------|---------|---------|---------|---------|---------|---------|---------|
 | #FFFDF8 | #FAF6EF | #F3ECE0 | #E7DDCC | #D3C7B4 | #B4A896 | #8A8175 | #5A5249 | #35302B | #211D1B | #17130F |
 
 ### 10.3 Semantic tokens
 
 #### Light (default)
 
-| Token              | Value                                  |
-|--------------------|----------------------------------------|
-| bg                 | sand-100 · #FAF6EF                    |
-| surface            | sand-50 · #FFFDF8                     |
-| surfaceVariant     | sand-200 · #F3ECE0                    |
-| card               | sand-50                                |
-| input              | sand-50                                |
-| border             | sand-300 · #E7DDCC                    |
-| divider            | sand-200                               |
-| overlay            | rgba(33,29,27,.45)                     |
-| skeleton           | sand-200                               |
-| primary            | rust-500 · #C4491F                    |
-| primaryPressed     | rust-700 · #832E12                    |
-| primaryDisabled    | rust-200 · #EDA98A                    |
-| primaryContainer   | rust-50 · #FBEDE6                     |
-| onPrimary          | #FFF6EF                               |
-| secondary          | sand-700 · #5A5249                    |
-| secondaryContainer | sand-200                               |
-| textPrimary        | sand-900 · #211D1B                    |
-| textSecondary      | sand-700 · #5A5249                    |
-| textMuted          | sand-600 · #8A8175                    |
-| textDisabled       | sand-500 · #B4A896                    |
-| textInverse        | sand-50                                |
-| textLink           | rust-600 · #A63C18                    |
+| Token              | Value                                |
+|--------------------|--------------------------------------|
+| bg                 | sand-100 · #FAF6EF                   |
+| surface            | sand-50 · #FFFDF8                    |
+| surfaceVariant     | sand-200 · #F3ECE0                   |
+| card               | sand-50                              |
+| input              | sand-50                              |
+| border             | sand-300 · #E7DDCC                   |
+| divider            | sand-200                             |
+| overlay            | rgba(33,29,27,.45)                   |
+| skeleton           | sand-200                             |
+| primary            | rust-500 · #C4491F                   |
+| primaryPressed     | rust-700 · #832E12                   |
+| primaryDisabled    | rust-200 · #EDA98A                   |
+| primaryContainer   | rust-50 · #FBEDE6                    |
+| onPrimary          | #FFF6EF                              |
+| secondary          | sand-700 · #5A5249                   |
+| secondaryContainer | sand-200                             |
+| textPrimary        | sand-900 · #211D1B                   |
+| textSecondary      | sand-700 · #5A5249                   |
+| textMuted          | sand-600 · #8A8175                   |
+| textDisabled       | sand-500 · #B4A896                   |
+| textInverse        | sand-50                              |
+| textLink           | rust-600 · #A63C18                   |
 | success            | #3B7A4E · bg #DCEBDF                 |
-| warning            | #C98A2E · text #9A6410 · bg #F7E9CE |
+| warning            | #C98A2E · text #9A6410 · bg #F7E9CE  |
 | error              | #B23A2E · bg #F5DCD8                 |
 | info               | #3E7691 · bg #DAE7EE                 |
-| shadowColor        | rgba(53,41,30,.10)                     |
+| shadowColor        | rgba(53,41,30,.10)                   |
 
 #### Dark — warm charcoal, never #000
 
-| Token              | Value                                  |
-|--------------------|----------------------------------------|
-| bg                 | sand-900 · #211D1B                    |
-| surface            | #2A2523                               |
-| surfaceVariant     | #332D2A                               |
-| card               | #2A2523                               |
-| input              | #332D2A                               |
-| border             | #403A35                               |
-| divider            | #35302B                               |
-| overlay            | rgba(0,0,0,.55)                        |
-| skeleton           | #332D2A                               |
-| primary            | rust-400 · #D5642F                    |
-| primaryPressed     | #EA8A5C                               |
-| primaryDisabled    | #6E463A                               |
-| primaryContainer   | #4A2418                               |
-| onPrimary          | #1A1310                               |
-| secondary          | sand-400 · #D3C7B4                    |
-| secondaryContainer | #332D2A                               |
-| textPrimary        | #EDE6DA                               |
-| textSecondary      | #B5AB9E                               |
-| textMuted          | #8A8175                               |
-| textDisabled       | #6A625A                               |
-| textInverse        | sand-900                               |
-| textLink           | #E8703F                               |
+| Token              | Value                                |
+|--------------------|--------------------------------------|
+| bg                 | sand-900 · #211D1B                   |
+| surface            | #2A2523                              |
+| surfaceVariant     | #332D2A                              |
+| card               | #2A2523                              |
+| input              | #332D2A                              |
+| border             | #403A35                              |
+| divider            | #35302B                              |
+| overlay            | rgba(0,0,0,.55)                      |
+| skeleton           | #332D2A                              |
+| primary            | rust-400 · #D5642F                   |
+| primaryPressed     | #EA8A5C                              |
+| primaryDisabled    | #6E463A                              |
+| primaryContainer   | #4A2418                              |
+| onPrimary          | #1A1310                              |
+| secondary          | sand-400 · #D3C7B4                   |
+| secondaryContainer | #332D2A                              |
+| textPrimary        | #EDE6DA                              |
+| textSecondary      | #B5AB9E                              |
+| textMuted          | #8A8175                              |
+| textDisabled       | #6A625A                              |
+| textInverse        | sand-900                             |
+| textLink           | #E8703F                              |
 | success            | #6FBF87 · bg #24361F                 |
-| warning            | #E0A94B · text #E8B968 · bg #3A2E17 |
+| warning            | #E0A94B · text #E8B968 · bg #3A2E17  |
 | error              | #E88579 · bg #3A1F1A                 |
 | info               | #79A8BE · bg #1E2E36                 |
-| shadowColor        | rgba(0,0,0,.35)                        |
+| shadowColor        | rgba(0,0,0,.35)                      |
 
 Also carried forward for later phases, defined now so nothing gets improvised later: `chart1..5` = #C4491F, #C98A2E, #3E7691, #3B7A4E, #B4A896 (dark: #E8703F, #E0A94B, #79A8BE, #6FBF87, #B4A896) · `ringWorkout` rust · `ringCalories` #C98A2E · `ringWeight` #3E7691 · `streak`/`prBadge` rust · `navBg` sand-50 / #2A2523 · `fab` primary · `aiCoachBg` #EDE7F0 / #2C2635 · `premiumBg` #F3E9D4 / #352C1B.
 
@@ -989,7 +1044,7 @@ Latin: Inter. Arabic: IBM Plex Sans Arabic or Cairo — one Arabic face, loaded 
 
 | Component    | Props and required states                                                                                                                                                                                       |
 |--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| GButton      | `variant: primary | secondary | ghost | social`, `loading`, `disabled`, `fullWidth`, `icon`. Height 52, radius 12. Loading keeps the label and its width. Disabled uses `primaryDisabled`, never opacity alone. |
+| GButton      | `variant: primary \| secondary \| ghost \| social`, `loading`, `disabled`, `fullWidth`, `icon`. Height 52, radius 12. Loading keeps the label and its width. Disabled uses `primaryDisabled`, never opacity alone. |
 | GTextInput   | `label`, `error`, `secure` with a reveal toggle, `keyboardType`, `autoComplete`. Focus ring in rust; error state in `error` with the message below.                                                             |
 | GOtpInput    | **8** boxes (P1-ADR-07), auto-advance, backspace to the previous box, paste distributes across boxes, auto-submit on complete, LTR even in Arabic. Alphanumeric, not digits-only: uppercase on entry, `autoCapitalize="characters"`, and silently drop characters outside the §7.1 alphabet on paste. |
 | GSelectCard  | Title, optional description, `selected`, `disabled` with a reason line. Selected = rust border plus `primaryContainer` fill, not a tiny radio dot.                                                              |
@@ -1013,13 +1068,19 @@ Latin: Inter. Arabic: IBM Plex Sans Arabic or Cairo — one Arabic face, loaded 
 
 | Level       | Must cover                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 |-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Unit        | Argon2id hash and verify · rehash-on-verify · JWT sign, verify, expiry, wrong audience, stale `tv` · refresh token generation and hashing · OTP generation and constant-time comparison · every validator in §7.1 · the P1-SAF-001 age function at its boundaries (17y 364d, exactly 18, 18y 1d) · imperial conversion round-trip                                                                                                                                                                                                                                       |
-| Integration | Register happy path · duplicate email · login success and each failure cause · refresh rotation · **refresh reuse revokes the family** · logout · logout-all invalidates access tokens through `token_version` · the full reset flow · expired code · sixth wrong attempt · reset revokes all sessions · social sign-in creating a user · social sign-in linking to an existing verified email · provider-claim mismatch rejected · profile create, duplicate create, read, patch · minor blocked from `lose` on both POST and PATCH · account deletion revoking access |
-| Security    | Generated cross-tenant matrix: user B attempts every user-scoped endpoint with user A's identifiers and receives 404, not 403 · no endpoint returns `password_hash` · a log-capture test asserting no password, token, code, or health field appears in any log line across the whole suite · rate limits return 429 with `Retry-After`                                                                                                                                                                                                                                 |
+| Unit        | Argon2id hash and verify · rehash-on-verify · production Argon2 cost is the default · JWT sign, verify, expiry, wrong audience, tampered signature, stale `tv`, pinned algorithm · refresh token generation and hashing · reset-code generation: the alphabet never emits `I`, `O`, `0` or `1`, and the same code under two different peppers yields different digests · constant-time comparison · every validator in §7.1 · the P1-SAF-001 age function at its boundaries (17y 364d, exactly 18, 18y 1d) · imperial conversion round-trip |
+| Integration | Register happy path · duplicate email · login success and each failure cause · refresh rotation · **refresh reuse revokes the family** · logout · logout-all invalidates access tokens through `token_version` · the full reset flow · expired code · sixth wrong attempt · concurrent double redemption leaves exactly one winner · reset revokes all sessions · social sign-in creating a user · social sign-in linking to an existing verified email · provider-claim mismatch rejected · profile create, duplicate create, read, patch · minor blocked from `lose` on both POST and PATCH · account deletion revoking access |
+| Security    | Generated cross-tenant matrix: user B attempts every user-scoped endpoint with user A's identifiers and receives 404, not 403 · **RLS tests must fail when the policy is removed** — a passing RLS test that only proves a permitted read succeeds proves nothing · no endpoint returns `password_hash` · a log-capture test asserting no password, token, code, key material, or health field appears in any log line across the whole suite · rate limits return 429 with `Retry-After` · an unregistered address can still trip the per-email 429 |
 | Migration   | Alembic upgrade then downgrade runs clean against a seeded database                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | Contract    | `openapi.json` regenerated and identical to the committed copy                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 Fixtures use `testcontainers` for a real PostgreSQL — SQLite would not honour `citext`, the CHECK constraints, or RLS, so testing against it would test nothing that matters here.
+
+> **Coverage must be greenlet-aware, or the gate is measuring the wrong thing (A-08)**
+>
+> `coverage.py` does not follow greenlet switches, and SQLAlchemy's async layer runs on greenlets. Every line after the first database `await` was being reported as unexecuted. With `concurrency = ["thread", "greenlet"]` in `pyproject.toml` and no test changes at all, `dependencies.py` went 73% → 100% and `user_repo.py` 88% → 100%. This setting is a precondition of the §11.3 gates, not an optimisation: the T-01 and T-02 numbers recorded before it were understated.
+>
+> The suite uses a session-scoped event loop to avoid `Event loop is closed`. That has a cost: if flakiness appears in a later task, this is the first thing to suspect.
 
 ### 11.2 Mobile verification — manual, on a physical device
 
@@ -1042,9 +1103,9 @@ Fixtures use `testcontainers` for a real PostgreSQL — SQLite would not honour 
 
 > **Phase 1 is complete when every one of these is true. Not before.**
 >
-> 1.  All fifteen P1-FR requirements in §1.1 are implemented and demonstrated, not described.
-> 2.  Backend coverage ≥ 80% overall and ≥ 95% in `core/security.py`, `auth_service`, and `password_reset_service`.
-> 3.  The cross-tenant matrix passes with zero findings.
+> 1.  Every P1-FR requirement in §1.1 is implemented and demonstrated, not described. (P1-FR-004 only if decision 13.1.2 is yes.)
+> 2.  Backend coverage ≥ 80% overall and ≥ 95% in `core/security.py`, `auth_service`, and `password_reset_service` — measured with greenlet concurrency enabled per A-08.
+> 3.  The cross-tenant matrix passes with zero findings, and the RLS tests fail when a policy is dropped.
 > 4.  The refresh-reuse test passes, and the audit log shows both `token.reuse_detected` and `token.family_revoked`.
 > 5.  Alembic migrates forward and backward cleanly.
 > 6.  `openapi.json` is committed and matches the code.
@@ -1052,32 +1113,40 @@ Fixtures use `testcontainers` for a real PostgreSQL — SQLite would not honour 
 > 8.  All fourteen manual device checks in §11.2 pass on a real Android device.
 > 9.  The nothing-out-of-scope rule in §1.2 holds: no workout, nutrition, AI, or payment code exists in the repository.
 > 10. `README.md` lets a fresh clone run the backend and the app from zero in under ten minutes.
+> 11. Every item in §A.5 is either closed or explicitly re-deferred with a reason.
 
 ## 12 · Task pack
 
 Fourteen tasks in dependency order. Each block is written to be pasted into Claude Code or Cursor **on its own**, with this document available in the context. Do not paste two at once. After each one, run the tests, read the diff, and only then continue.
 
+> **Two operational rules learned the hard way**
+>
+> **Never write a task prompt from memory.** Paste the actual text from this document. A T-02 prompt written from recollection produced Phase 2 tables and cost a whole task. **Never commit while the agent is running** — it sees the working tree change under it, assumes a hook, and starts second-guessing its own diff.
+
 #### Preamble — paste once at the start of every session
 
 ```text
-You are working on Gymak, Phase 1 only. GYMAK-P1-SPEC-001 is your single source of
-truth; if this document and your instinct disagree, the document wins.
+You are working on Gymak, Phase 1 only. GYMAK-P1-SPEC-001 v1.1 is your single source
+of truth; if this document and your instinct disagree, the document wins. Ignore any
+copy of this spec dated v1.0.
 
 Hard rules:
 - Implement exactly one task, the one I name. Nothing beyond it.
 - Touch only the files that task lists. If you believe another file must change,
-  stop and tell me why instead of changing it.
+  stop and tell me why instead of changing it. Standing exception: pyproject.toml
+  and tests/** are always in scope.
 - Build nothing from the section 1.2 out-of-scope list, not even a stub or a TODO.
 - Add no dependency outside Appendix A.2 without asking.
 - If a required detail is genuinely missing from the spec, ask one specific
   question and wait. Do not invent a column, an endpoint, or a library.
+- Report first what the current implementation actually does — state it explicitly
+  before changing anything.
 - Finish by listing: files touched, what changed, how to verify, and anything you
-  deliberately did not do.
+  deliberately did not do. Paste real output with exit codes for ruff, mypy
+  --strict, and pytest. Do not commit.
 ```
 
-### T-01 · Backend skeleton
-
-#### Task T-01
+### T-01 · Backend skeleton — **complete**
 
 ```text
 Create the FastAPI skeleton for Gymak per spec section 3.
@@ -1088,32 +1157,34 @@ routers/health.py, tests/conftest.py, backend/README.md
 
 Requirements:
 - App factory in main.py, /api/v1 prefix, CORS closed except localhost dev
-  origins, security headers middleware per spec 6.5.
+  origins and configurable, security headers middleware per spec 6.5.
 - config.py with pydantic-settings covering every variable in Appendix A.1;
-  the app must fail at startup if a required one is missing.
+  the app must fail at startup if a required one is missing, and no error message
+  may ever contain a key value (spec 6.3).
 - Async SQLAlchemy 2.0 engine and session factory; a helper that sets
-  app.user_id per session for RLS.
+  app.user_id per session for RLS. The helper must refuse to run under
+  AUTOCOMMIT, where set_config has no transaction to be local to.
 - core/errors.py: an AppError base carrying code/status/title/detail/errors, a
   subclass per code in spec 7.3, and one exception handler that emits
   application/problem+json with a trace_id.
 - core/logging.py: structured JSON logs with the redaction allowlist from 6.5.
 - core/ids.py: uuid7().
 - GET /api/v1/health returning status plus a real database round-trip.
-- conftest.py with a testcontainers PostgreSQL fixture and an httpx async client.
+- conftest.py with a testcontainers PostgreSQL fixture, a session-scoped event
+  loop, a real generated Ed25519 keypair per run, and an httpx async client.
 - Argon2 params reduced only when ENV=test.
 
-Done when: pytest runs green, /health returns 200 against a live database, and a
-deliberately raised AppError produces the exact envelope in spec 7.2.
+Done when: pytest collects and passes a non-zero number of tests, /health returns
+200 against a live database, and a deliberately raised AppError produces the exact
+envelope in spec 7.2.
 ```
 
-### T-02 · Schema and migration
-
-#### Task T-02
+### T-02 · Schema and migration — **complete**
 
 ```text
 Implement the Phase 1 data model per spec section 4, all six tables.
 
-Files: backend/app/models/*.py, backend/alembic/** , backend/tests/unit/test_models.py
+Files: backend/app/models/*.py, backend/alembic/**, backend/tests/unit/test_models.py
 
 Requirements:
 - SQLAlchemy 2.0 declarative models for users, user_identities, profiles,
@@ -1121,32 +1192,35 @@ Requirements:
   every CHECK, every UNIQUE, every partial index, the citext email, UUID v7 keys
   passed from Python.
 - One Alembic migration creating all of it, including the citext extension, the
-  updated_at trigger, RLS enablement and policies from 4.7.
+  updated_at trigger, and the RLS block in 4.7 exactly as written: ENABLE and
+  FORCE on profiles and refresh_tokens, an owner policy on each using the NULLIF
+  guard, no RLS on the other four tables.
 - A startup assertion that the database role is not a superuser.
-- Grant the app role INSERT and SELECT only on audit_log.
+- Grant the app role INSERT and SELECT only on audit_log, and give
+  audit_log.actor_user_id no foreign key.
 
 Do not add a column that is not in section 4. Do not create a workout, exercise,
 nutrition, or subscription table.
 
-Done when: upgrade then downgrade runs clean, and a test proves each CHECK
-constraint rejects an out-of-range value (height 99, age 12, unknown goal).
+Done when: upgrade then downgrade runs clean, a test proves each CHECK constraint
+rejects an out-of-range value (height 99, age 12, unknown goal), and the RLS tests
+fail if the policy is dropped.
 ```
 
-### T-03 · Security primitives
-
-#### Task T-03
+### T-03 · Security primitives — **complete**
 
 ```text
 Implement core/security.py per spec section 6, with tests first.
 
 Files: backend/app/core/security.py, core/dependencies.py, core/rate_limit.py,
-backend/tests/unit/test_security.py
+backend/app/repositories/user_repo.py, backend/tests/unit/test_security.py
 
 Requirements:
 - Argon2id hash/verify at the 6.1 parameters, with rehash-on-verify.
 - Password policy validation per 6.2 including NFKC normalisation and the common
   password denylist.
-- Ed25519 JWT sign and verify; claims sub, tv, jti, iat, exp, aud per 6.3.
+- Ed25519 JWT sign and verify with the algorithm pinned; claims sub, tv, jti, iat,
+  exp, aud per 6.3.
 - Opaque token generation (32 bytes, urlsafe) plus SHA-256 hashing for refresh
   and reset tokens.
 - Reset-code generation and hashing per P1-ADR-07 — NOT the superseded 6-digit,
@@ -1154,30 +1228,35 @@ Requirements:
   consumes, so getting it wrong here propagates: 8 characters from
   ABCDEFGHJKLMNPQRSTUVWXYZ234567 via secrets.choice, stored as HMAC-SHA256 keyed
   with RESET_CODE_PEPPER (required config, fails fast at import, never persisted),
-  compared with compare_digest. Add RESET_CODE_PEPPER to config.py.
+  compared with compare_digest.
 - get_current_user dependency: parse bearer, verify signature, audience, expiry,
   and that tv matches the user's current token_version; load the user; reject
-  inactive or soft-deleted.
+  inactive or soft-deleted. user_repo gets get_by_id and nothing else yet.
 - A rate-limit dependency taking a limit, a window, and a key strategy.
 
-Tests must cover: wrong audience, expired token, tampered signature, stale tv,
-timing-neutral OTP comparison, and the boundary of every password rule. Also:
-that the same code under two different peppers produces different digests, and
-that the generated alphabet never emits I, O, 0 or 1.
+Tests must cover: wrong audience, expired token, tampered signature, stale tv, and
+the boundary of every password rule. Also: that the same code under two different
+peppers produces different digests, and that the generated alphabet never emits
+I, O, 0 or 1.
 
-Done when: coverage of this module is at or above 95%.
+For constant-time comparison, do not assert on wall-clock timing — it is flaky.
+Assert on the AST that the comparison function is a single return statement
+calling secrets.compare_digest with no If/For/While/Try/BoolOp/Compare inside it,
+so any added length check or early return fails the test.
+
+Done when: coverage of this module is at or above 95%, measured with
+concurrency = ["thread", "greenlet"] per section 11.1.
 ```
 
-### T-04 · Register and login
-
-#### Task T-04
+### T-04 · Register and login — **next**
 
 ```text
 Implement registration and login per spec 5.2 and 5.3.
 
 Files: app/schemas/auth.py, app/repositories/user_repo.py, token_repo.py,
 audit_repo.py, app/services/auth_service.py, audit_service.py,
-app/routers/auth.py, tests/integration/test_auth_register_login.py
+app/routers/auth.py, app/core/errors.py,
+tests/integration/test_auth_register_login.py
 
 Requirements:
 - POST /auth/register and POST /auth/login with the exact request and response
@@ -1189,15 +1268,19 @@ Requirements:
 - Refresh token issued with a new family_id, stored hashed only.
 - Audit user.registered, user.login_succeeded, user.login_failed.
 - Rate limits per 6.4.
-- Repository functions own all queries; the router builds none.
+- core/errors.py: emit the Retry-After header on every 429. RateLimited already
+  carries a tested retry_after_seconds; the handler does not yet write the
+  header, so 6.4, 7.3 and the 11.1 security row are unmet today and no existing
+  test catches it. This is the only change permitted in errors.py.
+- Repository functions own all queries; the router builds none, and every
+  user-scoped function takes user_id first.
 
 Done when: the integration tests cover both happy paths and every failure cause,
-and no response body anywhere contains password_hash.
+a 429 response carries Retry-After with a correct value, and no response body
+anywhere contains password_hash.
 ```
 
 ### T-05 · Refresh rotation and logout
-
-#### Task T-05
 
 ```text
 Implement refresh rotation, logout, and logout-all per spec 5.5.
@@ -1223,10 +1306,9 @@ Done when: that test passes and the audit rows are present.
 
 ### T-06 · Social sign-in
 
-#### Task T-06
-
 ```text
-Implement Google and Facebook sign-in per spec 5.4 and 8.3.
+Implement Google sign-in per spec 5.4 and 8.3 (and Facebook only if decision
+13.1.2 is yes).
 
 Files: app/integrations/firebase.py, app/services/social_service.py,
 app/repositories/user_repo.py, app/schemas/auth.py, app/routers/auth.py,
@@ -1234,7 +1316,7 @@ tests/integration/test_social_auth.py
 
 Requirements:
 - firebase-admin initialised once from FIREBASE_CREDENTIALS_JSON.
-- POST /auth/social/{provider}, provider restricted to google and facebook,
+- POST /auth/social/{provider}, provider restricted to the enabled set,
   anything else 400 PROVIDER_NOT_SUPPORTED.
 - Execute the six steps of 5.4 in that order, including the
   firebase.sign_in_provider claim check against the path provider.
@@ -1253,8 +1335,6 @@ influences the outcome.
 ```
 
 ### T-07 · Password reset
-
-#### Task T-07
 
 ```text
 Implement the three-call password reset per spec 5.6 and ADR-05.
@@ -1282,7 +1362,8 @@ READ P1-ADR-07 BEFORE STARTING. It amends 4.5 and 5.6 and supersedes the origina
 reset-code design. Do not implement 6-digit SHA-256 codes salted with user_id:
 that is recoverable offline in under a second by anyone who can read the table,
 and because /auth/password/forgot is unauthenticated it means takeover of
-arbitrary accounts, not only accounts mid-reset. Specifically:
+arbitrary accounts, not only accounts mid-reset. The primitive already exists in
+core/security.py from T-03 — consume it, do not rewrite it. Specifically:
 - Codes are 8 characters from ABCDEFGHJKLMNPQRSTUVWXYZ234567 via secrets.choice,
   uppercased on input.
 - Stored as HMAC-SHA256 keyed with RESET_CODE_PEPPER, which is required config
@@ -1304,8 +1385,6 @@ trip the per-email 429.
 ```
 
 ### T-08 · Profile and onboarding
-
-#### Task T-08
 
 ```text
 Implement the profile endpoints per spec 5.7, 5.8, 5.9 and validation 7.1.
@@ -1333,8 +1412,6 @@ unreachable through any of these routes.
 
 ### T-09 · Account deletion, hardening, contract
 
-#### Task T-09
-
 ```text
 Close out the backend: deletion, the cross-tenant matrix, and the OpenAPI export.
 
@@ -1347,19 +1424,21 @@ Requirements:
   bumps token_version, revokes every family, audits.
 - A cross-tenant test that enumerates the route table and, for every user-scoped
   route, attempts it as user B with user A's identifiers, asserting 404.
-- A log-capture test asserting that no password, token, reset code, birth date,
-  height, or weight appears in any log line produced by the full suite.
+- A log-capture test asserting that no password, token, reset code, key material,
+  birth date, height, or weight appears in any log line produced by the full
+  suite.
 - scripts/export_openapi.py writing openapi.json, plus a test that fails if the
   committed file differs from the generated one.
+- Add ruff format --check to the gate alongside ruff check, and format the
+  repository once in a commit that changes nothing else. The project currently
+  gates on lint only, so the codebase is not format-consistent.
 - README: setup, migrations, running tests, and every environment variable.
 
-Done when: coverage gates in 11.3 are met and every item in that list except the
-mobile ones is true.
+Done when: the coverage gates in 11.3 are met with greenlet concurrency enabled
+and every item in that list except the mobile ones is true.
 ```
 
 ### T-10 · Mobile scaffold, theme, i18n
-
-#### Task T-10
 
 ```text
 Create the Expo application shell per spec 9.1, 9.2, 9.6 and section 10.
@@ -1388,8 +1467,6 @@ translation files.
 
 ### T-11 · Component library
 
-#### Task T-11
-
 ```text
 Build the eight primitives in spec 10.5, to the contracts and states in 9.4
 and the accessibility floor in 10.6.
@@ -1403,8 +1480,10 @@ Requirements:
 - Every variant and state from 10.5 exists and is visibly distinct.
 - 48dp minimum targets, accessibilityRole and accessibilityLabel on everything
   touchable, error text announced and not colour-only.
-- GOtpInput: auto-advance, backspace to previous, paste distribution,
-  auto-submit, forced LTR.
+- GOtpInput: eight boxes, alphanumeric not digits-only, uppercase on entry,
+  characters outside the 7.1 alphabet dropped on paste, auto-advance, backspace
+  to previous, paste distribution, auto-submit on the eighth character, forced
+  LTR.
 - A dev-only gallery screen rendering every component in every state, so I can
   review them all at once. Mark it clearly as dev-only.
 
@@ -1413,9 +1492,7 @@ Done when: the gallery renders correctly in light, dark, Arabic, and English.
 
 ### T-12 · API client and session
 
-#### Task T-12
-
-```bash
+```text
 Implement the API layer and session handling per spec 9.1, 9.2 and 9.5.
 
 Files: mobile/src/api/client.ts, auth.ts, profile.ts, errors.ts,
@@ -1437,13 +1514,11 @@ Requirements:
 - zod schemas mirroring the 7.1 field rules exactly, including the imperial
   conversion helpers with a round-trip test.
 
-Done when: the twelfth and sixth manual checks in 11.2 both pass — silent refresh
-works, and a corrupted refresh token produces a clean logout with no loop.
+Done when: manual checks 5 and 6 in 11.2 both pass — silent refresh works, and a
+corrupted refresh token produces a clean logout with no loop.
 ```
 
 ### T-13 · Auth screens
-
-#### Task T-13
 
 ```text
 Build the six auth screens, numbers 1 to 6 in spec 9.3.
@@ -1458,10 +1533,11 @@ Requirements:
 - Every state in 9.4: submitting, field error with focus on the first failure,
   request-error banner localised from the code, offline detection before submit,
   a Retry-After countdown on 429, and immediate navigation on success.
-- Google and Facebook buttons calling the Firebase client SDK, then posting the
-  ID token to /auth/social/{provider}; is_new_user decides onboarding versus home.
-- verify-code: countdown, resend disabled until it ends, auto-submit on the sixth
-  digit.
+- Social buttons calling the Firebase client SDK, then posting the ID token to
+  /auth/social/{provider}; is_new_user decides onboarding versus home.
+- verify-code: countdown, resend disabled until it ends, auto-submit on the
+  eighth character, uppercase normalisation, ambiguous characters rejected on
+  paste per P1-ADR-07.
 - new-password success routes to login with a message explaining that all devices
   were signed out.
 
@@ -1472,8 +1548,6 @@ Done when: manual checks 1, 7, 8, 9, 10, and 11 in 11.2 pass on a device.
 ```
 
 ### T-14 · Onboarding, home, settings
-
-#### Task T-14
 
 ```text
 Build screens 7 to 15 in spec 9.3: onboarding, home placeholder, settings.
@@ -1498,28 +1572,26 @@ Done when: manual checks 2, 3, 4, 12, 13, and 14 in 11.2 pass, and Phase 1's
 definition of done in 11.3 is fully satisfied.
 ```
 
-## 13 · Decisions to confirm before T-01
+## 13 · Decisions to confirm
 
-Nine questions. Seven have a recommended answer already applied in this document, so silence means consent and the build can start. Two genuinely need Nabil.
+### 13.1 Open
 
-### 13.1 Needs an answer
-
-| Question                                                   | Context and recommendation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-|------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **1. Add `weight_kg` and `activity_level` to onboarding?** | The field list in the brief has height but not weight or activity. Every calorie calculation in the SRS (Mifflin-St Jeor → TDEE) needs both, and asking for them later means interrupting a user who already thinks onboarding is finished. **Recommendation: include both now**, two extra taps at the moment the user is already answering questions. Weight also becomes the first point of the body-weight trend the adaptation loop needs. Both are marked \[confirm\] in §4.3 and can be removed cleanly if the answer is no. |
-| **2. Is Facebook login worth Phase 1?**                    | It carries real cost: a second developer console, App Review with a privacy-policy URL, a live-mode requirement, and the no-email-returned edge case. Google alone typically covers the large majority of sign-ins in this market. **Recommendation: ship Google in Phase 1 and hold Facebook** — the schema and the endpoint already accommodate it, so adding it later is a configuration change plus one button, not a redesign. If Facebook must ship now, T-06 grows by roughly a day of console work.                         |
+| Question                             | Context and recommendation                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+|--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **1. `weight_kg` and `activity_level` in onboarding?** | **Resolved: yes.** Both are needed by every calorie calculation in the SRS (Mifflin-St Jeor → TDEE), and asking later means interrupting a user who already believes onboarding is finished. Both columns shipped in T-02 and the `[confirm]` markers are removed from §4.3. |
+| **2. Is Facebook login worth Phase 1?** | **Still open. Must be answered before T-06.** It carries real cost: a second developer console, App Review with a privacy-policy URL, a live-mode requirement, and the no-email-returned edge case. Google alone typically covers the large majority of sign-ins in this market. **Recommendation: ship Google in Phase 1 and hold Facebook.** The schema already allows the provider value and the endpoint already takes it, so adding it later is configuration plus one button, not a redesign. If it is held, P1-FR-004 moves to Phase 2 and `react-native-fbsdk-next` stays out of Appendix A.2. If it must ship now, T-06 grows by roughly a day of console work. |
 
 ### 13.2 Decided unless overruled
 
 | Question                                    | Answer applied                                                                                                                                                                                                                                                            |
 |---------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 3\. Firebase's role                         | Identity broker for social sign-in only; no Firestore. See P1-ADR-01, which is the single most consequential assumption in this document — read it before starting.                                                                                                       |
-| 4\. Email provider                          | Resend for the developer experience, Brevo if a free tier matters more. Either sits behind the §ADR-05 interface, so the choice can change in one file. Sending domain: `gymak.fitness`, with SPF, DKIM, and DMARC configured before T-07 or the codes will land in spam. |
-| 5\. Minimum age                             | 13 to hold an account, 18 to select a weight-loss goal. Consistent with SRS SAF-007 and with app-store expectations.                                                                                                                                                      |
-| 6\. Gender options                          | `male` and `female` only, because the field exists to select a metabolic formula, not to describe identity. The onboarding copy should say so in one short line, which is both honest and better received than an unexplained binary.                                     |
-| 7\. Default language                        | Arabic, with the device locale respected on first launch if it is English.                                                                                                                                                                                                |
-| 8\. Hosting                                 | Local Docker Compose for Phase 1, staging after T-09. Railway or Fly.io with managed Postgres, per the SRS deployment baseline. Do not spend time on production infrastructure until the auth flow works end to end on a device.                                          |
-| 9\. Email verification for password signups | Deferred. The account works unverified in Phase 1; the column exists and is set correctly for social sign-ins, so turning verification on later is a flow addition, not a migration.                                                                                      |
+| 3. Firebase's role                          | Identity broker for social sign-in only; no Firestore. See P1-ADR-01, which is the single most consequential assumption in this document — read it before starting.                                                                                                       |
+| 4. Email provider                           | Resend for the developer experience, Brevo if a free tier matters more. Either sits behind the ADR-05 interface, so the choice can change in one file. Sending domain: `gymak.fitness`, with SPF, DKIM, and DMARC configured before T-07 or the codes will land in spam. |
+| 5. Minimum age                              | 13 to hold an account, 18 to select a weight-loss goal. Consistent with SRS SAF-007 and with app-store expectations.                                                                                                                                                      |
+| 6. Gender options                           | `male` and `female` only, because the field exists to select a metabolic formula, not to describe identity. The onboarding copy should say so in one short line, which is both honest and better received than an unexplained binary.                                     |
+| 7. Default language                         | Arabic, with the device locale respected on first launch if it is English.                                                                                                                                                                                                |
+| 8. Hosting                                  | Local Docker Compose for Phase 1, staging after T-09. Railway or Fly.io with managed Postgres, per the SRS deployment baseline. **Verify before committing to a provider:** the startup assertion rejects a superuser connection, and §4.7 needs `CREATE EXTENSION citext` and a non-superuser application role. A managed provider that only hands out a superuser-equivalent role, or forbids the extension, is disqualified — check this before T-09, not during it. Do not spend time on production infrastructure until the auth flow works end to end on a device. |
+| 9. Email verification for password signups  | Deferred. The account works unverified in Phase 1; the column exists and is set correctly for social sign-ins, so turning verification on later is a flow addition, not a migration.                                                                                       |
 
 ## Appendix A
 
@@ -1565,11 +1637,13 @@ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=
 EXPO_PUBLIC_FACEBOOK_APP_ID=
 ```
 
+Both key variables accept a raw PEM or a base64-wrapped one, with `\n` escapes, multiline values and CRLF normalised. An empty string is rejected, and the error names the field and distinguishes "not base64" from "base64 but contains no PEM" — without ever printing the value.
+
 ### A.2 Permitted dependencies
 
 #### Backend
 
-fastapi · uvicorn\[standard\] · pydantic · pydantic-settings · sqlalchemy\[asyncio\] · asyncpg · alembic · argon2-cffi · pyjwt\[crypto\] (or python-jose) · cryptography · uuid6 · firebase-admin · httpx · python-multipart · structlog · slowapi or a hand-rolled limiter · redis (optional) · **dev:** pytest · pytest-asyncio · pytest-cov · testcontainers\[postgresql\] · ruff · mypy
+fastapi · uvicorn[standard] · pydantic · pydantic-settings · sqlalchemy[asyncio] · asyncpg · alembic · argon2-cffi · pyjwt[crypto] (or python-jose) · cryptography · uuid6 · firebase-admin · httpx · python-multipart · structlog · slowapi or a hand-rolled limiter · redis (optional) · **dev:** pytest · pytest-asyncio · pytest-cov · testcontainers[postgresql] · ruff · mypy
 
 #### Mobile
 
@@ -1579,8 +1653,8 @@ Nothing else without asking. In particular: no UI kit, no component library, no 
 
 ### A.3 Deliberately deferred — the answer is "next phase", not "never"
 
-|                                         |                                 |                                      |                                                   |
-|-----------------------------------------|---------------------------------|--------------------------------------|---------------------------------------------------|
+| | | | |
+|---|---|---|---|
 | Email verification for password signups | Phase 2                         | Active-sessions screen               | Phase 2 (the data is already captured)            |
 | Apple Sign-In                           | Before the first iOS submission | Physical purge job                   | Phase 2                                           |
 | Change email flow                       | Phase 2                         | Two-factor authentication            | Unscheduled                                       |
@@ -1589,14 +1663,30 @@ Nothing else without asking. In particular: no UI kit, no component library, no 
 
 ### A.4 Glossary
 
-|                          |                                                                                                                                                                        |
-|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Token family**         | A rotation chain of refresh tokens sharing one `family_id`. One family is one device session; revoking the family signs that device out.                               |
-| **Reuse detection**      | Presenting an already-consumed refresh token. Treated as theft: the whole family dies immediately.                                                                     |
+| | |
+|---|---|
+| **Token family**         | A rotation chain of refresh tokens sharing one `family_id`. One family is one device session; revoking the family signs that device out. |
+| **Reuse detection**      | Presenting an already-consumed refresh token. Treated as theft: the whole family dies immediately. |
+| **Pepper**               | A secret key held outside the database and mixed into a hash. Unlike a salt, it is not stored beside the value it protects, so reading the table is not enough to attack the hash. |
 | **token_version**        | A counter on the user row, mirrored in every access token. Incrementing it invalidates every outstanding access token at once without a database read on the hot path. |
-| **Onboarding completed** | A profile row exists with every required field satisfied. The single flag the client uses to choose its navigation stack.                                              |
-| **Repository scoping**   | Every data-access function takes `user_id` as its first parameter, so a route handler cannot construct an unscoped query even by accident.                             |
-| **RLS**                  | PostgreSQL row-level security. The second, independent barrier behind repository scoping. Requires a non-superuser role to be effective.                               |
-| **Problem+json**         | The single error envelope in §7.2. `code` is the contract; `title` and `detail` are for developers only.                                                               |
+| **Onboarding completed** | A profile row exists with every required field satisfied. The single flag the client uses to choose its navigation stack. |
+| **Repository scoping**   | Every data-access function takes `user_id` as its first parameter, so a route handler cannot construct an unscoped query even by accident. |
+| **RLS**                  | PostgreSQL row-level security. The second, independent barrier behind repository scoping. Requires a non-superuser role, and `FORCE`, to be effective. |
+| **Problem+json**         | The single error envelope in §7.2. `code` is the contract; `title` and `detail` are for developers only. |
 
-**End of GYMAK-P1-SPEC-001 v1.0** · Phase 1 only: authentication, session management, and one-time profile capture. Nothing in §1.2 gets built. When §11.3 is fully satisfied, baseline this document at v1.1 with whatever reality changed, and only then open Phase 2.
+### A.5 Carried-forward technical debt (A-10)
+
+Recorded here so it stops living only in chat history. Each item has an owning task. §11.3 item 11 requires every one of these to be closed or explicitly re-deferred before Phase 1 baselines at v1.2.
+
+| # | Item                                                                                                                                                                                                 | Owner | Severity |
+|---|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------|----------|
+| 1 | **Role split.** `gymak_app` holds `GRANT ALL ON SCHEMA public`, so it can revoke its own RLS. Split into `gymak_migrator` (owner, runs Alembic) and `gymak_app` (DML only); `FORCE` then becomes belt-and-braces rather than the barrier itself. | T-09  | **Must land before any production data** |
+| 2 | **Password denylist.** The vendored list has 313 entries, not the ~1000 §6.2 asks for. Replace with the SecLists top-1000 file named in §6.2 — one static-asset change, no code change.                 | T-09  | Low      |
+| 3 | **Real key parse at startup.** `config.py` normalises and shape-checks the PEM but does not call `load_pem_private_key`, so a structurally valid, cryptographically broken key still fails at first sign. | T-09  | Medium   |
+| 4 | **`ruff format`.** The gate runs `ruff check` only, so formatting drifts and the agent occasionally reformats unrelated files as a side effect. Add `--check` to the gate and format once.               | T-09  | Low      |
+| 5 | **Session-scoped event loop.** Chosen to avoid `Event loop is closed`. If flakiness appears in T-04 or T-05, suspect this first.                                                                        | —     | Watch    |
+| 6 | **Managed-host compatibility.** Confirm the chosen provider allows a non-superuser application role and `CREATE EXTENSION citext` before committing to it — see §13.2 item 8.                            | T-09  | Medium   |
+
+---
+
+**End of GYMAK-P1-SPEC-001 v1.1** · Phase 1 only: authentication, session management, and one-time profile capture. Nothing in §1.2 gets built. When §11.3 is fully satisfied, baseline this document at v1.2 with whatever reality changed, and only then open Phase 2.
