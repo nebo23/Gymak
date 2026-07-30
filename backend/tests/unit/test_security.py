@@ -960,7 +960,14 @@ def test_the_app_fails_at_import_when_reset_code_pepper_is_absent(tmp_path: Path
     )
     assert code != 0, f"import unexpectedly succeeded without a pepper:\n{output}"
     assert "RESET_CODE_PEPPER" in output
-    assert "validation error" in output.lower() or "Field required" in output
+    # config.py's Settings.__init__ catches pydantic's own ValidationError at the
+    # construction boundary and re-raises ConfigurationError naming only the field --
+    # never pydantic's raw wording, whose `errors()` embeds every other field supplied
+    # to Settings() (secrets included) as `input` on a missing-field error. See
+    # test_config.py for the leak this replaces.
+    assert "ConfigurationError" in output
+    assert "validation error" not in output.lower()
+    assert "Field required" not in output
 
 
 def test_the_app_fails_at_import_when_reset_code_pepper_is_blank(tmp_path: Path) -> None:

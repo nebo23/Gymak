@@ -3,9 +3,9 @@ from __future__ import annotations
 import base64
 import binascii
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import ValidationInfo, field_validator, model_validator
+from pydantic import ValidationError, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PEM_BEGIN = "-----BEGIN "
@@ -84,6 +84,53 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    def __init__(self, **values: Any) -> None:
+        """Construction is the one place every field in Appendix A.1 converges, so it is
+        also the one place a leak-safe rewrite protects every field -- present and
+        future -- rather than needing a bespoke validator each time a new secret is
+        added.
+
+        A field that is simply absent never reaches a field_validator: there is no value
+        to validate, so `_accept_raw_or_base64_pem` and `_reject_blank_pepper` below
+        never run, and pydantic raises its own ValidationError instead. That error's
+        `errors()` entry for a `missing` field carries `input` set to the *entire*
+        mapping passed to Settings() -- every other field, secrets included -- because
+        there is no single offending value to report in its place. Whether
+        JWT_PRIVATE_KEY_PEM or RESET_CODE_PEPPER happens to fall inside that dump then
+        depends only on which other field is missing and the declared field order, and
+        on where pydantic's own repr truncation lands -- not a control. Verified against
+        pydantic 2.13, not assumed: see test_config.py.
+
+        `errors(include_input=False, include_context=False)` is used rather than reading
+        `.errors()` and simply not touching `input` -- so a later edit that carelessly
+        adds `error["input"]` to the message below hits a KeyError instead of a leak.
+
+        Re-raised after this handler exits, not with `from None` alone: `from None` only
+        suppresses the chain from *display* (traceback, logging), but the original
+        ValidationError -- and the secrets it carries -- remains reachable via
+        `__context__` for any caller that inspects it directly. Building the replacement
+        inside the handler and raising it once control has left the `except` block
+        leaves `__context__` genuinely `None`, not merely hidden.
+        """
+        configuration_error: ConfigurationError | None = None
+        try:
+            super().__init__(**values)
+        except ValidationError as exc:
+            field_names = sorted(
+                {
+                    ".".join(str(part) for part in error["loc"]) or "<root>"
+                    for error in exc.errors(include_input=False, include_context=False)
+                }
+            )
+            configuration_error = ConfigurationError(
+                "Settings failed to construct because of a problem with: "
+                + ", ".join(field_names)
+                + ". Check that every required variable in Appendix A.1 is set and "
+                "well-formed. No value is included in this message, deliberately."
+            )
+        if configuration_error is not None:
+            raise configuration_error
+
     ENV: Literal["development", "test", "staging", "production"] = "development"
 
     DATABASE_URL: str
@@ -157,7 +204,12 @@ class Settings(BaseSettings):
             self.ARGON2_MEMORY_KIB = 8192
             self.ARGON2_TIME_COST = 1
         if self.EMAIL_BACKEND == "http" and not self.EMAIL_API_KEY:
-            raise ValueError("EMAIL_API_KEY is required when EMAIL_BACKEND=http")
+            # ConfigurationError, not ValueError, for the same reason as the field
+            # validators above and __init__'s handler: this is a model_validator, so a
+            # ValueError here would be collected into a ValidationError whose errors()
+            # embeds every other field supplied to Settings() -- JWT_PRIVATE_KEY_PEM and
+            # RESET_CODE_PEPPER included -- as `input` on the resulting error entry.
+            raise ConfigurationError("EMAIL_API_KEY is required when EMAIL_BACKEND=http")
         return self
 
     @property
@@ -167,9 +219,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    # Required fields have no default because pydantic-settings sources them from the
-    # environment/.env at runtime, which mypy cannot see from this zero-argument call.
-    return Settings()  # type: ignore[call-arg]
+    return Settings()
 
 
 settings = get_settings()

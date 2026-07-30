@@ -10,7 +10,7 @@ import base64
 import textwrap
 
 import pytest
-from pydantic_settings import SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from app.config import ConfigurationError, Settings
 
@@ -26,11 +26,39 @@ _REAL_PEM = (
 
 
 class _HermeticSettings(Settings):
-    """Identical to Settings -- every field and both validators are inherited -- but with
-    dotenv loading switched off, so a developer's real backend/.env cannot change what
-    these tests prove."""
+    """Identical to Settings -- every field and both validators are inherited -- but reads
+    from constructor kwargs only.
+
+    `env_file=None` alone disables just the *dotenv* source; pydantic-settings still
+    consults `os.environ` as a separate, higher-priority source regardless of env_file, so
+    on its own it does nothing about a value already sitting in the process environment.
+    Under the real suite, conftest.py's `pytest_configure` seeds `os.environ` with every
+    required variable -- including a real `DATABASE_URL` pointing at the test container --
+    before any test module is imported. A test that only omitted a field from its kwargs
+    was therefore still getting that field from the environment: the field was never
+    actually missing, `Settings()` constructed successfully, and a test asserting
+    `pytest.raises(ConfigurationError)` failed with "DID NOT RAISE" -- passing only under
+    `--noconftest`, which is the one invocation where that seeding never happens (verified;
+    this is not hypothetical -- see the two tests below).
+
+    `settings_customise_sources` drops the env and dotenv sources entirely, so omitting a
+    kwarg here means the field is genuinely absent from every source Settings() would
+    consult, regardless of what conftest.py, a real backend/.env, or the developer's own
+    shell happens to have set.
+    """
 
     model_config = SettingsConfigDict(env_file=None, extra="ignore")
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (init_settings,)
 
 
 def _settings(
@@ -154,3 +182,75 @@ def test_error_never_echoes_the_key_material() -> None:
     message = str(exc_info.value)
     assert "SUPERSECRETKEYBODY" not in message
     assert secret_ish not in message
+
+
+# --- the Settings() construction boundary: a *missing* field must not leak either ------
+#
+# Unlike the cases above, a field that is simply absent never reaches a field_validator
+# -- there is no value to run one on -- so none of the ConfigurationErrors above are what
+# fires. Left alone, pydantic raises its own ValidationError, and that error's `errors()`
+# entry for the missing field carries `input` set to the *entire* mapping passed to
+# Settings(), not just the missing field: every other field supplied, secrets included.
+# Whether a real key stayed out of that dump used to depend on which other field was
+# missing and on pydantic's own truncation of a long repr in str() -- an accident of
+# field order and string length, not a control.
+
+
+def test_missing_field_alongside_a_real_key_does_not_leak_it() -> None:
+    """JWT_PRIVATE_KEY_PEM and RESET_CODE_PEPPER are both present and well-formed;
+    DATABASE_URL is the one omitted. Checks the exception *type*, not only message
+    content: reordering the fields declared on Settings cannot turn this back into a raw
+    ValidationError, so the test does not depend on today's field order to catch a
+    regression. It also checks for the untruncated key material directly rather than for
+    a truncated string, so it does not depend on pydantic's repr-truncation length either.
+    """
+    pepper = "super-secret-pepper-do-not-leak-me"
+    with pytest.raises(ConfigurationError) as exc_info:
+        _HermeticSettings(  # type: ignore[call-arg]
+            JWT_PRIVATE_KEY_PEM=_REAL_PEM,
+            JWT_PUBLIC_KEY_PEM=_REAL_PEM,
+            RESET_CODE_PEPPER=pepper,
+            FIREBASE_CREDENTIALS_JSON="{}",
+            # DATABASE_URL deliberately omitted -- this is the field that is "missing".
+        )
+    message = str(exc_info.value)
+    assert "DATABASE_URL" in message
+    assert "BEGIN PUBLIC KEY" not in message
+    assert "MmrT6Y" not in message  # the PEM body, present verbatim in _REAL_PEM
+    assert pepper not in message
+
+
+def test_missing_field_error_names_every_missing_field() -> None:
+    """Two fields missing at once must both be named, not just the first one pydantic
+    happens to report, or whoever reads the crash log fixes one problem and restarts
+    into the next."""
+    with pytest.raises(ConfigurationError) as exc_info:
+        _HermeticSettings(  # type: ignore[call-arg]
+            JWT_PRIVATE_KEY_PEM=_REAL_PEM, JWT_PUBLIC_KEY_PEM=_REAL_PEM
+        )
+    message = str(exc_info.value)
+    assert "DATABASE_URL" in message
+    assert "RESET_CODE_PEPPER" in message
+    assert "FIREBASE_CREDENTIALS_JSON" in message
+
+
+def test_email_api_key_missing_under_http_backend_raises_configuration_error() -> None:
+    """`_enforce_cross_field_rules` used to raise ValueError here, which pydantic
+    collects into a ValidationError -- and, this being a model_validator that runs after
+    every field, `errors()`'s `input` for that entry is the whole settings mapping, the
+    same leak shape as the missing-field case above. ConfigurationError avoids it the
+    same way the field validators do, and it is raised directly rather than routed
+    through __init__'s handler."""
+    with pytest.raises(ConfigurationError) as exc_info:
+        _HermeticSettings(
+            DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/db",
+            JWT_PRIVATE_KEY_PEM=_REAL_PEM,
+            JWT_PUBLIC_KEY_PEM=_REAL_PEM,
+            RESET_CODE_PEPPER="test-pepper-not-a-real-secret",
+            FIREBASE_CREDENTIALS_JSON="{}",
+            EMAIL_BACKEND="http",
+            # EMAIL_API_KEY deliberately omitted while EMAIL_BACKEND=http.
+        )
+    message = str(exc_info.value)
+    assert "EMAIL_API_KEY" in message
+    assert "BEGIN PUBLIC KEY" not in message
