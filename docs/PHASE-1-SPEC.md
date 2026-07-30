@@ -8,6 +8,10 @@
 > **This file is the single source of truth for Phase 1.** If this document and your instinct
 > disagree, the document wins. Build nothing from the section 1.2 out-of-scope list. Execute one
 > task from section 12 at a time, touching only the files that task names.
+>
+> **Amendments since the v1.0 baseline** — an amendment overrides the section it amends:
+> **P1-ADR-07** (reset-code hashing; amends §4.5, §5.6, §7.1, §9.3, §10.5) — raised at T-02 review,
+> owned by T-07.
 
 ---
 
@@ -18,7 +22,7 @@ This is not a design essay. It is an **execution contract**. Every section eithe
 ### 0.1 Reading order
 
 - **1** — Phase 1 scope — what ships, what is explicitly deferred
-- **2** — Architecture decisions (P1-ADR-01 … 06) — Firebase vs. Postgres split, JWT model
+- **2** — Architecture decisions (P1-ADR-01 … 07) — Firebase vs. Postgres split, JWT model, reset-code hashing
 - **3** — Repository layout — backend and mobile trees
 - **4** — Data model — full DDL, constraints, indexes, RLS
 - **5** — API contract — every endpoint, request, response, error
@@ -66,7 +70,7 @@ Steps run in order. Step 3 depends on step 1 and 2 being deployed to a reachable
 | P1-FR-005  | Issue short-lived access tokens and single-use rotating refresh tokens            | API       |
 | P1-FR-006  | Detect refresh-token reuse and invalidate the whole token family                  | API       |
 | P1-FR-007  | Log out of the current device; log out of all devices                             | API + app |
-| P1-FR-008  | Reset a forgotten password with a 6-digit code delivered by email                 | API + app |
+| P1-FR-008  | Reset a forgotten password with a single-use code delivered by email (P1-ADR-07)  | API + app |
 | P1-FR-009  | Link a social identity to an existing email account on matching verified email    | API       |
 | P1-FR-010  | Capture the profile once, immediately after first sign-up, resumable if abandoned | API + app |
 | P1-FR-011  | Read and edit profile fields after onboarding (the Settings surface)              | API + app |
@@ -108,7 +112,7 @@ Steps run in order. Step 3 depends on step 1 and 2 being deployed to a reachable
 
 ## 2 · Architecture decisions
 
-These six decisions are settled. They are recorded here so the agent does not relitigate them mid-build, and so a future reader understands why the code looks the way it does.
+These seven decisions are settled. They are recorded here so the agent does not relitigate them mid-build, and so a future reader understands why the code looks the way it does. P1-ADR-07 was added after the v1.0 baseline and **amends** §4.5, §5.6, §7.1, §9.3 and §10.5; where it and an unamended sentence elsewhere disagree, the ADR wins.
 
 ### P1-ADR-01 · PostgreSQL is the single source of truth. Firebase is an identity broker only.
 
@@ -135,9 +139,11 @@ These six decisions are settled. They are recorded here so the agent does not re
 
 `users` holds identity and credentials. `profiles` holds the body and preference data from the Settings screen, one-to-one, created when onboarding completes. The split keeps the auth module free of domain knowledge (SRS §2.5) and lets onboarding be partially saved and resumed without an account existing in a half-valid state. A user with no profile row is a legitimate state: it means onboarding is unfinished, and the app routes them back into it.
 
-### P1-ADR-04 · Password reset is a 6-digit emailed code exchanged for a reset token
+### P1-ADR-04 · Password reset is an emailed code exchanged for a reset token
 
-Three steps, not one. `forgot` sends a code; `verify-code` exchanges a correct code for a short-lived single-purpose reset token; `reset` spends that token to set the new password. The intermediate token means the code is never re-sent over the wire and never sits in app state while the user types a new password. Codes are 6 digits, hashed at rest, valid for 10 minutes, single use, capped at 5 attempts, and the `forgot` endpoint returns `202` whether or not the email exists so it cannot be used to enumerate accounts.
+> **Code format and hashing amended by P1-ADR-07.** The three-step shape below is unchanged and still correct; only the code's alphabet, length and at-rest hashing are superseded.
+
+Three steps, not one. `forgot` sends a code; `verify-code` exchanges a correct code for a short-lived single-purpose reset token; `reset` spends that token to set the new password. The intermediate token means the code is never re-sent over the wire and never sits in app state while the user types a new password. Codes are hashed at rest, valid for 10 minutes, single use, capped at 5 attempts, and the `forgot` endpoint returns `202` whether or not the email exists so it cannot be used to enumerate accounts. The code is a typed short string rather than a clicked link — see P1-ADR-07's rejected alternative for why, and for the conditions under which that should be revisited.
 
 ### P1-ADR-05 · Email delivery sits behind an interface, with a console backend for development
 
@@ -146,6 +152,20 @@ Define `EmailSender` with one method. Ship two implementations: a console sender
 ### P1-ADR-06 · UUID v7 primary keys, generated in the application
 
 Keys are UUID v7 — time-ordered, so index locality stays close to a sequence, while remaining safe to expose in URLs. PostgreSQL 16 has no native `uuidv7()`, so generate them in Python (`uuid6` package, `uuid7()`) and pass them explicitly on insert rather than relying on a server default. Do not use auto-increment integers: they leak user counts and make offline-generated identifiers impossible in later phases.
+
+### P1-ADR-07 · Reset codes are peppered with a key outside the database, not merely salted with a value inside it
+
+> **This ADR amends §4.5, §5.6, §7.1, §9.3 and §10.5. It was raised during T-02 review, before any reset code was implemented. T-07 must not ship the superseded design.**
+
+|                          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Superseded design**    | 6 decimal digits, stored as `SHA-256(user_id ‖ code)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **Why it fails**         | The salt is `user_id`, which is stored **in the same row** as the hash, and the search space is 10⁶ with no key stretching. Anyone who can read one row recovers the plaintext code offline in well under a second — a single SHA-256 pass over a million candidates. Hashing therefore contributes almost nothing against the attacker who matters here. Worse, it is not limited to accounts already mid-reset: `/auth/password/forgot` is unauthenticated and always returns `202`, so an attacker with read access can **induce** a fresh code for any address, read it, and take over that account on demand. Read access to `password_reset_codes` is account takeover of arbitrary users, not a data leak. |
+| **Decision**             | Two independent changes. **(a) Keyed hash:** store `HMAC-SHA256(key=RESET_CODE_PEPPER, msg=user_id ‖ code)`. `RESET_CODE_PEPPER` is a required environment variable (Appendix A.1) and never enters the database. **(b) Longer code:** 8 characters drawn with `secrets.choice` from the 30-character reduced Base32 alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ234567` — RFC 4648 Base32 (`A–Z`, `2–7`) with the visually ambiguous `I` and `O` removed. `0`, `1` and lowercase `l` are absent from that alphabet already; input is uppercased before comparison.                                                    |
+| **Which one carries it** | Be precise about this, because it decides what may be traded away. **The pepper is the control that defeats offline recovery**: without the key, an attacker holding the whole table cannot compute a single candidate hash, whatever the code length. **The code length defeats online guessing** and buys margin if the pepper is ever compromised too — 30⁸ ≈ 6.6 × 10¹¹ (~39 bits) against 10⁶ (~20 bits). Note that 39 bits is *not* itself sufficient against offline search on a fast unkeyed hash, so length is defence in depth and the pepper is load-bearing, not the reverse.                    |
+| **If UX keeps 6 digits** | Acceptable, but then **(a) is mandatory rather than defence-in-depth**, and the §5.6 attempt cap plus the per-email rate limit become the only barriers to online guessing. Do not drop both.                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **Rejected alternative** | A random link token — `secrets.token_urlsafe(32)`, 256 bits, stored as a plain SHA-256 — would make the brute-force concern moot outright: no pepper needed, no code length to argue about, because 2²⁵⁶ is not searchable whether or not the hash is keyed. It was **not** chosen, for four reasons. **1.** P1-ADR-04 deliberately picked a typed code exchanged for a reset token so the code never sits in app state and is never re-sent over the wire; a link inverts that. **2.** A 43-character token cannot be typed, so the flow becomes click-a-link, which requires universal links / Android App Links — native configuration that is out of Phase 1 scope. **3.** A link breaks when the user reads mail on a different device from the app. **4.** Mail scanners and corporate proxies pre-fetch links and can silently consume a single-use token. **Revisit in Phase 2**, where email verification (Appendix A.3) needs link infrastructure anyway — at that point the reset flow can share it and this ADR should be reopened. |
+| **Consequence**          | `RESET_CODE_PEPPER` joins the fail-fast required secrets, so a deployment missing it will not start rather than silently falling back to an unkeyed hash. Rotating the pepper invalidates every outstanding reset code, which is acceptable against a 10-minute TTL. The client-side input is no longer digits-only: §7.1's `code` rule, §9.3 screen 5 and §10.5's `GOtpInput` contract are amended to 8 alphanumeric boxes, uppercase-normalised, ambiguous characters rejected on paste.                                                                                                                    |
 
 ## 3 · Repository layout
 
@@ -280,15 +300,19 @@ A row with `deleted_at IS NOT NULL` is invisible to every query except the purge
 
 ### 4.5 password_reset_codes
 
-| Column                                                                                                               | Type        | Notes                                                                     |
-|----------------------------------------------------------------------------------------------------------------------|-------------|---------------------------------------------------------------------------|
-| id / user_id                                                                                                         | uuid        | PK / FK CASCADE                                                           |
-| code_hash                                                                                                            | text        | SHA-256 of the 6 digits, salted with the user id. Never store the digits. |
-| expires_at                                                                                                           | timestamptz | Issued at + 10 minutes                                                    |
-| attempt_count                                                                                                        | int         | NOT NULL DEFAULT 0, hard stop at 5                                        |
-| consumed_at                                                                                                          | timestamptz | Single use                                                                |
-| requested_ip                                                                                                         | inet        | For abuse investigation                                                   |
-| Requesting a new code marks every previous unconsumed code for that user as consumed, so only the newest code works. |             |                                                                           |
+> **Amended by P1-ADR-07.** The original `SHA-256(user_id ‖ 6 digits)` is **superseded** and must not be implemented: the salt lived in the same row as the hash over a 10⁶ space, making every code recoverable offline in under a second by anyone who could read the table. Read the ADR before writing T-07.
+
+| Column                                                                                                               | Type        | Notes                                                                                                              |
+|----------------------------------------------------------------------------------------------------------------------|-------------|--------------------------------------------------------------------------------------------------------------------|
+| id / user_id                                                                                                         | uuid        | PK / FK CASCADE                                                                                                    |
+| code_hash                                                                                                            | text        | `HMAC-SHA256(key=RESET_CODE_PEPPER, msg=user_id ‖ code)`. The pepper comes from the environment and is never stored. Never store the code itself. |
+| expires_at                                                                                                           | timestamptz | Issued at + `RESET_CODE_TTL_SECONDS` (default 10 minutes). Enforced in the SQL `WHERE`, never in Python after fetch. |
+| attempt_count                                                                                                        | int         | NOT NULL DEFAULT 0, hard stop at 5. Incremented on every failed verify, including expired ones.                     |
+| consumed_at                                                                                                          | timestamptz | Single use. Set in the same statement that redeems the code, so a concurrent second redemption updates zero rows.   |
+| requested_ip                                                                                                         | inet        | For abuse investigation                                                                                            |
+| Requesting a new code marks every previous unconsumed code for that user as consumed, so only the newest code works. |             |                                                                                                                    |
+
+The column set is unchanged by the ADR — only what goes **into** `code_hash`, and how the other three columns are enforced. The T-02 migration therefore needs no amendment.
 
 ### 4.6 audit_log
 
@@ -395,7 +419,7 @@ CREATE POLICY p_profiles_owner ON profiles
 | POST   | /auth/refresh              | refresh     | Rotate the refresh token, issue a new pair               | P1-FR-005   |
 | POST   | /auth/logout               | bearer      | Revoke the current token family                          | P1-FR-007   |
 | POST   | /auth/logout-all           | bearer      | Revoke every family and bump token_version               | P1-FR-007   |
-| POST   | /auth/password/forgot      | none        | Email a 6-digit reset code                               | P1-FR-008   |
+| POST   | /auth/password/forgot      | none        | Email a single-use reset code (format per P1-ADR-07)     | P1-FR-008   |
 | POST   | /auth/password/verify-code | none        | Exchange a valid code for a reset token                  | P1-FR-008   |
 | POST   | /auth/password/reset       | reset token | Set a new password, revoke all sessions                  | P1-FR-008   |
 | GET    | /auth/me                   | bearer      | Current user plus onboarding state — the app's boot call | P1-FR-010   |
@@ -506,14 +530,30 @@ POST /api/v1/auth/password/reset
 
 | Rule                | Value                                                                                                     |
 |---------------------|-----------------------------------------------------------------------------------------------------------|
-| Code format         | 6 digits, generated with `secrets.randbelow` — never `random`                                             |
-| Code lifetime       | 10 minutes                                                                                                |
+| Code format         | **Amended by P1-ADR-07.** 8 characters from `ABCDEFGHJKLMNPQRSTUVWXYZ234567`, drawn with `secrets.choice` — never `random`. Uppercase the submitted value before comparing. (Was: 6 digits.) |
+| Code storage        | **Amended by P1-ADR-07.** `HMAC-SHA256(key=RESET_CODE_PEPPER, msg=user_id ‖ code)`. The pepper is a required environment variable and is never written to the database. (Was: salted SHA-256.) |
+| Code lifetime       | 10 minutes (`RESET_CODE_TTL_SECONDS`)                                                                     |
 | Attempts per code   | 5, then the code is burned and returns `429 RESET_CODE_ATTEMPTS_EXCEEDED`                                 |
-| Requests per email  | 3 per hour                                                                                                |
+| Requests per email  | 3 per hour, keyed on the **submitted** address whether or not it resolves to a live account — see below   |
 | Requests per IP     | 10 per hour                                                                                               |
-| Comparison          | `secrets.compare_digest` on the hashes, constant time                                                     |
+| Comparison          | `secrets.compare_digest` on the HMAC digests, constant time                                               |
 | Social-only account | Still returns 202 and still sends nothing. Do not reveal that the account has no password.                |
 | Effect on sessions  | Every device is logged out. This is deliberate: a password reset is the recovery path after a compromise. |
+
+> **The per-email rate limit must not become the enumeration oracle the 202 exists to prevent**
+>
+> Count the attempt against the submitted address **before** looking the user up, and increment it identically for an unknown address, a social-only account, and a live one. An implementation that only counts when the account exists turns the `429` / `202` difference into a reliable "does this email have an account" probe — which defeats §5.6's entire always-202 design more cheaply than the flow it was protecting. The `202` body, status and latency envelope are unchanged by this amendment; the only observable difference on a tripped limit is `429 RATE_LIMIT_EXCEEDED` with `Retry-After`, and it must be reachable for an address that has never registered.
+
+**Enforcement, all of it in SQL — implement in T-07 (error codes are already defined in `app/core/errors.py`):**
+
+| Case                                     | Rule                                                                                                                                                                     | Error                                     |
+|------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------|
+| Expired code                             | `expires_at > now()` belongs in the `WHERE` clause of the lookup, not in a Python check after the row is fetched. A fetch-then-compare leaves a window where a row that the database would have rejected is still acted upon. | `422 RESET_CODE_EXPIRED`                  |
+| Wrong or unknown code                    | No row matched the keyed digest                                                                                                                                          | `422 RESET_CODE_INVALID`                  |
+| Sixth attempt                            | `attempt_count` incremented on **every** failed verify — including a failure caused by expiry — and the code is dead once it passes the configured maximum                  | `429 RESET_CODE_ATTEMPTS_EXCEEDED`        |
+| Concurrent redemption                    | Set `consumed_at` in the **same** `UPDATE ... WHERE consumed_at IS NULL` that redeems the code, and treat a zero-row result as failure. Two simultaneous redemptions must leave exactly one winner; a read-then-write cannot guarantee that. | `422 RESET_CODE_INVALID`                  |
+| Spent or unknown reset token             | The 5-minute token from `verify-code`, hashed at rest, single use                                                                                                         | `401 RESET_TOKEN_INVALID`                 |
+| Per-email or per-IP limit tripped        | See the oracle note above                                                                                                                                                | `429 RATE_LIMIT_EXCEEDED` + `Retry-After` |
 
 ### 5.7 GET /auth/me — the app's boot call
 
@@ -650,7 +690,7 @@ Every 429 carries a `Retry-After` header. Implement behind one decorator or depe
 | activity_level   | five-value enum per §4.3                                                                               | VALIDATION_ERROR                                   |
 | unit_system      | `metric` \| `imperial`                                                                                 | VALIDATION_ERROR                                   |
 | language         | `ar` \| `en`                                                                                           | VALIDATION_ERROR                                   |
-| code             | exactly 6 digits                                                                                       | RESET_CODE_INVALID                                 |
+| code             | exactly 8 characters from `ABCDEFGHJKLMNPQRSTUVWXYZ234567`, case-insensitive on input (P1-ADR-07)       | RESET_CODE_INVALID                                 |
 
 > **Imperial input, SI storage**
 >
@@ -781,7 +821,7 @@ signed-in user — it is the single most noticeable polish bug in an auth flow.
 | 2   | register             | Email, password, confirm password, password-strength hint, terms checkbox with links, submit. Inline field errors below each input, never in an alert dialog.                          |
 | 3   | login                | Email, password with a reveal toggle, "Forgot password?" link, submit, social buttons.                                                                                                 |
 | 4   | forgot-password      | Email only. On 202, navigate to verify-code carrying the email. Copy states plainly that a code has been sent if the account exists.                                                   |
-| 5   | verify-code          | Six-box OTP input with auto-advance, paste support, and auto-submit on the sixth digit. A visible countdown, and a resend button that is disabled until the countdown ends.            |
+| 5   | verify-code          | **Eight**-box OTP input (P1-ADR-07) with auto-advance, paste support, and auto-submit on the eighth character. Uppercases as the user types; rejects characters outside the §7.1 alphabet rather than accepting and failing server-side. A visible countdown, and a resend button that is disabled until the countdown ends. |
 | 6   | new-password         | New password, confirm. On success, show a confirmation and route to login — the user must sign in again, because every session was just revoked.                                       |
 | 7   | onboarding step 1    | Name and gender                                                                                                                                                                        |
 | 8   | onboarding step 2    | Birth date — a native date picker or three selects. Never a free-text field.                                                                                                           |
@@ -951,7 +991,7 @@ Latin: Inter. Arabic: IBM Plex Sans Arabic or Cairo — one Arabic face, loaded 
 |--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | GButton      | `variant: primary | secondary | ghost | social`, `loading`, `disabled`, `fullWidth`, `icon`. Height 52, radius 12. Loading keeps the label and its width. Disabled uses `primaryDisabled`, never opacity alone. |
 | GTextInput   | `label`, `error`, `secure` with a reveal toggle, `keyboardType`, `autoComplete`. Focus ring in rust; error state in `error` with the message below.                                                             |
-| GOtpInput    | 6 boxes, auto-advance, backspace to the previous box, paste distributes across boxes, auto-submit on complete, LTR even in Arabic.                                                                              |
+| GOtpInput    | **8** boxes (P1-ADR-07), auto-advance, backspace to the previous box, paste distributes across boxes, auto-submit on complete, LTR even in Arabic. Alphanumeric, not digits-only: uppercase on entry, `autoCapitalize="characters"`, and silently drop characters outside the §7.1 alphabet on paste. |
 | GSelectCard  | Title, optional description, `selected`, `disabled` with a reason line. Selected = rust border plus `primaryContainer` fill, not a tiny radio dot.                                                              |
 | GProgressBar | `step` of `total`, animated, with an accessible "step 3 of 6" label.                                                                                                                                            |
 | GScreen      | SafeArea, keyboard-avoiding, scroll-on-overflow, standard padding, optional header with a back affordance.                                                                                                      |
@@ -1109,14 +1149,21 @@ Requirements:
 - Ed25519 JWT sign and verify; claims sub, tv, jti, iat, exp, aud per 6.3.
 - Opaque token generation (32 bytes, urlsafe) plus SHA-256 hashing for refresh
   and reset tokens.
-- 6-digit OTP via secrets, hashed with the user id, compared with compare_digest.
+- Reset-code generation and hashing per P1-ADR-07 — NOT the superseded 6-digit,
+  user-id-salted SHA-256 design. This module owns the primitive that T-07 then
+  consumes, so getting it wrong here propagates: 8 characters from
+  ABCDEFGHJKLMNPQRSTUVWXYZ234567 via secrets.choice, stored as HMAC-SHA256 keyed
+  with RESET_CODE_PEPPER (required config, fails fast at import, never persisted),
+  compared with compare_digest. Add RESET_CODE_PEPPER to config.py.
 - get_current_user dependency: parse bearer, verify signature, audience, expiry,
   and that tv matches the user's current token_version; load the user; reject
   inactive or soft-deleted.
 - A rate-limit dependency taking a limit, a window, and a key strategy.
 
 Tests must cover: wrong audience, expired token, tampered signature, stale tv,
-timing-neutral OTP comparison, and the boundary of every password rule.
+timing-neutral OTP comparison, and the boundary of every password rule. Also:
+that the same code under two different peppers produces different digests, and
+that the generated alphabet never emits I, O, 0 or 1.
 
 Done when: coverage of this module is at or above 95%.
 ```
@@ -1231,9 +1278,29 @@ Requirements:
   consumes the code and the token, audits, sends a password-changed notice.
 - Rate limits per 6.4.
 
+READ P1-ADR-07 BEFORE STARTING. It amends 4.5 and 5.6 and supersedes the original
+reset-code design. Do not implement 6-digit SHA-256 codes salted with user_id:
+that is recoverable offline in under a second by anyone who can read the table,
+and because /auth/password/forgot is unauthenticated it means takeover of
+arbitrary accounts, not only accounts mid-reset. Specifically:
+- Codes are 8 characters from ABCDEFGHJKLMNPQRSTUVWXYZ234567 via secrets.choice,
+  uppercased on input.
+- Stored as HMAC-SHA256 keyed with RESET_CODE_PEPPER, which is required config
+  (Appendix A.1), fails fast at import if absent, and is never written to the DB.
+- expires_at goes in the SQL WHERE clause, not a Python check after the fetch.
+- attempt_count increments on every failed verify, expiry included.
+- consumed_at is set in the same UPDATE ... WHERE consumed_at IS NULL that
+  redeems the code; a zero-row result is a failure, so two concurrent
+  redemptions leave exactly one winner.
+- The per-email limit counts the submitted address before the user lookup, so
+  429-vs-202 cannot be used to test whether an account exists.
+
 Done when: tests cover expiry, the sixth attempt, reuse of a spent code, reuse of
 a spent reset token, an unknown email still returning 202, and every session
-being dead after a successful reset.
+being dead after a successful reset. Add: a test that a code is unrecoverable
+from the stored digest without the pepper, a concurrent double-redemption test
+asserting exactly one success, and a test that an unregistered address can still
+trip the per-email 429.
 ```
 
 ### T-08 · Profile and onboarding
@@ -1469,6 +1536,13 @@ ACCESS_TOKEN_TTL_SECONDS=900
 REFRESH_TOKEN_TTL_SECONDS=5184000
 RESET_CODE_TTL_SECONDS=600
 RESET_TOKEN_TTL_SECONDS=300
+RESET_CODE_PEPPER=                    # REQUIRED (P1-ADR-07). HMAC key for reset-code hashing.
+                                      # No default — the app must fail at import if it is missing,
+                                      # exactly like JWT_PRIVATE_KEY_PEM, so a deployment can never
+                                      # silently fall back to an unkeyed hash. Never stored in the
+                                      # database. Generate with: python -c "import secrets;
+                                      # print(secrets.token_urlsafe(32))"
+                                      # Rotating it invalidates every outstanding reset code.
 ARGON2_MEMORY_KIB=65536
 ARGON2_TIME_COST=3
 ARGON2_PARALLELISM=4
