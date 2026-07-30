@@ -1,6 +1,6 @@
 # Gymak — Phase 1 Build Specification
 
-> **Document ID** GYMAK-P1-SPEC-001 · **Version** 1.2 · **Date** 30 July 2026
+> **Document ID** GYMAK-P1-SPEC-001 · **Version** 1.3 · **Date** 31 July 2026
 > **Owner** Nabil — sole developer · **Phase** 1 of N — authentication, session management, one-time profile capture
 > **Stack** FastAPI · PostgreSQL · Firebase Auth (social sign-in only) · React Native (Expo)
 > **Derives from** AIFC-SRS-TDD-001 v1.0 (Vol. 2, 4, 5) · Gymak Color System
@@ -33,6 +33,12 @@
 | A-13 | §12 T-09                    | `ruff format --check` added to the gate.                                                                  |
 | A-14 | §0.3, §A.5                  | T-04, T-04b and T-04c complete. Two defects surfaced only by running the application for real: it could not start under uvicorn at all, and the migration needs privileges the application is forbidden from holding. Recorded as §A.5 items 10 and 11. |
 
+### Amendments in v1.3
+
+| ID   | Section                     | Change                                                                                                   |
+|------|-----------------------------|----------------------------------------------------------------------------------------------------------|
+| A-15 | §1.1, §8.1, §8.2, §9.1, §9.3, §11.3, §12 T-06, §13.1, §13.2, Appendix A.2, A.3 | Decision 13.1.2 closed: Google ships in Phase 1, Facebook is deferred to Phase 2. P1-FR-004 marked deferred rather than removed; the §8.2 Facebook console section kept as a record of the deferred work; `react-native-fbsdk-next` dropped from the dependency list; Facebook sign-in added to the deferred table; T-06 now names Google only; every place that assumed Facebook shipped alongside Google in Phase 1 corrected. `user_identities.provider` CHECK is unchanged — it already allows `facebook`, so no migration is needed now or when Phase 2 picks this up. |
+
 ---
 
 ## 0 · How to use this document
@@ -48,7 +54,7 @@ This is not a design essay. It is an **execution contract**. Every section eithe
 - **5** — API contract — every endpoint, request, response, error
 - **6** — Security requirements — hashing, tokens, codes, rate limits
 - **7** — Validation rules and the error code catalogue
-- **8** — Firebase configuration — Google and Facebook
+- **8** — Firebase configuration — Google (Facebook deferred to Phase 2, §13.1)
 - **9** — Mobile application — screens, states, navigation, i18n
 - **10** — Design tokens — the complete Gymak palette and type scale
 - **11** — Testing requirements and Phase 1 definition of done
@@ -89,7 +95,8 @@ Steps run in order. Step 3 depends on step 1 and 2 being reachable from the phon
 | T-04 | Done   | Register and login. 22 integration tests, `Retry-After` on every 429. RLS blocked the refresh-token insert in the pre-auth flow — the first time the barrier stopped real code rather than passing a test. |
 | T-04b| Done   | Defect. `database.py` called `asyncio.run()` at import time, so the application could not start under uvicorn at all. Moved into a FastAPI lifespan handler. See §A.5 item 10. |
 | T-04c| Done   | Device milestone met. `GET /api/v1/health` returns 200 in a phone browser over the LAN. |
-| T-05 | Next   | Refresh rotation, logout, logout-all.                                                                     |
+| T-05 | Done   | Refresh rotation, logout, logout-all.                                                                     |
+| T-06 | Next   | Social sign-in. Google only — decision 13.1.2 closed, Facebook deferred to Phase 2 (A-15).                 |
 
 > **The device milestone after T-04 is met, and it earned its place.** One health check reached from a phone browser over the LAN surfaced two defects that 196 passing tests could not: an import-time `asyncio.run()` that made the application unable to start under uvicorn at all, and a migration that needs `CREATE EXTENSION` privileges the application role must never hold. Neither was visible from the suite, because the suite drives the ASGI app through httpx and never touches uvicorn or a standalone database.
 >
@@ -104,7 +111,7 @@ Steps run in order. Step 3 depends on step 1 and 2 being reachable from the phon
 | P1-FR-001  | Register an account with email and password                                       | API + app |
 | P1-FR-002  | Log in with email and password, receiving an access/refresh token pair            | API + app |
 | P1-FR-003  | Sign in or register with Google, brokered through Firebase Auth                   | API + app |
-| P1-FR-004  | Sign in or register with Facebook, brokered through Firebase Auth — **conditional on decision 13.1.2** | API + app |
+| P1-FR-004  | Sign in or register with Facebook, brokered through Firebase Auth — **deferred to Phase 2, decision 13.1.2 (A-15)** | API + app |
 | P1-FR-005  | Issue short-lived access tokens and single-use rotating refresh tokens            | API       |
 | P1-FR-006  | Detect refresh-token reuse and invalidate the whole token family                  | API       |
 | P1-FR-007  | Log out of the current device; log out of all devices                             | API + app |
@@ -527,7 +534,7 @@ POST /api/v1/auth/register
 ### 5.4 POST /auth/social/{provider}
 
 ```http
-POST /api/v1/auth/social/google        // provider ∈ google | facebook
+POST /api/v1/auth/social/google        // provider ∈ google in Phase 1; facebook deferred to Phase 2 (13.1.2)
 { "id_token": "<firebase ID token from the client SDK>" }
 
 --- 200 OK ---
@@ -788,7 +795,7 @@ Content-Type: application/problem+json
 | HTTP | code                         | When                                                                                 |
 |------|------------------------------|--------------------------------------------------------------------------------------|
 | 400  | MALFORMED_BODY               | Not valid JSON, or a basic type violation                                            |
-| 400  | PROVIDER_NOT_SUPPORTED       | Path provider is not google or facebook                                              |
+| 400  | PROVIDER_NOT_SUPPORTED       | Path provider is not google — includes facebook, deferred to Phase 2 (13.1.2)         |
 | 401  | INVALID_CREDENTIALS          | Login failed, for any reason                                                         |
 | 401  | TOKEN_MISSING                | No Authorization header on a protected route                                         |
 | 401  | TOKEN_EXPIRED                | Access token past `exp` — the client should refresh and retry once                   |
@@ -818,12 +825,14 @@ Two consoles, one afternoon. Do this before T-06, and record every value in `.en
 ### 8.1 Firebase console
 
 1.  Reuse the existing project `gymak-2d4ab`. Do not create a second one.
-2.  Authentication → Sign-in method → enable **Google** (and **Facebook** only if decision 13.1.2 says yes). Leave Email/Password **disabled**: our backend owns that path (P1-ADR-01).
+2.  Authentication → Sign-in method → enable **Google** only. Facebook is deferred to Phase 2 (decision 13.1.2, A-15) — do not enable it now. Leave Email/Password **disabled**: our backend owns that path (P1-ADR-01).
 3.  Register the Android app with package name `com.gymak.app`, and the iOS app with the matching bundle identifier. Download `google-services.json` and `GoogleService-Info.plist`.
 4.  Add the SHA-1 **and** SHA-256 fingerprints of both the debug keystore and the EAS release keystore. Google Sign-In on Android fails with an opaque error when a fingerprint is missing, and it is the single most common half-day lost in this setup.
 5.  Project settings → Service accounts → generate a private key. This JSON is what `firebase-admin` uses on the backend. It goes in the environment, never in git.
 
-### 8.2 Facebook developer console — only if decision 13.1.2 is yes
+### 8.2 Facebook developer console — deferred to Phase 2 (decision 13.1.2, A-15)
+
+> **Not done in Phase 1.** Decision 13.1.2 is closed: Google ships now, Facebook is held for Phase 2. This section is kept, unexecuted, as the record of what the work will be when Phase 2 picks it up — do not action it now.
 
 1.  Create an app of type **Consumer**, add the Facebook Login product.
 2.  Copy the App ID and App Secret into Firebase's Facebook provider settings.
@@ -850,7 +859,7 @@ EXPO_PUBLIC_API_BASE_URL=http://192.168.1.x:8000/api/v1
 
 > **Two things that will otherwise cost a day each**
 >
-> **1.** Google Sign-In and Facebook Login both need native code, so they do **not** work in Expo Go. Build a development build (`eas build --profile development`) before starting T-13. **2.** On a physical device, `localhost` is the phone, not the laptop. Use the laptop's LAN address in `EXPO_PUBLIC_API_BASE_URL` and bind uvicorn to `0.0.0.0`. The single-login-screen milestone after T-04 exists to hit this second problem early, while it is the only moving part.
+> **1.** Google Sign-In needs native code, so it does **not** work in Expo Go. Build a development build (`eas build --profile development`) before starting T-13. **2.** On a physical device, `localhost` is the phone, not the laptop. Use the laptop's LAN address in `EXPO_PUBLIC_API_BASE_URL` and bind uvicorn to `0.0.0.0`. The single-login-screen milestone after T-04 exists to hit this second problem early, while it is the only moving part.
 
 ## 9 · Mobile application
 
@@ -866,7 +875,7 @@ EXPO_PUBLIC_API_BASE_URL=http://192.168.1.x:8000/api/v1
 | Forms          | react-hook-form + zod                                                                      | The zod schemas mirror §7.1 field-for-field                                                                              |
 | HTTP           | axios with one interceptor                                                                 | Single place for the bearer header and the refresh dance                                                                 |
 | i18n           | `i18n-js` + `expo-localization`                                                             | Arabic default, English second, RTL via `I18nManager`                                                                    |
-| Social sign-in | `@react-native-firebase/auth` or `@react-native-google-signin` + `react-native-fbsdk-next` | Requires a development build; not available in Expo Go                                                                   |
+| Social sign-in | `@react-native-firebase/auth` or `@react-native-google-signin` (Google only — `react-native-fbsdk-next` deferred to Phase 2, 13.1.2) | Requires a development build; not available in Expo Go                                                                   |
 
 ### 9.2 Navigation and the session gate
 
@@ -886,9 +895,9 @@ signed-in user — it is the single most noticeable polish bug in an auth flow.
 
 | #  | Screen               | Content and behaviour                                                                                                                                                                  |
 |----|----------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1  | welcome              | Logo on sand background, one line of positioning copy, **Create account** (primary), **Log in** (secondary), then a divider and the social buttons. Language toggle in the corner.      |
+| 1  | welcome              | Logo on sand background, one line of positioning copy, **Create account** (primary), **Log in** (secondary), then a divider and the social button (Google only — Facebook deferred to Phase 2, 13.1.2). Language toggle in the corner.      |
 | 2  | register             | Email, password, confirm password, password-strength hint, terms checkbox with links, submit. Inline field errors below each input, never in an alert dialog.                          |
-| 3  | login                | Email, password with a reveal toggle, "Forgot password?" link, submit, social buttons.                                                                                                 |
+| 3  | login                | Email, password with a reveal toggle, "Forgot password?" link, submit, social button (Google only, per 13.1.2).                                                                        |
 | 4  | forgot-password      | Email only. On 202, navigate to verify-code carrying the email. Copy states plainly that a code has been sent if the account exists.                                                   |
 | 5  | verify-code          | **Eight**-box OTP input (P1-ADR-07) with auto-advance, paste support, and auto-submit on the eighth character. Uppercases as the user types; rejects characters outside the §7.1 alphabet rather than accepting and failing server-side. A visible countdown, and a resend button that is disabled until the countdown ends. |
 | 6  | new-password         | New password, confirm. On success, show a confirmation and route to login — the user must sign in again, because every session was just revoked.                                       |
@@ -1117,7 +1126,7 @@ Fixtures use `testcontainers` for a real PostgreSQL — SQLite would not honour 
 
 > **Phase 1 is complete when every one of these is true. Not before.**
 >
-> 1.  Every P1-FR requirement in §1.1 is implemented and demonstrated, not described. (P1-FR-004 only if decision 13.1.2 is yes.)
+> 1.  Every P1-FR requirement in §1.1 is implemented and demonstrated, not described. (P1-FR-004 is deferred to Phase 2 per decision 13.1.2, A-15, and is excluded from this gate.)
 > 2.  Backend coverage ≥ 80% overall and ≥ 95% in `core/security.py`, `auth_service`, and `password_reset_service` — measured with greenlet concurrency enabled per A-08.
 > 3.  The cross-tenant matrix passes with zero findings, and the RLS tests fail when a policy is dropped.
 > 4.  The refresh-reuse test passes, and the audit log shows both `token.reuse_detected` and `token.family_revoked`.
@@ -1321,8 +1330,8 @@ Done when: that test passes and the audit rows are present.
 ### T-06 · Social sign-in
 
 ```text
-Implement Google sign-in per spec 5.4 and 8.3 (and Facebook only if decision
-13.1.2 is yes).
+Implement Google sign-in per spec 5.4 and 8.3. Facebook is deferred to Phase 2
+(decision 13.1.2, A-15) — do not build it.
 
 Files: app/integrations/firebase.py, app/services/social_service.py,
 app/repositories/user_repo.py, app/schemas/auth.py, app/routers/auth.py,
@@ -1593,12 +1602,12 @@ definition of done in 11.3 is fully satisfied.
 | Question                             | Context and recommendation                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 |--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **1. `weight_kg` and `activity_level` in onboarding?** | **Resolved: yes.** Both are needed by every calorie calculation in the SRS (Mifflin-St Jeor → TDEE), and asking later means interrupting a user who already believes onboarding is finished. Both columns shipped in T-02 and the `[confirm]` markers are removed from §4.3. |
-| **2. Is Facebook login worth Phase 1?** | **Still open. Must be answered before T-06.** It carries real cost: a second developer console, App Review with a privacy-policy URL, a live-mode requirement, and the no-email-returned edge case. Google alone typically covers the large majority of sign-ins in this market. **Recommendation: ship Google in Phase 1 and hold Facebook.** The schema already allows the provider value and the endpoint already takes it, so adding it later is configuration plus one button, not a redesign. If it is held, P1-FR-004 moves to Phase 2 and `react-native-fbsdk-next` stays out of Appendix A.2. If it must ship now, T-06 grows by roughly a day of console work. |
 
 ### 13.2 Decided unless overruled
 
 | Question                                    | Answer applied                                                                                                                                                                                                                                                            |
 |---------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 2. Is Facebook login worth Phase 1?         | **Resolved (A-15): no — Google ships in Phase 1, Facebook is held for Phase 2.** Facebook costs a second developer console, App Review with a published privacy policy, a Live-mode requirement, and the no-email-returned edge case, weighed against a market where Google covers the large majority of sign-ins. Four of those five items are not code, and one of them — App Review — waits on Meta's review queue rather than on this team. The `user_identities.provider` CHECK already allows `'facebook'` and `/auth/social/{provider}` already takes it as a path value, so shipping it later is configuration plus one button, not a redesign or a migration. P1-FR-004 moves to Phase 2 (§1.1), `react-native-fbsdk-next` stays out of Appendix A.2, and §8.2 is kept as the record of the console work for when Phase 2 picks it up. |
 | 3. Firebase's role                          | Identity broker for social sign-in only; no Firestore. See P1-ADR-01, which is the single most consequential assumption in this document — read it before starting.                                                                                                       |
 | 4. Email provider                           | Resend for the developer experience, Brevo if a free tier matters more. Either sits behind the ADR-05 interface, so the choice can change in one file. Sending domain: `gymak.fitness`, with SPF, DKIM, and DMARC configured before T-07 or the codes will land in spam. |
 | 5. Minimum age                              | 13 to hold an account, 18 to select a weight-loss goal. Consistent with SRS SAF-007 and with app-store expectations.                                                                                                                                                      |
@@ -1661,7 +1670,9 @@ fastapi · uvicorn[standard] · pydantic · pydantic-settings · sqlalchemy[asyn
 
 #### Mobile
 
-expo · expo-router · react-native · typescript · @tanstack/react-query · zustand · axios · react-hook-form · zod · expo-secure-store · expo-localization · i18n-js · @react-native-firebase/app · @react-native-firebase/auth · @react-native-google-signin/google-signin · react-native-fbsdk-next (only if decision 13.1.2 is yes) · react-native-safe-area-context · @react-native-community/datetimepicker
+expo · expo-router · react-native · typescript · @tanstack/react-query · zustand · axios · react-hook-form · zod · expo-secure-store · expo-localization · i18n-js · @react-native-firebase/app · @react-native-firebase/auth · @react-native-google-signin/google-signin · react-native-safe-area-context · @react-native-community/datetimepicker
+
+`react-native-fbsdk-next` is deferred to Phase 2 alongside Facebook sign-in (decision 13.1.2, A-15) and is not added now.
 
 Nothing else without asking. In particular: no UI kit, no component library, no state-management framework beyond Zustand, and no ORM other than SQLAlchemy.
 
@@ -1674,6 +1685,7 @@ Nothing else without asking. In particular: no UI kit, no component library, no 
 | Change email flow                       | Phase 2                         | Two-factor authentication            | Unscheduled                                       |
 | Offline mutation queue                  | Phase 3, with session logging   | Push notifications / FCM             | Phase 4                                           |
 | Avatar upload                           | Unscheduled                     | Injuries, dietary pattern, allergens | Phase 3 and 4, with the modules that consume them |
+| Facebook sign-in (P1-FR-004)            | Phase 2 (decision 13.1.2, A-15) |                                       |                                                    |
 
 ### A.4 Glossary
 
