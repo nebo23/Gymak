@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 
 from sqlalchemy import text
@@ -85,3 +86,47 @@ async def database_is_reachable() -> bool:
     async with async_session_factory() as session:
         result = await session.execute(text("SELECT 1"))
         return bool(result.scalar_one() == 1)
+
+
+async def _fetch_connection_role_privileges() -> tuple[bool, bool]:
+    # A dedicated, disposable engine -- never the shared module-level `engine` -- so this
+    # one-off asyncio.run() check cannot leave a pooled connection bound to the throwaway
+    # event loop it creates and then closes. That exact pattern (a connection pooled under
+    # one event loop, reused after that loop is gone) is what breaks asyncpg elsewhere in
+    # this codebase; touching the shared pool here would reintroduce it for whatever event
+    # loop actually serves the real app or test suite afterwards.
+    probe_engine = create_async_engine(settings.DATABASE_URL)
+    try:
+        async with probe_engine.connect() as connection:
+            result = await connection.execute(
+                text("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")
+            )
+            row = result.one()
+            return bool(row.rolsuper), bool(row.rolbypassrls)
+    finally:
+        await probe_engine.dispose()
+
+
+def _assert_connection_is_not_privileged() -> None:
+    """Spec 4.7: 'The application must connect as a NON-superuser role, asserted at
+    startup, otherwise RLS is silently bypassed and this whole barrier is decorative.'
+
+    Runs eagerly at import time -- every process that uses this module (the app, the
+    test suite, Alembic's env.py) transitively imports app.database before doing
+    anything else, so this is the one place a 'startup' check reaches all of them.
+    Superuser and BYPASSRLS are the two role attributes that silently bypass every RLS
+    policy regardless of what the policy says; either one makes profiles/refresh_tokens
+    RLS decorative, so either one is fatal here.
+    """
+    is_superuser, bypasses_rls = asyncio.run(_fetch_connection_role_privileges())
+    if is_superuser or bypasses_rls:
+        raise RuntimeError(
+            "Refusing to start: the database connection is a superuser or BYPASSRLS "
+            f"role (rolsuper={is_superuser}, rolbypassrls={bypasses_rls}). Row-level "
+            "security is silently bypassed for such roles, so the profiles/"
+            "refresh_tokens RLS policies would never actually apply. Connect as a "
+            "dedicated, unprivileged application role instead (see .env.example)."
+        )
+
+
+_assert_connection_is_not_privileged()

@@ -1,3 +1,4 @@
+
 # Gymak backend
 
 FastAPI + PostgreSQL. Firebase Auth is used only to verify Google/Facebook sign-in; it is never
@@ -33,6 +34,38 @@ copy .env.example .env            # Windows; `cp` on macOS/Linux
 Fill in `.env` with real values before running the app outside of tests — at minimum
 `DATABASE_URL` and, once later tasks need them, `JWT_PRIVATE_KEY_PEM` / `JWT_PUBLIC_KEY_PEM` and
 `FIREBASE_CREDENTIALS_JSON`. Nothing in `.env` is ever committed; only `.env.example` is.
+
+## Database role (required — the app refuses to start without it)
+
+The app will not run as a PostgreSQL superuser, or as any role holding `BYPASSRLS`. Both
+silently bypass every row-level security policy, which would leave the `profiles` and
+`refresh_tokens` barriers in §4.7 purely decorative while still appearing to work.
+`app/database.py` queries `pg_roles` for the connected role at import time and raises if
+either attribute is set, rather than letting the app come up with RLS quietly disabled.
+
+Create the role once, then point `DATABASE_URL` at it:
+
+```sql
+CREATE ROLE gymak_app LOGIN PASSWORD '<choose-one>'
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+GRANT ALL PRIVILEGES ON DATABASE gymak TO gymak_app;
+GRANT ALL PRIVILEGES ON SCHEMA public TO gymak_app;
+```
+
+Those grants are enough to run the migrations, `CREATE EXTENSION citext` included (it is a
+*trusted* extension on PostgreSQL 13+, so it does not need a superuser). One role both
+migrates and serves the app, so it **owns** these tables — which is why the migration sets
+`FORCE ROW LEVEL SECURITY` and not merely `ENABLE`: Postgres exempts a table's owner from
+its own policies, and without `FORCE` every policy is a no-op for exactly this role.
+
+Then create the schema:
+
+```bash
+alembic upgrade head
+```
+
+`tests/conftest.py` provisions an equivalent role automatically for each test session, so
+the above is only needed for a real local or staging database.
 
 ## Running the app
 
