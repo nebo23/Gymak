@@ -6,23 +6,28 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, require_active
 from app.core.rate_limit import enforce, ip_key, key_for_email, rate_limit
 from app.models.user import User
 from app.schemas.auth import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     LogoutRequest,
     RefreshRequest,
     RegisterRequest,
+    ResetPasswordRequest,
     SocialSignInRequest,
     SocialSignInResponse,
     TokenPairResponse,
     UserSummary,
+    VerifyCodeRequest,
+    VerifyCodeResponse,
 )
-from app.services import auth_service, social_service
+from app.services import auth_service, password_reset_service, social_service
 from app.services.auth_service import IssuedSession
 from app.services.social_service import SocialSignInResult
 
@@ -151,4 +156,68 @@ async def logout_all_route(
 ) -> None:
     await auth_service.logout_all(
         session, user, ip=_client_ip(request), user_agent=request.headers.get("user-agent")
+    )
+
+
+@router.post("/password/forgot", response_model=ForgotPasswordResponse, status_code=202)
+async def forgot_password_route(
+    body: ForgotPasswordRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> ForgotPasswordResponse:
+    # §5.6's anti-enumeration note: both limits are counted against the SUBMITTED
+    # address/IP here, before password_reset_service ever looks the account up --
+    # `enforce()` directly, same reasoning as /auth/login's pair of calls, because
+    # the email half needs the parsed body.
+    enforce(
+        scope="auth.password.forgot", key=key_for_email(body.email), limit=3, window_seconds=3600
+    )
+    enforce(scope="auth.password.forgot", key=ip_key(request), limit=10, window_seconds=3600)
+
+    pending = await password_reset_service.forgot(session, body, ip=_client_ip(request))
+    if pending is not None:
+        # §5.6: "mail dispatched on a background task" -- scheduled here, never
+        # awaited inline, so a slow provider cannot be timed to distinguish a real
+        # account from an unknown one.
+        background_tasks.add_task(
+            password_reset_service.send_reset_code_email,
+            pending.email,
+            pending.code,
+            pending.language,
+        )
+    return ForgotPasswordResponse()
+
+
+@router.post("/password/verify-code", response_model=VerifyCodeResponse)
+async def verify_code_route(
+    body: VerifyCodeRequest,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> VerifyCodeResponse:
+    # §6.4: 10/hour, "IP + email" as one bucket -- unlike /auth/login's "whichever
+    # trips first" pair, this row names the two together, so a single compound key.
+    enforce(
+        scope="auth.password.verify_code",
+        key=f"{ip_key(request)}|{key_for_email(body.email)}",
+        limit=10,
+        window_seconds=3600,
+    )
+    return await password_reset_service.verify_code(session, body)
+
+
+@router.post("/password/reset", status_code=204)
+async def reset_password_route(
+    body: ResetPasswordRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    # No §6.4 row applies here -- this call's own protection is the reset token
+    # itself (opaque, 5-minute, single-use), not a request-rate limit.
+    pending = await password_reset_service.reset(
+        session, body, ip=_client_ip(request), user_agent=request.headers.get("user-agent")
+    )
+    background_tasks.add_task(
+        password_reset_service.send_password_changed_email, pending.email, pending.language
     )

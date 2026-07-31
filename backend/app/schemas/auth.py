@@ -60,6 +60,50 @@ class LogoutRequest(BaseModel):
     refresh_token: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    """§5.6 call 1. `email` is the only field -- deliberately unauthenticated."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str
+
+
+class ForgotPasswordResponse(BaseModel):
+    """§5.6: the exact same body regardless of whether the account exists."""
+
+    message: str = "If an account exists for that address, a code has been sent."
+
+
+class VerifyCodeRequest(BaseModel):
+    """§5.6 call 2. `code` is validated by attempting a match, not by a schema-level
+    shape check -- see password_reset_service: a malformed code cannot match any
+    stored digest, so it already surfaces as RESET_CODE_INVALID (§7.1) through the
+    same path a wrong-but-well-formed code takes, with no separate rule to keep in
+    sync with P1-ADR-07's alphabet.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str
+    code: str
+
+
+class VerifyCodeResponse(BaseModel):
+    """§5.6: opaque, single-purpose, single-use, 5 minutes."""
+
+    reset_token: str
+    expires_in: int
+
+
+class ResetPasswordRequest(BaseModel):
+    """§5.6 call 3. No email here -- the reset token alone identifies the account."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reset_token: str
+    new_password: str
+
+
 class SocialSignInRequest(BaseModel):
     """§5.4. "The body carries exactly one field: id_token." Deliberately NOT
     extra="forbid" like this module's other request schemas: §5.4's own security note --
