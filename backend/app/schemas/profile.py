@@ -15,8 +15,18 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PlainSerializer
+
+# height_cm/weight_kg are stored as Numeric(5,1)/Numeric(5,2) (unchanged) and parsed
+# into Decimal as before; this only changes how ProfileData renders them on the wire.
+# Pydantic v2 serializes bare Decimal fields to JSON strings by default, but §5.8's
+# example gives them as JSON numbers -- when_used="json" leaves python-mode
+# model_dump() (Decimal) untouched and only casts to float for JSON output.
+DecimalAsFloat = Annotated[
+    Decimal, PlainSerializer(lambda value: float(value), return_type=float, when_used="json")
+]
 
 
 class ProfileCreateRequest(BaseModel):
@@ -73,8 +83,8 @@ class ProfileData(BaseModel):
     name: str
     gender: str
     birth_date: date
-    height_cm: Decimal
-    weight_kg: Decimal | None
+    height_cm: DecimalAsFloat
+    weight_kg: DecimalAsFloat | None
     goal: str
     experience_level: str
     activity_level: str | None

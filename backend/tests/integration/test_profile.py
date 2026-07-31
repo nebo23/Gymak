@@ -269,6 +269,54 @@ async def test_get_profile_returns_the_created_profile(client: AsyncClient) -> N
     assert response.json()["profile"]["name"] == "Nabil"
 
 
+# --- height_cm/weight_kg are JSON numbers, not strings, on every endpoint that shares
+# ProfileData (§5.8's example gives bare numeric literals) ----------------------------------
+
+
+def _assert_height_and_weight_are_json_numbers(profile: dict) -> None:
+    """Checked against the raw JSON type, not the value. `178.0 == "178.0"` is False in
+    Python so a value comparison would already fail against a string -- but the point
+    of this fix is the JSON *type* on the wire, so this must inspect what json.loads()
+    actually produced, not stringify-and-compare which would blur the two apart again.
+    """
+    assert isinstance(profile["height_cm"], float)
+    assert isinstance(profile["weight_kg"], float)
+
+
+async def test_post_profile_returns_height_and_weight_as_json_numbers(
+    client: AsyncClient,
+) -> None:
+    registered = await _register(client)
+    response = await _create_profile(client, registered["access_token"])
+
+    assert response.status_code == 201
+    _assert_height_and_weight_are_json_numbers(response.json()["profile"])
+
+
+async def test_get_profile_returns_height_and_weight_as_json_numbers(
+    client: AsyncClient,
+) -> None:
+    registered = await _register(client)
+    access_token = registered["access_token"]
+    await _create_profile(client, access_token)
+
+    response = await _get_profile(client, access_token)
+    assert response.status_code == 200
+    _assert_height_and_weight_are_json_numbers(response.json()["profile"])
+
+
+async def test_auth_me_returns_height_and_weight_as_json_numbers(
+    client: AsyncClient,
+) -> None:
+    registered = await _register(client)
+    access_token = registered["access_token"]
+    await _create_profile(client, access_token)
+
+    response = await _me(client, access_token)
+    assert response.status_code == 200
+    _assert_height_and_weight_are_json_numbers(response.json()["profile"])
+
+
 # --- PATCH /profile: the editable/immutable table (§5.9) and its controls ------------------
 
 
