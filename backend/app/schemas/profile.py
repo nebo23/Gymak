@@ -1,0 +1,100 @@
+"""Request/response shapes for spec §5.7 (the profile half), §5.8 (POST /profile) and
+§5.9 (PATCH /profile).
+
+Following schemas/auth.py's convention: fields are plain, permissive types with no
+pydantic validator that raises. A raising validator becomes pydantic's own
+ValidationError, which FastAPI turns into its own default error body -- not the §7.2
+problem+json envelope. Content validation (ranges, enums, the name character set,
+P1-SAF-001) happens explicitly in profile_service, which raises
+app.core.errors.ValidationError / GoalNotPermittedForMinorError itself and gets the
+correct envelope for free through the AppError handler already registered in
+core/errors.py.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+
+from pydantic import BaseModel, ConfigDict
+
+
+class ProfileCreateRequest(BaseModel):
+    """§5.8. birth_date is a plain str (not a pydantic `date`), deliberately -- see the
+    module docstring: a malformed date string must reach profile_service as a
+    VALIDATION_ERROR, not FastAPI's default body.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    gender: str
+    birth_date: str
+    height_cm: Decimal
+    weight_kg: Decimal | None = None
+    goal: str
+    experience_level: str
+    activity_level: str | None = None
+    unit_system: str = "metric"
+    language: str = "ar"
+
+
+class ProfileUpdateRequest(BaseModel):
+    """§5.9's editable/immutable table. Every field is optional so `model_dump(
+    exclude_unset=True)` in profile_service tells "not sent" from "sent", which is what
+    "only the keys present in the body are touched" (partial update) requires.
+
+    `onboarding_completed` is declared explicitly, and only so `extra="forbid"` does not
+    reject it -- §5.9: "Server-controlled. A client sending it is ignored, not
+    rejected." profile_service never reads this field.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    gender: str | None = None
+    birth_date: str | None = None
+    height_cm: Decimal | None = None
+    weight_kg: Decimal | None = None
+    goal: str | None = None
+    experience_level: str | None = None
+    activity_level: str | None = None
+    unit_system: str | None = None
+    language: str | None = None
+    onboarding_completed: bool | None = None
+
+
+class ProfileData(BaseModel):
+    """The full profile object shape shared by /auth/me, and the POST/GET/PATCH
+    /profile responses (§5.7, §5.8, §5.9)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    gender: str
+    birth_date: date
+    height_cm: Decimal
+    weight_kg: Decimal | None
+    goal: str
+    experience_level: str
+    activity_level: str | None
+    unit_system: str
+    language: str
+    onboarding_completed: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class DerivedFields(BaseModel):
+    """§5.8: "age is computed, never stored." """
+
+    age: int
+
+
+class ProfileCreateResponse(BaseModel):
+    profile: ProfileData
+    derived: DerivedFields
+
+
+class ProfileResponse(BaseModel):
+    profile: ProfileData

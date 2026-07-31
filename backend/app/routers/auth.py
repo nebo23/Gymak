@@ -13,6 +13,8 @@ from app.core.dependencies import get_db, require_active
 from app.core.rate_limit import enforce, ip_key, key_for_email, rate_limit
 from app.models.user import User
 from app.schemas.auth import (
+    AuthMeResponse,
+    AuthMeUser,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginRequest,
@@ -27,8 +29,9 @@ from app.schemas.auth import (
     VerifyCodeRequest,
     VerifyCodeResponse,
 )
+from app.schemas.profile import ProfileData
 from app.services import auth_service, password_reset_service, social_service
-from app.services.auth_service import IssuedSession
+from app.services.auth_service import AuthMeResult, IssuedSession
 from app.services.social_service import SocialSignInResult
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -221,3 +224,26 @@ async def reset_password_route(
     background_tasks.add_task(
         password_reset_service.send_password_changed_email, pending.email, pending.language
     )
+
+
+def _to_me_response(result: AuthMeResult) -> AuthMeResponse:
+    return AuthMeResponse(
+        user=AuthMeUser(
+            id=result.user.id,
+            email=result.user.email,
+            email_verified=result.user.email_verified,
+            created_at=result.user.created_at,
+            auth_methods=result.auth_methods,
+        ),
+        onboarding_completed=result.onboarding_completed,
+        profile=ProfileData.model_validate(result.profile) if result.profile is not None else None,
+    )
+
+
+@router.get("/me", response_model=AuthMeResponse)
+async def get_me_route(
+    user: Annotated[User, Depends(require_active)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> AuthMeResponse:
+    result = await auth_service.get_me(session, user)
+    return _to_me_response(result)

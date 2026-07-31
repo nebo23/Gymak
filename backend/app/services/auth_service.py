@@ -6,6 +6,7 @@ app/routers/auth.py is what shapes that into TokenPairResponse.
 from __future__ import annotations
 
 import secrets
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -32,8 +33,9 @@ from app.core.security import (
     verify_password,
 )
 from app.database import set_rls_user
+from app.models.profile import Profile
 from app.models.user import User
-from app.repositories import token_repo, user_repo
+from app.repositories import identity_repo, profile_repo, token_repo, user_repo
 from app.schemas.auth import (
     LoginRequest,
     LogoutRequest,
@@ -73,6 +75,18 @@ def _validate_language(language: str) -> None:
         )
 
 
+async def _onboarding_completed_for(session: AsyncSession, user_id: uuid.UUID) -> bool:
+    """A.5 item 7: register/login/social/refresh all report whether onboarding is done
+    by reading the profiles row, not a hardcoded value -- a hardcoded False was correct
+    only while nothing in this codebase could create a profile at all, and became wrong
+    the moment T-08 shipped one. profiles carries FORCE RLS (§4.7), so this must only be
+    called after app.user_id is bound for `user_id` in the current transaction -- every
+    caller below binds it (via set_rls_user) immediately before reaching here.
+    """
+    profile = await profile_repo.get_by_user_id(session, user_id)
+    return profile.onboarding_completed if profile is not None else False
+
+
 async def _issue_session(session: AsyncSession, user: User) -> IssuedSession:
     """§5.2/§5.3's identical token-pair shape, and §6.3's opaque-refresh-token contract:
     a brand new family, stored hashed only, with the raw value returned exactly once.
@@ -100,10 +114,10 @@ async def _issue_session(session: AsyncSession, user: User) -> IssuedSession:
         expires_in=expires_in,
         refresh_token=raw_refresh_token,
         refresh_expires_in=settings.REFRESH_TOKEN_TTL_SECONDS,
-        # §5.2: "No profile row is created here." No profile_repo exists yet either
-        # (T-08 territory) -- every account is mid-onboarding until then, for register
-        # and login alike, so this is correct today rather than a placeholder guess.
-        onboarding_completed=False,
+        # §5.2: "No profile row is created here" for a fresh register, so this reads
+        # False there -- but this function is also login's and social sign-in's path
+        # (T-08 A.5 item 7), where a profile may already exist from a previous session.
+        onboarding_completed=await _onboarding_completed_for(session, user.id),
     )
 
 
@@ -291,6 +305,17 @@ async def refresh(
     await audit_service.record_token_refreshed(
         session, user_id=user.id, ip=ip, user_agent=user_agent
     )
+    # T-08 A.5 item 7: this function builds its own IssuedSession rather than going
+    # through _issue_session (it rotates an existing family instead of starting a fresh
+    # one), so it needed this fix independently -- fixing _issue_session alone would
+    # have left refresh() reporting a stale False for an onboarded user. Read BEFORE
+    # commit, not after: set_rls_user's app.user_id bind is transaction-local (SET
+    # LOCAL), so a lookup issued after session.commit() runs in a new transaction with
+    # app.user_id unset again -- profiles' FORCE RLS then hides the row and this would
+    # silently read back False for an onboarded user. Caught by
+    # test_onboarding_completed_flips_true_in_auth_me_login_and_refresh, not by
+    # inspection.
+    onboarding_completed = await _onboarding_completed_for(session, user.id)
     await session.commit()
     return IssuedSession(
         user=user,
@@ -298,7 +323,7 @@ async def refresh(
         expires_in=expires_in,
         refresh_token=raw_refresh_token,
         refresh_expires_in=settings.REFRESH_TOKEN_TTL_SECONDS,
-        onboarding_completed=False,
+        onboarding_completed=onboarding_completed,
     )
 
 
@@ -353,3 +378,34 @@ async def logout_all(
         session, user_id=user.id, family_id=None, reason="logout_all", ip=ip, user_agent=user_agent
     )
     await session.commit()
+
+
+@dataclass(frozen=True, slots=True)
+class AuthMeResult:
+    user: User
+    auth_methods: list[str]
+    onboarding_completed: bool
+    profile: Profile | None
+
+
+async def get_me(session: AsyncSession, user: User) -> AuthMeResult:
+    """§5.7 GET /auth/me: "One round trip decides the whole navigation state."
+
+    `user` arrives already authenticated -- the caller (get_current_user) has bound
+    app.user_id for this transaction, which both profiles (FORCE RLS) and the profile
+    lookup below depend on. `auth_methods` lists "password" first (if a password is
+    set), then every linked social provider in link order, matching §5.7's own example
+    (`["password", "google"]`).
+    """
+    auth_methods: list[str] = []
+    if user.password_hash is not None:
+        auth_methods.append("password")
+    auth_methods.extend(await identity_repo.list_providers_for_user(session, user.id))
+
+    profile = await profile_repo.get_by_user_id(session, user.id)
+    return AuthMeResult(
+        user=user,
+        auth_methods=auth_methods,
+        onboarding_completed=profile.onboarding_completed if profile is not None else False,
+        profile=profile,
+    )

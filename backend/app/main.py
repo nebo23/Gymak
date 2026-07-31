@@ -12,7 +12,7 @@ from app.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.database import assert_connection_is_not_privileged
-from app.routers import auth, health
+from app.routers import auth, health, profile
 
 # Spec 6.5: security headers on every response.
 _SECURITY_HEADERS = {
@@ -82,6 +82,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(profile.router, prefix="/api/v1")
 
     return app
 

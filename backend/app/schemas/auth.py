@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
 from app.core.errors import ValidationError
+from app.schemas.profile import ProfileData
 
 # §7.1: "RFC-shaped, <=254 chars ... MX not checked." A pragmatic shape check, not a full
 # RFC 5322 grammar -- MX is explicitly out of scope and a hand-rolled full-grammar regex
@@ -141,6 +143,27 @@ class SocialSignInResponse(TokenPairResponse):
     """
 
     is_new_user: bool
+
+
+class AuthMeUser(BaseModel):
+    """§5.7's `user` object. `auth_methods` lists "password" (if a password is set)
+    followed by every linked social provider -- see auth_service.get_me."""
+
+    id: uuid.UUID
+    email: str
+    email_verified: bool
+    created_at: datetime
+    auth_methods: list[str]
+
+
+class AuthMeResponse(BaseModel):
+    """§5.7: "One round trip decides the whole navigation state." `profile` is null
+    until onboarding completes, then the same shape POST/GET/PATCH /profile return.
+    """
+
+    user: AuthMeUser
+    onboarding_completed: bool
+    profile: ProfileData | None
 
 
 def normalise_email(raw: str) -> str:

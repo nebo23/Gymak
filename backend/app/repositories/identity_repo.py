@@ -32,6 +32,20 @@ async def get_by_provider_uid(
     return result.scalar_one_or_none()
 
 
+async def list_providers_for_user(session: AsyncSession, user_id: uuid.UUID) -> list[str]:
+    """§5.7's `auth_methods`: every provider linked to this user (e.g. ["google"]),
+    oldest link first. Ordered by created_at so the result is deterministic rather than
+    whatever order the database happens to return -- callers (auth_service.get_me)
+    append these after "password", so a stable order here keeps the whole list stable.
+    """
+    result = await session.execute(
+        select(UserIdentity.provider)
+        .where(UserIdentity.user_id == user_id)
+        .order_by(UserIdentity.created_at)
+    )
+    return list(result.scalars().all())
+
+
 async def create_identity(
     session: AsyncSession,
     user_id: uuid.UUID,
