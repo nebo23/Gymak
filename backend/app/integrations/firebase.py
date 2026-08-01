@@ -63,13 +63,16 @@ def verify_id_token(id_token: str) -> dict[str, Any]:
 
     Raises RuntimeError, cleanly, if `init_firebase()` was never called or ran with no
     credentials configured -- rather than an AttributeError from a None app reaching the
-    SDK. social_service wraps every failure from this function into
-    401 SOCIAL_TOKEN_INVALID (it does not distinguish "not configured" from "bad token"),
-    so either way the caller gets a proper problem+json response, not a 500.
+    SDK. A.5 item 16: social_service distinguishes this (and
+    firebase_admin.auth.CertificateFetchError / exceptions.UnavailableError, raised when
+    the SDK cannot reach Google at all) from every other failure -- those three mean the
+    deployment is broken, not that this particular token is bad, and get
+    503 UPSTREAM_UNAVAILABLE instead of 401 SOCIAL_TOKEN_INVALID.
 
     Otherwise raises whatever firebase_admin.auth raises on any failure (invalid
     signature, expired, revoked, wrong project, ...) -- every one of those is a
-    firebase_admin.exceptions.FirebaseError.
+    firebase_admin.exceptions.FirebaseError, and social_service maps all of them to
+    401 SOCIAL_TOKEN_INVALID.
     """
     if _app is None:
         raise RuntimeError(

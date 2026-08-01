@@ -55,7 +55,15 @@ async def test_social_route_without_credentials_fails_cleanly_not_at_import(
 ) -> None:
     """The other half of the control: once a social route IS called without Firebase
     configured, the request must fail with a structured error response, not a raw 500
-    or an unhandled exception surfacing before the app ever starts serving traffic."""
+    or an unhandled exception surfacing before the app ever starts serving traffic.
+
+    A.5 item 16: a missing/malformed FIREBASE_CREDENTIALS_JSON is exactly the
+    deployment-misconfiguration case that endpoint now reports as
+    503 UPSTREAM_UNAVAILABLE rather than 401 SOCIAL_TOKEN_INVALID -- see
+    test_social_auth.py's item-16 tests for the code-level assertion on that mapping.
+    This test's own concern is narrower and unchanged by that: whatever the code is,
+    it must be a structured problem+json response, not an unhandled 500.
+    """
     monkeypatch.setattr(settings, "FIREBASE_CREDENTIALS_JSON", None)
     app = create_app()
     transport = ASGITransport(app=app)
@@ -67,8 +75,8 @@ async def test_social_route_without_credentials_fails_cleanly_not_at_import(
             )
 
     body = response.json()
-    assert response.status_code < 500, body
-    assert body["code"] != "INTERNAL_ERROR", body
+    assert response.status_code == 503, body
+    assert body["code"] == "UPSTREAM_UNAVAILABLE", body
 
 
 async def test_verify_id_token_raises_cleanly_when_not_initialised(

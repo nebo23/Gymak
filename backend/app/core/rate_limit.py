@@ -1,4 +1,5 @@
-"""Fixed-window rate limiting (§6.4).
+"""Fixed-window rate limiting (§6.4), plus exponential backoff for the one scope §6.4
+names for it (`/auth/login`, A.5 item 8).
 
 >>> SINGLE-INSTANCE ONLY. The counters below live in this process's memory. <<<
 >>>
@@ -57,6 +58,18 @@ class RateLimited(RateLimitExceededError):
         super().__init__(detail=f"Too many requests. Retry after {retry_after_seconds} seconds.")
 
 
+# A.5 item 8 / §6.4: "/auth/login ... 10 / 15 min, then exponential backoff." The base
+# fixed window below enforces the "10 / 15 min" half on its own; these two constants are
+# the "then exponential backoff" half, applied only to the scope named in
+# `_ESCALATED_SCOPES`. Base delay chosen so the FIRST trip (the case the existing
+# test_login_is_rate_limited_at_ten_per_fifteen_minutes test already asserts on) still
+# lands well inside a sane Retry-After, and doubles from there; capped so a very long
+# streak cannot make the header itself absurd.
+_BACKOFF_BASE_SECONDS: Final[int] = 30
+_BACKOFF_MAX_SECONDS: Final[int] = 3600
+_ESCALATED_SCOPES: Final[frozenset[str]] = frozenset({"auth.login"})
+
+
 class _InMemoryFixedWindow:
     """Counters keyed by bucket, reset on a wall-clock-independent window boundary.
 
@@ -72,29 +85,79 @@ class _InMemoryFixedWindow:
 
     def __init__(self) -> None:
         self._counts: dict[tuple[str, int], int] = {}
+        # A.5 item 8: escalating penalty state, kept separate from the fixed-window
+        # counts above -- bucket -> (violation streak, monotonic time the penalty
+        # expires). Only touched for buckets built from an `_ESCALATED_SCOPES` scope.
+        self._violations: dict[str, tuple[int, float]] = {}
         # FastAPI runs sync dependencies in a worker thread pool, so `consume` is not
         # guaranteed to be called only from the event loop thread. The lock is uncontended in
         # the normal case and makes the read-modify-write atomic regardless.
         self._lock = threading.Lock()
 
-    def consume(self, bucket: str, *, limit: int, window_seconds: int) -> RateLimitDecision:
+    def consume(
+        self, bucket: str, *, limit: int, window_seconds: int, escalate: bool = False
+    ) -> RateLimitDecision:
         now = time.monotonic()
-        window_index = int(now // window_seconds)
-        window_ends_at = (window_index + 1) * window_seconds
-        retry_after = max(1, math.ceil(window_ends_at - now))
 
         with self._lock:
+            window_index = int(now // window_seconds)
+            window_ends_at = (window_index + 1) * window_seconds
+            retry_after = max(1, math.ceil(window_ends_at - now))
+
+            if escalate:
+                self._evict_stale_violations(now)
+                locked_until = self._active_lock(bucket, now)
+                if locked_until is not None:
+                    # Still serving a penalty from an earlier violation -- hammering the
+                    # endpoint again while locked out is itself another violation, so
+                    # this extends (escalates) the penalty rather than merely reporting
+                    # the remaining wait on the current one. As with the window-limit
+                    # branch below, the header must never promise earlier than the base
+                    # window itself will allow.
+                    return RateLimitDecision(
+                        allowed=False,
+                        remaining=0,
+                        retry_after_seconds=max(retry_after, self._penalise(bucket, now)),
+                    )
+
             self._evict_expired_windows(window_index)
             key = (bucket, window_index)
             used = self._counts.get(key, 0)
             if used >= limit:
+                if escalate:
+                    retry_after = max(retry_after, self._penalise(bucket, now))
                 return RateLimitDecision(
                     allowed=False, remaining=0, retry_after_seconds=retry_after
                 )
             self._counts[key] = used + 1
+            if escalate:
+                # A request that cleared both the window count and any active lock is a
+                # clean one -- the streak represents CONSECUTIVE abuse, not lifetime
+                # abuse, so it resets here rather than only on lock expiry.
+                self._violations.pop(bucket, None)
             return RateLimitDecision(
                 allowed=True, remaining=limit - used - 1, retry_after_seconds=retry_after
             )
+
+    def _active_lock(self, bucket: str, now: float) -> float | None:
+        entry = self._violations.get(bucket)
+        if entry is None:
+            return None
+        _streak, locked_until = entry
+        return locked_until if locked_until > now else None
+
+    def _penalise(self, bucket: str, now: float) -> int:
+        """Record one more violation for `bucket` and return the new Retry-After.
+
+        Delay doubles with every consecutive violation (30s, 60s, 120s, ...), capped at
+        `_BACKOFF_MAX_SECONDS` -- true exponential backoff, distinct from the base fixed
+        window's own Retry-After (which only ever reflects time-to-window-boundary).
+        """
+        streak, _ = self._violations.get(bucket, (0, 0.0))
+        streak += 1
+        delay: int = min(_BACKOFF_MAX_SECONDS, _BACKOFF_BASE_SECONDS * (2 ** (streak - 1)))
+        self._violations[bucket] = (streak, now + delay)
+        return max(1, delay)
 
     def _evict_expired_windows(self, current_window_index: int) -> None:
         """Without this the dict grows for the life of the process, one entry per distinct
@@ -105,10 +168,25 @@ class _InMemoryFixedWindow:
         for key in stale:
             del self._counts[key]
 
+    def _evict_stale_violations(self, now: float) -> None:
+        """Same memory concern as `_evict_expired_windows`, for the penalty table: once a
+        bucket's lock has been expired for longer than the maximum possible penalty, it
+        cannot still be "mid-streak" in any meaningful sense, so it is safe to drop --
+        the next violation from that bucket, if any, just starts a fresh streak at 1.
+        """
+        stale = [
+            b
+            for b, (_streak, locked_until) in self._violations.items()
+            if locked_until < now - _BACKOFF_MAX_SECONDS
+        ]
+        for b in stale:
+            del self._violations[b]
+
     def reset(self) -> None:
         """Clear every counter. For tests, and for nothing else."""
         with self._lock:
             self._counts.clear()
+            self._violations.clear()
 
 
 limiter: Final = _InMemoryFixedWindow()
@@ -153,8 +231,19 @@ def enforce(*, scope: str, key: str, limit: int, window_seconds: int) -> RateLim
     """Consume one unit and raise RateLimited if the window is full.
 
     Returns the decision on success so a caller can surface the remaining allowance.
+
+    A.5 item 8: `scope` alone decides whether exponential backoff applies, rather than
+    a parameter every call site would need to pass -- `/auth/login` (auth.py) calls
+    this function exactly as T-04 wrote it, keyed on IP and then on email, "whichever
+    trips first" per §6.4; naming the scope here is what lets that call site stay
+    unchanged while still getting the escalation §6.4 asks for.
     """
-    decision = limiter.consume(f"{scope}:{key}", limit=limit, window_seconds=window_seconds)
+    decision = limiter.consume(
+        f"{scope}:{key}",
+        limit=limit,
+        window_seconds=window_seconds,
+        escalate=scope in _ESCALATED_SCOPES,
+    )
     if not decision.allowed:
         raise RateLimited(decision.retry_after_seconds)
     return decision

@@ -13,6 +13,8 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
+from firebase_admin.auth import CertificateFetchError
+from firebase_admin.exceptions import UnavailableError
 from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -449,6 +451,67 @@ async def test_firebase_verification_failure_returns_social_token_invalid(
     response = await client.post(_SOCIAL_GOOGLE, json={"id_token": "bad"})
     assert response.status_code == 401
     assert response.json()["code"] == "SOCIAL_TOKEN_INVALID"
+
+
+# --- A.5 item 16: misconfiguration/unreachability is 503, not 401 -----------------------
+
+
+async def test_uninitialised_admin_sdk_returns_upstream_unavailable_not_social_token_invalid(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """firebase.verify_id_token raises RuntimeError when init_firebase() never ran or
+    ran with FIREBASE_CREDENTIALS_JSON unset (see its docstring) -- a deployment
+    problem, not evidence about this token. Before A.5 item 16, social_service's
+    blanket `except Exception` reported this identically to a genuinely bad token.
+    """
+
+    def _raise(id_token: str) -> dict[str, object]:
+        raise RuntimeError(
+            "Firebase Admin SDK is not initialised: FIREBASE_CREDENTIALS_JSON is not set."
+        )
+
+    monkeypatch.setattr(firebase, "verify_id_token", _raise)
+
+    response = await client.post(_SOCIAL_GOOGLE, json={"id_token": "t"})
+    assert response.status_code == 503
+    assert response.json()["code"] == "UPSTREAM_UNAVAILABLE"
+
+
+async def test_certificate_fetch_failure_returns_upstream_unavailable(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """firebase_admin.auth.CertificateFetchError: the SDK could not reach Google to
+    fetch its public signing certs -- a reachability problem the way a database being
+    down is, not a statement about the token presented.
+    """
+
+    def _raise(id_token: str) -> dict[str, object]:
+        raise CertificateFetchError("could not fetch certificates", Exception("network down"))
+
+    monkeypatch.setattr(firebase, "verify_id_token", _raise)
+
+    response = await client.post(_SOCIAL_GOOGLE, json={"id_token": "t"})
+    assert response.status_code == 503
+    assert response.json()["code"] == "UPSTREAM_UNAVAILABLE"
+
+
+async def test_revocation_check_unavailable_returns_upstream_unavailable(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§5.4 step 1 calls verify_id_token with check_revoked=True, which makes its own
+    network call to Firebase's Identity Toolkit; firebase_admin.exceptions
+    .UnavailableError is what it raises when that call cannot reach Google -- also a
+    reachability problem, not a bad-token problem.
+    """
+
+    def _raise(id_token: str) -> dict[str, object]:
+        raise UnavailableError("service unavailable")
+
+    monkeypatch.setattr(firebase, "verify_id_token", _raise)
+
+    response = await client.post(_SOCIAL_GOOGLE, json={"id_token": "t"})
+    assert response.status_code == 503
+    assert response.json()["code"] == "UPSTREAM_UNAVAILABLE"
 
 
 async def test_social_sign_in_is_rate_limited_at_twenty_per_hour_per_ip(

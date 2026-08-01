@@ -10,6 +10,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Final
 
+from firebase_admin.auth import CertificateFetchError
+from firebase_admin.exceptions import UnavailableError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +20,7 @@ from app.core.errors import (
     IdentityAlreadyLinkedError,
     ProviderNotSupportedError,
     SocialTokenInvalidError,
+    UpstreamUnavailableError,
 )
 from app.integrations import firebase
 from app.repositories import audit_repo, identity_repo, user_repo
@@ -164,11 +167,22 @@ async def sign_in(
     if expected_sign_in_provider is None:
         raise ProviderNotSupportedError(detail=f"'{provider}' is not a supported sign-in provider.")
 
-    # Step 1: verify with the admin SDK, never decode manually. "Any failure ->
-    # 401 SOCIAL_TOKEN_INVALID" is deliberately broad here -- this call is a security
-    # boundary, not a place to distinguish causes for the caller.
+    # Step 1: verify with the admin SDK, never decode manually. §5.4: "Any failure ->
+    # 401 SOCIAL_TOKEN_INVALID" -- but A.5 item 16: that was too broad. A genuine
+    # verification failure (bad signature, expired, revoked, wrong project, ...) is a
+    # client-token problem and stays 401. An admin-SDK that was never initialised
+    # (firebase.py's own RuntimeError -- see its docstring) or cannot reach Google at
+    # all (CertificateFetchError fetching signing certs; UnavailableError from the
+    # revocation check §5.4 step 1 requires via check_revoked=True) is a deployment or
+    # reachability problem, not something about this token, and must not be reported
+    # to the client as "your token was bad" -- §7.3 defines 503 UPSTREAM_UNAVAILABLE
+    # for exactly this case.
     try:
         raw_claims = firebase.verify_id_token(id_token)
+    except (RuntimeError, CertificateFetchError, UnavailableError) as exc:
+        raise UpstreamUnavailableError(
+            detail="The identity provider is temporarily unavailable. Try again shortly."
+        ) from exc
     except Exception as exc:
         raise SocialTokenInvalidError(
             detail="The social sign-in token could not be verified."

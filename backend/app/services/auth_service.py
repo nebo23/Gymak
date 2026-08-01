@@ -35,7 +35,7 @@ from app.core.security import (
 from app.database import bind_pre_auth_rls_user
 from app.models.profile import Profile
 from app.models.user import User
-from app.repositories import identity_repo, profile_repo, token_repo, user_repo
+from app.repositories import audit_repo, identity_repo, profile_repo, token_repo, user_repo
 from app.schemas.auth import (
     LoginRequest,
     LogoutRequest,
@@ -411,3 +411,55 @@ async def get_me(session: AsyncSession, user: User) -> AuthMeResult:
         onboarding_completed=profile.onboarding_completed if profile is not None else False,
         profile=profile,
     )
+
+
+_PURGE_AFTER_DAYS = 30
+
+
+@dataclass(frozen=True, slots=True)
+class AccountDeletionResult:
+    deleted_at: datetime
+    purge_after_days: int
+
+
+async def delete_account(
+    session: AsyncSession,
+    user: User,
+    *,
+    password: str | None,
+    ip: str | None,
+    user_agent: str | None,
+) -> AccountDeletionResult:
+    """§5.10 DELETE /account. `user` arrives already bearer-authenticated --
+    get_current_user has bound app.user_id for this transaction, same precondition
+    logout/logout_all rely on.
+
+    A password is required exactly when the account has one. A social-only account
+    (password_hash NULL) never had a password to confirm, so none is asked for and
+    whatever the caller sent is ignored -- the same "extra body fields don't
+    influence the outcome" posture §5.4 requires of social sign-in. A
+    password-holding account that gets it wrong is told INVALID_CREDENTIALS, the
+    same generic code §5.3 uses for a wrong login password, rather than a new code
+    §7.3 does not list: a prober should not be able to tell "wrong password" apart
+    from "this account never had one" by response shape.
+    """
+    if user.password_hash is not None:
+        verification = verify_password(password or "", user.password_hash)
+        if not verification.ok:
+            raise InvalidCredentialsError(detail="The password is incorrect.")
+
+    deleted_at = datetime.now(UTC)
+    user.deleted_at = deleted_at
+    user.token_version += 1
+    await token_repo.revoke_all_for_user(session, user.id)
+    await audit_repo.record(
+        session,
+        action="account.deletion_requested",
+        actor_user_id=user.id,
+        entity="user",
+        entity_id=user.id,
+        ip=ip,
+        user_agent=user_agent,
+    )
+    await session.commit()
+    return AccountDeletionResult(deleted_at=deleted_at, purge_after_days=_PURGE_AFTER_DAYS)

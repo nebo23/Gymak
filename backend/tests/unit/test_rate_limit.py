@@ -159,6 +159,31 @@ def test_expired_windows_are_evicted_so_the_dict_cannot_grow_without_bound(
     assert len(limiter._counts) == 1, "only the current window's entry should survive"
 
 
+# --- escalating backoff -----------------------------------------------------------------
+
+
+def test_the_active_lock_retry_after_is_never_earlier_than_the_window(
+    clock: _FakeClock,
+) -> None:
+    """A.5 item 8: the FIRST rejection after tripping the limit takes the window-count
+    branch of `consume`, which already takes max(window remainder, penalty). Every
+    rejection after that -- while the penalty lock from the first one is still active --
+    takes a separate early-return branch, and it fires far more often than the first. Two
+    consecutive rejections inside the same 900s window must both report a Retry-After no
+    earlier than the window boundary, not the smaller escalating penalty (30s, then 60s)
+    on its own.
+    """
+    limiter.consume("bucket", limit=1, window_seconds=900, escalate=True)
+
+    first = limiter.consume("bucket", limit=1, window_seconds=900, escalate=True)
+    assert first.allowed is False
+    assert first.retry_after_seconds == 900  # window-count branch: window dwarfs the 30s penalty
+
+    second = limiter.consume("bucket", limit=1, window_seconds=900, escalate=True)
+    assert second.allowed is False
+    assert second.retry_after_seconds == 900  # active-lock branch: window still dwarfs 60s
+
+
 # --- scope and key strategies ----------------------------------------------------------
 
 

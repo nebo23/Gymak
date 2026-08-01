@@ -18,12 +18,13 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.rate_limit import limiter
-from app.core.security import hash_opaque_token
+from app.core.rate_limit import RateLimited, enforce, limiter
+from app.core.security import PasswordVerification, hash_opaque_token
 from app.database import set_rls_user
 from app.models.audit import AuditLog
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
+from app.services import auth_service
 
 pytestmark = pytest.mark.asyncio
 
@@ -416,3 +417,106 @@ async def test_login_is_rate_limited_at_ten_per_fifteen_minutes(client: AsyncCli
     assert "Retry-After" in refused.headers
     retry_after = int(refused.headers["Retry-After"])
     assert 1 <= retry_after <= 900
+
+
+async def test_login_backoff_escalates_retry_after_beyond_the_window_remainder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A.5 item 8 / §6.4: "10 / 15 min, then exponential backoff." The very first trip
+    happens with the whole 900s window still left, which dwarfs the first 30s penalty
+    step -- Retry-After must report the window remainder there, not the smaller penalty
+    (a client trusting a too-small header counts down to zero and is refused again).
+    Only once the doubling penalty (30, 60, 120, ...) outgrows the window itself does the
+    header exceed 900, proving the backoff riding on top of the fixed window actually does
+    something once it's had room to grow.
+
+    The clock is pinned rather than left real: `enforce()` keys its window off
+    `time.monotonic()`, whose epoch is arbitrary (process start, not test start), so the
+    "remainder" of a real clock's current window is not reliably close to 900 -- it could
+    be anywhere in the window by the time this test runs.
+    """
+    monkeypatch.setattr("app.core.rate_limit.time.monotonic", lambda: 0.0)
+
+    key = f"email:escalate-{uuid.uuid4().hex[:8]}@example.com"
+
+    for _ in range(10):
+        enforce(scope="auth.login", key=key, limit=10, window_seconds=900)
+
+    with pytest.raises(RateLimited) as first_exc:
+        enforce(scope="auth.login", key=key, limit=10, window_seconds=900)
+    assert first_exc.value.retry_after_seconds == 900
+
+    # Keep hammering while still locked out: each hit escalates the penalty further
+    # (60, 120, 240, 480, 960) until, on the sixth violation, it finally exceeds the
+    # 900s window the first trip was capped at.
+    retry_after = first_exc.value.retry_after_seconds
+    for _ in range(5):
+        with pytest.raises(RateLimited) as exc_info:
+            enforce(scope="auth.login", key=key, limit=10, window_seconds=900)
+        retry_after = exc_info.value.retry_after_seconds
+
+    assert retry_after > 900
+
+
+async def test_login_backoff_state_is_isolated_per_bucket() -> None:
+    """§6.4: login is limited by "IP + email, whichever trips first" -- the base limit
+    is already keyed per bucket, and the backoff riding on top of it must be too, so
+    one address's escalated penalty cannot bleed into another's.
+
+    Exercised directly against `enforce`/the limiter rather than through two HTTP
+    callers: httpx's ASGITransport reports one fixed client address for every request
+    made through the `client` fixture (`ASGITransport.__init__`'s
+    `client=("127.0.0.1", 123)` default), so two different emails sent through it
+    collapse onto the same IP-keyed bucket and the IP check -- which the router runs
+    before the email check -- would trip for both regardless of what this test is
+    actually trying to isolate.
+    """
+    tripped_key = f"email:tripped-{uuid.uuid4().hex[:8]}@example.com"
+    for _ in range(10):
+        enforce(scope="auth.login", key=tripped_key, limit=10, window_seconds=900)
+    try:
+        enforce(scope="auth.login", key=tripped_key, limit=10, window_seconds=900)
+        raise AssertionError("expected the 11th call on the tripped bucket to be limited")
+    except RateLimited as exc:
+        assert exc.retry_after_seconds >= 30  # >= the first escalation step; the still-fresh
+        # 900s window dominates here, so the real value is close to the window remainder
+
+    # A different bucket (a different email) starts completely fresh -- ten calls all
+    # succeed, proving the escalation above did not leak across buckets.
+    fresh_key = f"email:fresh-{uuid.uuid4().hex[:8]}@example.com"
+    for _ in range(10):
+        enforce(scope="auth.login", key=fresh_key, limit=10, window_seconds=900)
+
+
+# --- login: the dummy-hash branch (A.5 item 14(a)) ---------------------------------------
+
+
+async def test_login_with_a_never_registered_email_runs_the_dummy_hash_verifier_once(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A.5 item 14(a): §5.3 requires a dummy Argon2 verification when the user is not
+    found, so response time does not leak whether the email exists. Nothing previously
+    proved that branch runs. Per the task's own rule (matching T-03's
+    compare_digest test), this does NOT assert on wall-clock timing -- that is flaky.
+    Instead it structurally spies on auth_service.verify_password (the name bound in
+    auth_service's own namespace, which is what the login code path actually calls)
+    and asserts it was called exactly once, against the fixed dummy hash, for an
+    address that has never registered.
+    """
+    calls: list[tuple[str, str]] = []
+    real_verify_password = auth_service.verify_password
+
+    def _spy(password: str, password_hash: str) -> PasswordVerification:
+        calls.append((password, password_hash))
+        return real_verify_password(password, password_hash)
+
+    monkeypatch.setattr(auth_service, "verify_password", _spy)
+
+    response = await _login(client, email=_unique_email("never-registered"), password="whatever")
+    assert response.status_code == 401
+    assert response.json()["code"] == "INVALID_CREDENTIALS"
+
+    assert len(calls) == 1
+    called_password, called_hash = calls[0]
+    assert called_password == "whatever"
+    assert called_hash == auth_service._DUMMY_PASSWORD_HASH
