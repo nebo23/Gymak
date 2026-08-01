@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +21,7 @@ from app.core.rate_limit import limiter
 from app.database import set_rls_user
 from app.models.audit import AuditLog
 from app.models.refresh_token import RefreshToken
+from tests.support import JSONDict, json_body
 
 pytestmark = pytest.mark.asyncio
 
@@ -42,19 +43,19 @@ def _unique_email(prefix: str = "user") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}@example.com"
 
 
-async def _register(client: AsyncClient, *, email: str | None = None) -> dict:
+async def _register(client: AsyncClient, *, email: str | None = None) -> JSONDict:
     response = await client.post(
         _REGISTER, json={"email": email or _unique_email(), "password": _PASSWORD}
     )
     assert response.status_code == 201
-    return response.json()
+    return json_body(response)
 
 
-async def _refresh(client: AsyncClient, refresh_token: str):
+async def _refresh(client: AsyncClient, refresh_token: str) -> Response:
     return await client.post(_REFRESH, json={"refresh_token": refresh_token})
 
 
-async def _logout(client: AsyncClient, *, access_token: str, refresh_token: str):
+async def _logout(client: AsyncClient, *, access_token: str, refresh_token: str) -> Response:
     return await client.post(
         _LOGOUT,
         json={"refresh_token": refresh_token},
@@ -62,7 +63,7 @@ async def _logout(client: AsyncClient, *, access_token: str, refresh_token: str)
     )
 
 
-async def _logout_all(client: AsyncClient, *, access_token: str):
+async def _logout_all(client: AsyncClient, *, access_token: str) -> Response:
     return await client.post(_LOGOUT_ALL, headers={"Authorization": f"Bearer {access_token}"})
 
 

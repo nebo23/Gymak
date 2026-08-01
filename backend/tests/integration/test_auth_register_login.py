@@ -14,12 +14,13 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.rate_limit import RateLimited, enforce, limiter
 from app.core.security import PasswordVerification, hash_opaque_token
+from app.core.security import verify_password as _real_verify_password
 from app.database import set_rls_user
 from app.models.audit import AuditLog
 from app.models.refresh_token import RefreshToken
@@ -46,12 +47,12 @@ def _unique_email(prefix: str = "user") -> str:
 
 async def _register(
     client: AsyncClient, *, email: str | None = None, password: str = _PASSWORD, **extra: str
-):
+) -> Response:
     body = {"email": email or _unique_email(), "password": password, **extra}
     return await client.post(_REGISTER, json=body)
 
 
-async def _login(client: AsyncClient, *, email: str, password: str):
+async def _login(client: AsyncClient, *, email: str, password: str) -> Response:
     return await client.post(_LOGIN, json={"email": email, "password": password})
 
 
@@ -504,13 +505,16 @@ async def test_login_with_a_never_registered_email_runs_the_dummy_hash_verifier_
     address that has never registered.
     """
     calls: list[tuple[str, str]] = []
-    real_verify_password = auth_service.verify_password
 
     def _spy(password: str, password_hash: str) -> PasswordVerification:
         calls.append((password, password_hash))
-        return real_verify_password(password, password_hash)
+        return _real_verify_password(password, password_hash)
 
-    monkeypatch.setattr(auth_service, "verify_password", _spy)
+    # String-target form: patches the name in auth_service's own namespace (what the
+    # login code path actually calls) without attribute access on the module object,
+    # which --no-implicit-reexport (implied by strict) rejects for an imported-not-
+    # defined name -- app/services/auth_service.py itself is out of this task's scope.
+    monkeypatch.setattr("app.services.auth_service.verify_password", _spy)
 
     response = await _login(client, email=_unique_email("never-registered"), password="whatever")
     assert response.status_code == 401

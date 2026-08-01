@@ -22,7 +22,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +33,7 @@ from app.integrations.email.console import ConsoleEmailSender
 from app.models.refresh_token import RefreshToken
 from app.models.reset_code import PasswordResetCode
 from app.models.user import User
+from tests.support import JSONDict, json_body
 
 pytestmark = pytest.mark.asyncio
 
@@ -60,23 +61,25 @@ def _unique_email(prefix: str = "user") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}@example.com"
 
 
-async def _register(client: AsyncClient, *, email: str | None = None) -> dict:
+async def _register(client: AsyncClient, *, email: str | None = None) -> JSONDict:
     response = await client.post(
         _REGISTER, json={"email": email or _unique_email(), "password": _PASSWORD}
     )
     assert response.status_code == 201
-    return response.json()
+    return json_body(response)
 
 
-async def _forgot(client: AsyncClient, email: str):
+async def _forgot(client: AsyncClient, email: str) -> Response:
     return await client.post(_FORGOT, json={"email": email})
 
 
-async def _verify(client: AsyncClient, *, email: str, code: str):
+async def _verify(client: AsyncClient, *, email: str, code: str) -> Response:
     return await client.post(_VERIFY, json={"email": email, "code": code})
 
 
-async def _reset(client: AsyncClient, *, reset_token: str, new_password: str = _NEW_PASSWORD):
+async def _reset(
+    client: AsyncClient, *, reset_token: str, new_password: str = _NEW_PASSWORD
+) -> Response:
     return await client.post(
         _RESET, json={"reset_token": reset_token, "new_password": new_password}
     )
@@ -90,7 +93,9 @@ def _last_sent_code() -> str:
     assert ConsoleEmailSender.sent, "no email was sent"
     matches = _CODE_RE.findall(ConsoleEmailSender.sent[-1].html_body)
     assert len(matches) == 1, matches
-    return matches[0]
+    code = matches[0]
+    assert isinstance(code, str)
+    return code
 
 
 async def _get_valid_code(client: AsyncClient, email: str) -> str:
@@ -103,7 +108,9 @@ async def _get_reset_token(client: AsyncClient, email: str) -> str:
     code = await _get_valid_code(client, email)
     response = await _verify(client, email=email, code=code)
     assert response.status_code == 200
-    return response.json()["reset_token"]
+    reset_token = json_body(response)["reset_token"]
+    assert isinstance(reset_token, str)
+    return reset_token
 
 
 async def _get_code_row(db_session: AsyncSession, user_id: uuid.UUID) -> PasswordResetCode:

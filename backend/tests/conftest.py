@@ -5,7 +5,7 @@ import base64
 import json
 import os
 import secrets
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 
 import asyncpg
 import pytest
@@ -275,3 +275,38 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
     async with async_session_factory() as session:
         yield session
+
+
+# §11.1's log-capture test needs every line the WHOLE suite printed, but pytest's own
+# capsys buffer resets per test. tests/support.ALL_CAPTURED_OUTPUT accumulates it
+# process-wide -- see that module for why the list lives there rather than here.
+# structlog's PrintLogger writes with `print(message, file=None)`, which resolves to
+# whatever `sys.stdout` is at call time (confirmed against the installed structlog
+# version), i.e. exactly what capsys is already redirecting for every test.
+
+
+@pytest.fixture(autouse=True)
+def _accumulate_captured_output(capsys: pytest.CaptureFixture[str]) -> Iterator[None]:
+    from tests.support import ALL_CAPTURED_OUTPUT
+
+    yield
+    captured = capsys.readouterr()
+    if captured.out:
+        ALL_CAPTURED_OUTPUT.extend(captured.out.splitlines())
+    if captured.err:
+        ALL_CAPTURED_OUTPUT.extend(captured.err.splitlines())
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Pins tests/security/test_no_secret_logging.py's cases to run last.
+
+    Nothing else in this suite depends on execution order, but that test's result
+    would otherwise depend on how much of the suite happened to run before it in
+    whatever order pytest collected -- "the whole suite" (§11.1) means all of it, so
+    this makes that true regardless of collection order rather than by accident.
+    """
+    log_capture_items = [item for item in items if "test_no_secret_logging" in str(item.fspath)]
+    if not log_capture_items:
+        return
+    other_items = [item for item in items if item not in log_capture_items]
+    items[:] = other_items + log_capture_items

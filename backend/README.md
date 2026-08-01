@@ -1,10 +1,11 @@
 
 # Gymak backend
 
-FastAPI + PostgreSQL. Firebase Auth is used only to verify Google/Facebook sign-in; it is never
-a second datastore (see `docs/PHASE-1-SPEC.md`, P1-ADR-01). This README covers what exists after
-T-01: the application skeleton and `/api/v1/health`. It will grow with each task in the spec's
-task pack — see T-09 for the full setup/migrations/environment-variable documentation.
+FastAPI + PostgreSQL. Firebase Auth is used only to verify Google sign-in (Facebook is deferred
+to Phase 2, decision 13.1.2); it is never a second datastore (see `docs/PHASE-1-SPEC.md`,
+P1-ADR-01). This README covers the complete Phase 1 backend: every `/api/v1` endpoint in the
+spec's §5.1 catalogue, the two-role database setup, running the test suite, and every
+environment variable the application reads.
 
 ## Task scope rules
 
@@ -36,9 +37,34 @@ pip install -e ".[dev]"
 copy .env.example .env            # Windows; `cp` on macOS/Linux
 ```
 
-Fill in `.env` with real values before running the app outside of tests — at minimum
-`DATABASE_URL` and, once later tasks need them, `JWT_PRIVATE_KEY_PEM` / `JWT_PUBLIC_KEY_PEM` and
-`FIREBASE_CREDENTIALS_JSON`. Nothing in `.env` is ever committed; only `.env.example` is.
+`pytest` never reads `.env` for its own secrets — `tests/conftest.py` generates a fresh Ed25519
+keypair and reset-code pepper per run (see `pytest_configure`) and sets them as process
+environment variables before any application code imports `app.config`, so the test suite needs
+none of the steps below. Running `uvicorn` for real does need them. Nothing in `.env` is ever
+committed; only `.env.example` is.
+
+### Generate the two required secrets
+
+Two variables have no default and the application fails at startup, not at first use, if either
+is missing or malformed (`app/config.py`) — generate them once and paste the output into `.env`:
+
+```bash
+# JWT_PRIVATE_KEY_PEM / JWT_PUBLIC_KEY_PEM (P1-ADR-02: Ed25519 / EdDSA, pinned — no other curve)
+openssl genpkey -algorithm ed25519 -out jwt_private.pem
+openssl pkey -in jwt_private.pem -pubout -out jwt_public.pem
+# Paste each file's contents as JWT_PRIVATE_KEY_PEM / JWT_PUBLIC_KEY_PEM. Multiline is fine —
+# config.py normalises real newlines, \n escapes, base64-wrapped values, and CRLF alike.
+
+# RESET_CODE_PEPPER (P1-ADR-07: HMAC key for reset-code hashing, never stored in the database)
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+`FIREBASE_CREDENTIALS_JSON` is not required to start the app — `app/integrations/firebase.py`
+leaves the Admin SDK uninitialised when it is unset, and everything except
+`POST /auth/social/{provider}` works normally (that one endpoint returns `503
+UPSTREAM_UNAVAILABLE`, per A.5 item 16, rather than failing to start). Fill it in from Firebase
+console → Project settings → Service accounts → Generate new private key (spec §8.1) only once
+Google sign-in itself needs testing.
 
 ## Running locally (Windows)
 
@@ -191,8 +217,28 @@ pytest
 `tests/conftest.py` starts a disposable PostgreSQL container per test session (Docker must be
 running) and points the app at it before any application code is imported, so a missing
 `DATABASE_URL` — or any other required environment variable — fails the same way it would in a
-real deployment. Coverage is reported on every run; the 80%/95% gates in spec §11.3 are enforced
-starting T-09, once the modules they cover exist.
+real deployment. Coverage is reported on every run; spec §11.3 item 2's gates (≥ 80% overall,
+≥ 95% in `core/security.py`, `auth_service`, and `password_reset_service`, measured with greenlet
+concurrency per A-08) are met as of this version — a full run currently reports ~98% overall.
+
+The suite includes a generated cross-tenant matrix (`tests/security/test_cross_tenant.py`, §11.1,
+§11.3 item 3) that enumerates the live route table rather than a hand-written list, and a
+log-capture test (`tests/security/test_no_secret_logging.py`, §6.5) that scans every line printed
+by the *entire* suite for known secret values and proves — with a real log call, not just an
+absence of violations — that the redaction allowlist actually redacts. Neither test is
+meaningful run in isolation; `pytest` with no arguments is the form both were designed for.
+
+## Regenerating the OpenAPI document
+
+```bash
+python scripts/export_openapi.py
+```
+
+Writes `backend/openapi.json` from the live FastAPI app (route table plus every Pydantic
+schema) — no database or Firebase credential needed, since building the schema never runs the
+lifespan handler. `tests/unit/test_openapi_contract.py` fails the suite if the committed file
+ever drifts from what this script would produce, so re-run it and commit the result whenever a
+route or request/response shape changes (spec §11.3 item 6).
 
 ## Code quality gate
 
@@ -202,15 +248,16 @@ before its diff is considered done (spec rule 0.2.7), in this order:
 ```bash
 ruff check .
 ruff format --check .
-mypy --strict app
+mypy --strict .
 pytest
 ```
 
-`mypy --strict` is scoped to `app`, not the whole tree: run against `.`, it fails on `tests/`
-today — 30 pre-existing annotation errors across five integration test files, tracked as A.5
-item 17. The exclusion is temporary, not a decision to leave `tests/` unchecked; it is scoped
-down here only so this section documents a gate that actually passes, rather than one that
-looks like it covers the test suite and doesn't.
+`mypy --strict .` covers the whole tree, `app` and `tests` alike, with zero ignores of any kind
+— spec Appendix A.5 item 17 (30-plus pre-existing annotation errors across the integration test
+files, three mechanical patterns) is closed. `tests/support.py` holds the one shared helper that
+closing it introduced (`JSONDict` / `json_body`, for the `dict`-return / `no-any-return` pattern
+every integration test file had re-implemented); the rest were per-file type corrections, not
+suppressions.
 
 `ruff format --check` was added by A.5 item 4 — the gate previously ran `ruff check` only, so
 formatting drifted between tasks and was occasionally fixed as an unrelated side effect of a
@@ -219,3 +266,35 @@ rules vs. layout), so both are required, in either order relative to each other,
 `mypy` and `pytest` so a formatting-only diff is never mixed into a behavioural one.
 
 Run `ruff format .` (without `--check`) to actually reformat, rather than just report drift.
+
+## Environment variables
+
+Every variable `app/config.py` reads, in the shape `.env.example` documents in full. `ENV=test`
+(set automatically by `tests/conftest.py`) is the only value that relaxes the Argon2 cost
+parameters (§6.1) — every other environment uses the production values by default.
+
+| Variable | Required | Notes |
+|---|---|---|
+| `ENV` | No (`development`) | `development \| test \| staging \| production` |
+| `DATABASE_URL` | Yes | `gymak_app` (DML-only). The application never reads `MIGRATOR_DATABASE_URL`. |
+| `MIGRATOR_DATABASE_URL` | Yes, for Alembic only | `gymak_migrator` (schema owner). Not read by the running application. |
+| `JWT_PRIVATE_KEY_PEM` / `JWT_PUBLIC_KEY_PEM` | Yes | Ed25519 only (P1-ADR-02) — see "Generate the two required secrets" above. Fails at startup, not first use, for a structurally valid but cryptographically wrong-curve key. |
+| `JWT_AUDIENCE` | No (`gymak-app`) | Checked on every access-token verification. |
+| `ACCESS_TOKEN_TTL_SECONDS` | No (`900`) | §6.3: 15 minutes. |
+| `REFRESH_TOKEN_TTL_SECONDS` | No (`5184000`) | §6.3: 60 days. |
+| `RESET_CODE_TTL_SECONDS` | No (`600`) | §5.6: 10 minutes. |
+| `RESET_TOKEN_TTL_SECONDS` | No (`300`) | §5.6: 5 minutes. |
+| `RESET_CODE_PEPPER` | Yes | P1-ADR-07. Never stored in the database; rotating it invalidates every outstanding reset code. |
+| `ARGON2_MEMORY_KIB` / `ARGON2_TIME_COST` / `ARGON2_PARALLELISM` | No (`65536` / `3` / `4`) | §6.1 production parameters. Only `ENV=test` overrides these. |
+| `FIREBASE_PROJECT_ID` | No (`gymak-2d4ab`) | |
+| `FIREBASE_CREDENTIALS_JSON` | No | Unset ⇒ Admin SDK stays uninitialised; only `POST /auth/social/{provider}` is affected (returns `503`, A.5 item 16). |
+| `EMAIL_BACKEND` | No (`console`) | `console \| http`. Console prints to stdout (P1-ADR-05) — this is what dev/test uses to read a reset code back. |
+| `EMAIL_API_KEY` | Only if `EMAIL_BACKEND=http` | |
+| `EMAIL_FROM` | No | |
+| `REDIS_URL` | No | Unset ⇒ in-memory fixed-window rate limiter (single-instance only, §6.4). |
+| `CORS_ORIGINS` | No | Comma-separated, no wildcard (§6.5). Add a LAN IP here for a physical device or Expo web. |
+| `LOG_LEVEL` | No (`INFO`) | |
+
+`tests/conftest.py` sets every *required* variable itself (a fresh Ed25519 keypair and reset-code
+pepper generated per run, a throwaway Firebase service-account JSON, `ENV=test`) before any
+application code is imported, so the test suite needs none of these set by hand.

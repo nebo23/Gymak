@@ -19,13 +19,14 @@ from collections.abc import Iterator
 from datetime import date
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.rate_limit import limiter
 from app.integrations import firebase
 from app.models.audit import AuditLog
+from tests.support import JSONDict, json_body
 
 pytestmark = pytest.mark.asyncio
 
@@ -65,27 +66,27 @@ def _birth_date_years_ago(years: int) -> str:
         return today.replace(year=today.year - years, day=28).isoformat()
 
 
-async def _register(client: AsyncClient, *, email: str | None = None) -> dict:
+async def _register(client: AsyncClient, *, email: str | None = None) -> JSONDict:
     response = await client.post(
         _REGISTER, json={"email": email or _unique_email(), "password": _PASSWORD}
     )
     assert response.status_code == 201
-    return response.json()
+    return json_body(response)
 
 
-async def _login(client: AsyncClient, *, email: str, password: str = _PASSWORD):
+async def _login(client: AsyncClient, *, email: str, password: str = _PASSWORD) -> Response:
     return await client.post(_LOGIN, json={"email": email, "password": password})
 
 
-async def _refresh(client: AsyncClient, *, refresh_token: str):
+async def _refresh(client: AsyncClient, *, refresh_token: str) -> Response:
     return await client.post(_REFRESH, json={"refresh_token": refresh_token})
 
 
-async def _me(client: AsyncClient, access_token: str):
+async def _me(client: AsyncClient, access_token: str) -> Response:
     return await client.get(_ME, headers=_auth_headers(access_token))
 
 
-def _profile_body(**overrides: object) -> dict:
+def _profile_body(**overrides: object) -> JSONDict:
     body: dict[str, object] = {
         "name": "Nabil",
         "gender": "male",
@@ -102,17 +103,17 @@ def _profile_body(**overrides: object) -> dict:
     return body
 
 
-async def _create_profile(client: AsyncClient, access_token: str, **overrides: object):
+async def _create_profile(client: AsyncClient, access_token: str, **overrides: object) -> Response:
     return await client.post(
         _PROFILE, json=_profile_body(**overrides), headers=_auth_headers(access_token)
     )
 
 
-async def _get_profile(client: AsyncClient, access_token: str):
+async def _get_profile(client: AsyncClient, access_token: str) -> Response:
     return await client.get(_PROFILE, headers=_auth_headers(access_token))
 
 
-async def _patch_profile(client: AsyncClient, access_token: str, body: dict):
+async def _patch_profile(client: AsyncClient, access_token: str, body: JSONDict) -> Response:
     return await client.patch(_PROFILE, json=body, headers=_auth_headers(access_token))
 
 
@@ -212,7 +213,7 @@ async def test_minor_may_still_select_maintain_or_gain_on_post(client: AsyncClie
     ],
 )
 async def test_post_profile_rejects_each_out_of_range_or_disallowed_field(
-    client: AsyncClient, overrides: dict, expected_field: str
+    client: AsyncClient, overrides: JSONDict, expected_field: str
 ) -> None:
     """§7.1's per-field rules -- each one is a control on its own, not just a shape
     check, so every field gets its own case rather than one test asserting the schema
@@ -273,7 +274,7 @@ async def test_get_profile_returns_the_created_profile(client: AsyncClient) -> N
 # ProfileData (§5.8's example gives bare numeric literals) ----------------------------------
 
 
-def _assert_height_and_weight_are_json_numbers(profile: dict) -> None:
+def _assert_height_and_weight_are_json_numbers(profile: JSONDict) -> None:
     """Checked against the raw JSON type, not the value. `178.0 == "178.0"` is False in
     Python so a value comparison would already fail against a string -- but the point
     of this fix is the JSON *type* on the wire, so this must inspect what json.loads()

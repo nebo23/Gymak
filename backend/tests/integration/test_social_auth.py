@@ -25,6 +25,7 @@ from app.models.audit import AuditLog
 from app.models.identity import UserIdentity
 from app.models.user import User
 from app.repositories import identity_repo
+from tests.support import JSONDict, json_body
 
 pytestmark = pytest.mark.asyncio
 
@@ -44,12 +45,12 @@ def _unique_email(prefix: str = "user") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}@example.com"
 
 
-async def _register(client: AsyncClient, *, email: str | None = None) -> dict:
+async def _register(client: AsyncClient, *, email: str | None = None) -> JSONDict:
     response = await client.post(
         _REGISTER, json={"email": email or _unique_email(), "password": _PASSWORD}
     )
     assert response.status_code == 201
-    return response.json()
+    return json_body(response)
 
 
 def _claims(

@@ -42,8 +42,10 @@ def test_compute_age_at_18_years_1_day_is_18() -> None:
 def test_assert_goal_permitted_blocks_lose_at_17_years_364_days() -> None:
     with pytest.raises(GoalNotPermittedForMinorError) as exc_info:
         assert_goal_permitted(date(2008, 8, 1), "lose", today=_TODAY)
-    assert "maintain" in exc_info.value.detail
-    assert "gain" in exc_info.value.detail
+    detail = exc_info.value.detail
+    assert detail is not None
+    assert "maintain" in detail
+    assert "gain" in detail
 
 
 def test_assert_goal_permitted_allows_lose_at_exactly_18() -> None:
