@@ -183,3 +183,29 @@ running) and points the app at it before any application code is imported, so a 
 `DATABASE_URL` — or any other required environment variable — fails the same way it would in a
 real deployment. Coverage is reported on every run; the 80%/95% gates in spec §11.3 are enforced
 starting T-09, once the modules they cover exist.
+
+## Code quality gate
+
+There is no CI config in this repository yet; this is the gate every task is expected to run
+before its diff is considered done (spec rule 0.2.7), in this order:
+
+```bash
+ruff check .
+ruff format --check .
+mypy --strict app
+pytest
+```
+
+`mypy --strict` is scoped to `app`, not the whole tree: run against `.`, it fails on `tests/`
+today — 30 pre-existing annotation errors across five integration test files, tracked as A.5
+item 17. The exclusion is temporary, not a decision to leave `tests/` unchecked; it is scoped
+down here only so this section documents a gate that actually passes, rather than one that
+looks like it covers the test suite and doesn't.
+
+`ruff format --check` was added by A.5 item 4 — the gate previously ran `ruff check` only, so
+formatting drifted between tasks and was occasionally fixed as an unrelated side effect of a
+later, unrelated diff. `ruff check` and `ruff format --check` are two different tools (lint
+rules vs. layout), so both are required, in either order relative to each other, but before
+`mypy` and `pytest` so a formatting-only diff is never mixed into a behavioural one.
+
+Run `ruff format .` (without `--check`) to actually reformat, rather than just report drift.

@@ -12,6 +12,7 @@ from app.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.database import assert_connection_is_not_privileged
+from app.integrations import firebase
 from app.routers import auth, health, profile
 
 # Spec 6.5: security headers on every response.
@@ -35,6 +36,12 @@ async def _lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # docstring. An unhandled exception here fails ASGI startup loudly -- uvicorn logs
     # "ERROR: Application startup failed" and exits without serving a single request.
     await assert_connection_is_not_privileged()
+    # A.5 item 15: Firebase Admin SDK init used to run as a side effect of importing
+    # app.integrations.firebase (itself pulled in transitively by importing this module),
+    # so anything that merely imported the app required a valid service-account JSON.
+    # Called here instead, beside the privilege assertion, so the app can start without
+    # one -- social sign-in alone is unavailable until it is configured.
+    firebase.init_firebase()
     yield
 
 

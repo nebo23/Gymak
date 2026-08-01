@@ -67,9 +67,7 @@ class Profile(Base):
     goal: Mapped[str] = mapped_column(Text, nullable=False)
     experience_level: Mapped[str] = mapped_column(Text, nullable=False)
     activity_level: Mapped[str | None] = mapped_column(Text)
-    unit_system: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default=text("'metric'")
-    )
+    unit_system: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'metric'"))
     language: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'ar'"))
     onboarding_completed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")

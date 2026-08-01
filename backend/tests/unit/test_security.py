@@ -327,12 +327,12 @@ def test_one_hundred_and_twenty_nine_characters_is_rejected() -> None:
 
 
 def test_a_denylisted_password_is_rejected() -> None:
-    assert _password_error_code("password123") == "TOO_COMMON"
+    assert _password_error_code("qwerty123") == "TOO_COMMON"
 
 
 def test_the_denylist_is_case_insensitive() -> None:
-    """`PassWord123` is the same guess as `password123` to anyone running a wordlist."""
-    assert _password_error_code("PassWord123") == "TOO_COMMON"
+    """`PASSWORD` is the same guess as `password` to anyone running a wordlist."""
+    assert _password_error_code("PASSWORD") == "TOO_COMMON"
     assert is_common_password("QWERTY123") is True
 
 

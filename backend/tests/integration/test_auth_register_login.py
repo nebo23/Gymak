@@ -95,12 +95,16 @@ async def test_register_persists_the_user_hashes_the_password_and_writes_the_aud
     assert user.token_version == 0
 
     audit_rows = (
-        await db_session.execute(
-            select(AuditLog).where(
-                AuditLog.action == "user.registered", AuditLog.actor_user_id == user.id
+        (
+            await db_session.execute(
+                select(AuditLog).where(
+                    AuditLog.action == "user.registered", AuditLog.actor_user_id == user.id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(audit_rows) == 1
     assert audit_rows[0].entity == "user"
     assert audit_rows[0].entity_id == user.id
@@ -119,8 +123,10 @@ async def test_register_issues_a_refresh_token_stored_hashed_only_with_a_fresh_f
     # the same reasoning tests/security/test_rls.py exercises directly.
     await set_rls_user(db_session, str(user_id))
     rows = (
-        await db_session.execute(select(RefreshToken).where(RefreshToken.user_id == user_id))
-    ).scalars().all()
+        (await db_session.execute(select(RefreshToken).where(RefreshToken.user_id == user_id)))
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     token_row = rows[0]
 
@@ -178,7 +184,7 @@ async def test_register_rejects_a_password_that_is_too_short(client: AsyncClient
 
 
 async def test_register_rejects_a_common_password(client: AsyncClient) -> None:
-    response = await _register(client, password="password123")
+    response = await _register(client, password="qwerty123")
     assert response.status_code == 422
     body = response.json()
     assert {"field": "password", "code": "TOO_COMMON"} in body["errors"]
@@ -246,12 +252,16 @@ async def test_login_writes_the_succeeded_audit_row(
     await _login(client, email=email, password=_PASSWORD)
 
     rows = (
-        await db_session.execute(
-            select(AuditLog).where(
-                AuditLog.action == "user.login_succeeded", AuditLog.actor_user_id == user_id
+        (
+            await db_session.execute(
+                select(AuditLog).where(
+                    AuditLog.action == "user.login_succeeded", AuditLog.actor_user_id == user_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
 
 
@@ -289,12 +299,16 @@ async def test_login_wrong_password_is_generic_invalid_credentials(
     assert response.json()["code"] == "INVALID_CREDENTIALS"
 
     rows = (
-        await db_session.execute(
-            select(AuditLog).where(
-                AuditLog.action == "user.login_failed", AuditLog.actor_user_id == user_id
+        (
+            await db_session.execute(
+                select(AuditLog).where(
+                    AuditLog.action == "user.login_failed", AuditLog.actor_user_id == user_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     assert rows[0].event_metadata == {"reason": "invalid_credentials"}
 
@@ -306,12 +320,16 @@ async def test_login_unknown_email_audits_with_a_null_actor(
     await _login(client, email=email, password=_PASSWORD)
 
     rows = (
-        await db_session.execute(
-            select(AuditLog).where(
-                AuditLog.action == "user.login_failed", AuditLog.actor_user_id.is_(None)
+        (
+            await db_session.execute(
+                select(AuditLog).where(
+                    AuditLog.action == "user.login_failed", AuditLog.actor_user_id.is_(None)
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) >= 1
 
 
@@ -370,12 +388,16 @@ async def test_login_disabled_account_returns_account_disabled_regardless_of_pas
     assert wrong_password_response.json()["code"] == "ACCOUNT_DISABLED"
 
     rows = (
-        await db_session.execute(
-            select(AuditLog).where(
-                AuditLog.action == "user.login_failed", AuditLog.actor_user_id == user_id
+        (
+            await db_session.execute(
+                select(AuditLog).where(
+                    AuditLog.action == "user.login_failed", AuditLog.actor_user_id == user_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert any(row.event_metadata == {"reason": "account_disabled"} for row in rows)
 
 

@@ -24,6 +24,7 @@ import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, Final
 
 import jwt
@@ -127,53 +128,30 @@ def password_needs_rehash(password_hash: str) -> bool:
 PASSWORD_MIN_LENGTH: Final = 8
 PASSWORD_MAX_LENGTH: Final = 128
 
-# §6.2: "Reject a small denylist of obvious values (the top ~1000 common passwords, plus
-# the local part of the user's own email)."
+# §6.2 / A.5 item 2: "Reject ... a denylist of common passwords ... use the top 1000
+# entries of SecLists ... vendored as a static asset with its source and retrieval date
+# recorded in a comment. A fabricated list is worse than a short one, because it looks
+# complete." (It was fabricated, at 313 hand-curated entries, until this fix.)
 #
-# Inline rather than a data file: no dependency in Appendix A.2 ships a wordlist, and T-03's
-# file list has no room for a data file. This set is curated, not the real top 1000 -- see
-# the report accompanying this task. Swapping in a vetted list (SecLists / the Pwned
-# Passwords top 1k) is a one-constant change and does not alter any signature here.
-#
-# Membership is tested case-insensitively against the NFKC-normalised password, so every
-# entry is stored lowercase.
-_COMMON_PASSWORDS: Final[frozenset[str]] = frozenset(
-    """
-    123456 password 123456789 12345678 12345 1234567 1234567890 qwerty abc123 111111
-    123123 1234 iloveyou 1q2w3e4r 000000 qwerty123 zaq12wsx dragon sunshine princess
-    letmein 654321 monkey 27653 1qaz2wsx 123321 qwertyuiop superman asdfghjkl 1q2w3e
-    football welcome jesus ninja mustang password1 password123 passw0rd p@ssword
-    p@ssw0rd admin administrator root toor guest test test123 user username default
-    changeme secret letmein123 trustno1 whatever qazwsx qwe123 asdf asdfgh zxcvbnm
-    zxcvbn 1qazxsw2 q1w2e3r4 aa123456 abcd1234 abc12345 a1b2c3d4 123qwe 112233
-    121212 131313 101010 987654321 11111111 22222222 00000000 55555 666666 777777
-    888888 999999 123abc 1q2w3e4r5t michael jennifer jordan hunter harley ranger
-    shadow master killer batman thomas robert daniel matthew joshua andrew charlie
-    tigger charlie1 hannah maggie ashley amanda samantha jessica sarah nicole
-    chelsea taylor summer flower angel baby love lovely loveme forever family
-    friend friends freedom soccer basketball baseball hockey golfer boomer starwars
-    computer internet samsung google gmail yahoo facebook twitter instagram youtube
-    snoopy scooby cookie chocolate pepper cheese banana orange apple purple yellow
-    silver gold diamond bailey buster jackson pookie snickers midnight ginger
-    peanut smokey oliver soleil pussy fuckyou fuckme asshole bitch dick pussy1
-    football1 iloveyou1 princess1 blessed jesus1 heaven angels prayer amen
-    ahmed mohamed mohammed muhammad ali omar hassan hussein khaled mahmoud
-    fatima aisha maryam zainab yousef ibrahim abdullah abdulrahman
-    kuwait egypt saudi jordan1 dubai riyadh cairo amman
-    gymak gymak123 fitness fitness1 workout gym gym123 muscle protein trainer
-    qwertz azerty 147258369 159753 741852963 963852741 1122334455
-    iloveu ilovegod loveyou lover lovers kisses kiss cutie sweetie
-    hello hello123 hi hey welcome1 welcome123 access access14 login logon
-    system server database backup temp temp123 demo demo123 sample example
-    dummy nothing nopass none null empty blank space asdfasdf qwerqwer
-    trustme believe hopeless nevermore whatever1 anything something everything
-    michelle stephanie christina elizabeth alexander benjamin nicholas
-    liverpool arsenal chelsea1 barcelona realmadrid madrid manutd juventus
-    metallica nirvana slipknot eminem rihanna beyonce justin bieber
-    pokemon naruto onepiece minecraft fortnite roblox playstation xbox nintendo
-    dragonball spiderman ironman avengers thanos joker gandalf frodo legolas
-    """.split()
-)
+# The source URL named in the task 404s -- the file was renamed upstream. Retrieved
+# 2026-08-01 from its replacement in the same directory, same (master) branch:
+#   https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/
+#   Common-Credentials/xato-net-10-million-passwords-1000.txt
+# Exactly 1000 lines, vendored byte-for-byte at app/core/data/common_passwords.txt --
+# including one blank line (source line 43) and three case-variant duplicates of
+# "password" ("password" / "Password" / "PASSWORD"). The loader below strips blank lines
+# and folds case; the vendored file itself is untouched from what was retrieved.
+_COMMON_PASSWORDS_PATH: Final = Path(__file__).parent / "data" / "common_passwords.txt"
+
+
+def _load_common_passwords() -> frozenset[str]:
+    lines = _COMMON_PASSWORDS_PATH.read_text(encoding="utf-8").splitlines()
+    return frozenset(line.strip().casefold() for line in lines if line.strip())
+
+
+# Membership is tested case-insensitively against the NFKC-normalised password (see
+# is_common_password / validate_password below), so every entry here is folded on load.
+_COMMON_PASSWORDS: Final[frozenset[str]] = _load_common_passwords()
 
 
 def is_common_password(password: str) -> bool:

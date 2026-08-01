@@ -5,6 +5,9 @@ import binascii
 from functools import lru_cache
 from typing import Any, Literal
 
+from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key
 from pydantic import ValidationError, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -77,6 +80,48 @@ def _normalise_pem(raw: str, field_name: str) -> str:
         )
 
     return decoded if decoded.endswith("\n") else decoded + "\n"
+
+
+def _parse_private_key_or_fail(pem: str, field_name: str) -> None:
+    """A.5 item 3: `_normalise_pem` above only checks PEM *shape* -- '-----BEGIN '/'
+    -----END ' markers -- so a structurally valid PEM whose body is truncated, corrupted,
+    or simply the wrong key type for EdDSA (P1-ADR-02) passed startup and only broke the
+    first time `security.py` called `jwt.encode`. Parsing for real here moves that
+    failure to startup, where §6.3 says it belongs.
+
+    Never interpolates the key or the parse error's own message into the raised error --
+    only the exception's type name -- for the same reason `_normalise_pem` never echoes
+    the value: this is private key material, and error strings reach logs (§6.5).
+    """
+    try:
+        key = load_pem_private_key(pem.encode("utf-8"), password=None)
+    except (ValueError, TypeError, UnsupportedAlgorithm) as exc:
+        raise ConfigurationError(
+            f"{field_name} is a structurally valid PEM block but could not be parsed as "
+            f"a private key ({type(exc).__name__}). Generate an Ed25519 pair with: "
+            f"openssl genpkey -algorithm ed25519 -out jwt_private.pem"
+        ) from exc
+    if not isinstance(key, Ed25519PrivateKey):
+        raise ConfigurationError(
+            f"{field_name} parses as a valid private key, but is not Ed25519. P1-ADR-02 "
+            f"requires EdDSA over Ed25519; got {type(key).__name__}."
+        )
+
+
+def _parse_public_key_or_fail(pem: str, field_name: str) -> None:
+    """The public-key counterpart of `_parse_private_key_or_fail` -- see its docstring."""
+    try:
+        key = load_pem_public_key(pem.encode("utf-8"))
+    except (ValueError, UnsupportedAlgorithm) as exc:
+        raise ConfigurationError(
+            f"{field_name} is a structurally valid PEM block but could not be parsed as "
+            f"a public key ({type(exc).__name__})."
+        ) from exc
+    if not isinstance(key, Ed25519PublicKey):
+        raise ConfigurationError(
+            f"{field_name} parses as a valid public key, but is not Ed25519. P1-ADR-02 "
+            f"requires EdDSA over Ed25519; got {type(key).__name__}."
+        )
 
 
 class Settings(BaseSettings):
@@ -156,7 +201,16 @@ class Settings(BaseSettings):
     ARGON2_PARALLELISM: int = 4
 
     FIREBASE_PROJECT_ID: str = "gymak-2d4ab"
-    FIREBASE_CREDENTIALS_JSON: str
+
+    # A.5 item 15: optional, not required. app.integrations.firebase used to be imported
+    # -- and initialised -- as a side effect of importing app.main, which made this field
+    # a hidden hard requirement for anything that merely imports the app (uvicorn,
+    # scripts/export_openapi.py, any test). Firebase init now happens in main.py's
+    # lifespan handler instead, so the app can start (and social sign-in alone is
+    # unavailable) without it. `None` and "set but blank" are treated the same --
+    # copying .env.example verbatim leaves this blank, and a blank string is not
+    # meaningfully different from an absent one here.
+    FIREBASE_CREDENTIALS_JSON: str | None = None
 
     EMAIL_BACKEND: Literal["console", "http"] = "console"
     EMAIL_API_KEY: str | None = None
@@ -166,6 +220,19 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "http://localhost:8081,http://localhost:19006"
     LOG_LEVEL: str = "INFO"
+
+    @field_validator("FIREBASE_CREDENTIALS_JSON", mode="after")
+    @classmethod
+    def _blank_firebase_credentials_is_absent(cls, value: str | None) -> str | None:
+        """`FIREBASE_CREDENTIALS_JSON=` in .env is an empty string, not a missing
+        variable -- the same trap the JWT keys and the pepper guard against elsewhere in
+        this file. Collapsing it to None here means every downstream consumer (today,
+        just app.integrations.firebase) has exactly one "not configured" value to check,
+        rather than two.
+        """
+        if value is not None and not value.strip():
+            return None
+        return value
 
     @field_validator("RESET_CODE_PEPPER", mode="after")
     @classmethod
@@ -195,6 +262,15 @@ class Settings(BaseSettings):
         # Normalised here, at load time, so every consumer downstream receives a raw PEM
         # and no module has to re-implement the base64 question.
         return _normalise_pem(value, info.field_name or "JWT key")
+
+    @model_validator(mode="after")
+    def _parse_jwt_keys_for_real(self) -> Settings:
+        # Runs after _accept_raw_or_base64_pem (a field_validator, which always completes
+        # before any model_validator(mode="after") regardless of declaration order), so
+        # both fields are already normalised to raw PEM here -- A.5 item 3.
+        _parse_private_key_or_fail(self.JWT_PRIVATE_KEY_PEM, "JWT_PRIVATE_KEY_PEM")
+        _parse_public_key_or_fail(self.JWT_PUBLIC_KEY_PEM, "JWT_PUBLIC_KEY_PEM")
+        return self
 
     @model_validator(mode="after")
     def _enforce_cross_field_rules(self) -> Settings:
