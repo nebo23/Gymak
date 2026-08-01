@@ -8,9 +8,9 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.ids import new_id
 from app.database import set_rls_user
@@ -110,25 +110,56 @@ async def test_soft_deleted_email_can_be_reused(db_session: AsyncSession) -> Non
     await db_session.flush()  # must not raise
 
 
-async def test_no_password_unverified_email_is_allowed_at_the_db_layer(
+async def test_credential_present_trigger_rejects_orphan_user_at_commit(
     db_session: AsyncSession,
 ) -> None:
-    """T-02 shipped chk_credential_present -- "password_hash IS NOT NULL OR
-    email_verified = true" -- on the assumption that a password and a verified email
+    """A.5 item 14: T-02 shipped chk_credential_present -- "password_hash IS NOT NULL
+    OR email_verified = true" -- on the assumption that a password and a verified email
     were the only two ways into an account. T-06 (§5.4 step 5) added a third: a social
     sign-in with no usable email creates a user reachable only through a linked
-    user_identities row, with password_hash NULL and email_verified false -- exactly
-    the row this CHECK used to reject. Postgres CHECK constraints cannot see across
-    tables, so the three-way invariant (password, OR verified email, OR a linked
-    identity) cannot be enforced at this layer without a trigger; the constraint was
-    removed rather than left checking only two of the three cases (see
-    app/models/user.py's comment). This test documents that removal is deliberate: a
-    row that would have raised IntegrityError before T-06 now does not, and
-    social_service.py -- not the database -- is what guarantees every such row gets a
-    matching identity, by inserting both in one transaction.
+    user_identities row. Postgres CHECK constraints cannot see across tables, so T-06
+    dropped the CHECK entirely (migration 2b58d76b93fb) rather than leave it checking
+    only two of the three cases, and the guarantee moved into social_service.py
+    inserting both rows in one transaction -- a convention, not a barrier.
+
+    Migration ae026cea6d8d replaces that convention with a DEFERRABLE constraint
+    trigger enforcing the real three-way invariant at COMMIT. A user row with no
+    password, no verified email, and no linked identity -- exactly the row the
+    dropped CHECK used to reject, and exactly what a bug elsewhere in the codebase
+    could otherwise insert unnoticed -- must not survive a commit.
+
+    The trigger is DEFERRED, not immediate: `flush()` alone must not raise (the
+    transaction may still be building up the matching identity row), only `commit()`
+    does -- see the next test for the legitimate case this has to keep allowing.
     """
     db_session.add(User(id=new_id(), email=_new_email(), password_hash=None, email_verified=False))
-    await db_session.flush()  # must not raise -- see docstring
+    await db_session.flush()  # the trigger is deferred: no violation yet
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+async def test_credential_present_trigger_allows_placeholder_account_with_identity(
+    db_session: AsyncSession,
+) -> None:
+    """The legitimate case §5.4 step 5 needs, and A.5 item 14's gap (a): a user with no
+    password and no verified email, but a linked user_identities row inserted in the
+    same transaction -- exactly what social_service.py does for a social sign-in with
+    no usable email. Must commit cleanly; the trigger only fires because the identity
+    row exists by the time COMMIT evaluates it.
+    """
+    user = User(id=new_id(), email=_new_email(), password_hash=None, email_verified=False)
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        UserIdentity(
+            id=new_id(),
+            user_id=user.id,
+            provider="google",
+            provider_uid=str(uuid.uuid4()),
+            firebase_uid=str(uuid.uuid4()),
+        )
+    )
+    await db_session.commit()  # must not raise
 
 
 async def test_credential_present_check_accepts_social_only_verified_account(
@@ -165,7 +196,18 @@ async def test_apple_identity_provider_is_accepted_ahead_of_use(db_session: Asyn
     await db_session.flush()  # must not raise
 
 
-async def test_deleting_user_cascades_to_every_dependent_table(db_session: AsyncSession) -> None:
+async def test_deleting_user_cascades_to_every_dependent_table(
+    db_session: AsyncSession, migrator_database_url: str
+) -> None:
+    """A.5 item 1: gymak_app holds no DELETE on users -- the application never hard-
+    deletes an account (§4.1: deletion is `deleted_at`, an UPDATE; "a purge job (later
+    phase) reads this column"). The ON DELETE CASCADE definitions in §4 are still real
+    schema, worth proving, but the DELETE itself is now issued as gymak_migrator, the
+    table owner -- not through db_session, which is gymak_app throughout the rest of
+    this test suite. Everything else about this test -- the setup and the read-back
+    assertions -- stays on db_session so the cascade is verified the same way it always
+    was, via a connection that is unambiguously not the one that performed the delete.
+    """
     user = await _insert_user(db_session)
     db_session.add(Profile(**_valid_profile_kwargs(user.id)))
     db_session.add(
@@ -191,19 +233,29 @@ async def test_deleting_user_cascades_to_every_dependent_table(db_session: Async
         )
     )
     await db_session.flush()
+    await db_session.commit()
+    user_id = user.id
 
-    await db_session.delete(user)
-    await db_session.flush()
+    migrator_engine = create_async_engine(migrator_database_url)
+    try:
+        async with migrator_engine.begin() as connection:
+            await connection.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": user_id})
+    finally:
+        await migrator_engine.dispose()
 
-    assert await db_session.get(Profile, user.id) is None
+    # The delete above happened on a different connection entirely; db_session's
+    # identity map still holds the pre-delete instances unless told otherwise.
+    db_session.expire_all()
+
+    assert await db_session.get(Profile, user_id) is None
     assert (
-        await db_session.execute(select(UserIdentity).where(UserIdentity.user_id == user.id))
+        await db_session.execute(select(UserIdentity).where(UserIdentity.user_id == user_id))
     ).first() is None
     assert (
-        await db_session.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
+        await db_session.execute(select(RefreshToken).where(RefreshToken.user_id == user_id))
     ).first() is None
     assert (
         await db_session.execute(
-            select(PasswordResetCode).where(PasswordResetCode.user_id == user.id)
+            select(PasswordResetCode).where(PasswordResetCode.user_id == user_id)
         )
     ).first() is None

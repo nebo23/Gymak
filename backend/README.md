@@ -67,51 +67,61 @@ In later sessions the container already exists, so just start it again:
 docker start gymak-db
 ```
 
-### 2. Create the application role
+### 2. Create the two roles
 
-The app will not run as a PostgreSQL superuser, or as any role holding `BYPASSRLS`. Both
-silently bypass every row-level security policy, which would leave the `profiles` and
-`refresh_tokens` barriers in §4.7 purely decorative while still appearing to work.
-`app/database.py` queries `pg_roles` for the connected role at import time and raises if
-either attribute is set, rather than letting the app come up with RLS quietly disabled. This is
-also why the role must be created separately from `POSTGRES_USER` above: that user is a
-superuser by default and the startup assertion refuses to serve as one.
+**A.5 items 1 and 11 are closed as of this version**: the migrator and application roles are
+split. `gymak_migrator` owns the schema and runs Alembic; `gymak_app` is DML-only and serves
+the application. Neither is a PostgreSQL superuser, or any role holding `BYPASSRLS` — both
+attributes silently bypass every row-level security policy, which would leave the `profiles`
+and `refresh_tokens` barriers in §4.7 purely decorative while still appearing to work.
+`app/database.py`'s startup assertion refuses to serve the app against either attribute, and
+now also refuses a connection that can `CREATE` anything in schema `public` — the exact
+capability that would let a connection be `gymak_migrator` instead of `gymak_app` by mistake.
+This is also why both roles must be created separately from `POSTGRES_USER` above: that user
+is a superuser by default.
 
 There is no local `psql` client on a fresh machine, so run it inside the container instead:
 
 ```bash
-docker exec gymak-db psql -U postgres -d gymak -c "CREATE ROLE gymak_app LOGIN PASSWORD '<choose-one>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS; GRANT ALL PRIVILEGES ON DATABASE gymak TO gymak_app; GRANT ALL PRIVILEGES ON SCHEMA public TO gymak_app;"
+docker exec gymak-db psql -U postgres -d gymak -c "CREATE ROLE gymak_migrator LOGIN PASSWORD '<choose-one>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS; GRANT CONNECT, CREATE ON DATABASE gymak TO gymak_migrator; GRANT CREATE, USAGE ON SCHEMA public TO gymak_migrator;"
+docker exec gymak-db psql -U postgres -d gymak -c "CREATE ROLE gymak_app LOGIN PASSWORD '<choose-a-different-one>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS; GRANT CONNECT ON DATABASE gymak TO gymak_app; GRANT USAGE ON SCHEMA public TO gymak_app;"
 ```
 
-Point `DATABASE_URL` in `.env` at this role, not at `postgres`. One role both migrates and
-serves the app, so it **owns** these tables — which is why the migration sets
-`FORCE ROW LEVEL SECURITY` and not merely `ENABLE`: Postgres exempts a table's owner from its
-own policies, and without `FORCE` every policy is a no-op for exactly this role.
+Point `MIGRATOR_DATABASE_URL` in `.env` at `gymak_migrator`, and `DATABASE_URL` at `gymak_app`.
+`gymak_migrator` creates — and therefore owns — every table when the migrations run, which is
+why the migration still sets `FORCE ROW LEVEL SECURITY` on `profiles` and `refresh_tokens`
+rather than merely `ENABLE`: Postgres exempts a table's owner from its own policies, and
+`gymak_migrator`, unlike `gymak_app` today, is a role a human might reasonably connect as
+directly for an ad hoc fix — `FORCE` is what stops that connection from silently bypassing RLS
+too. `gymak_app` itself is never the owner of anything post-split, so `FORCE` is redundant for
+it specifically; it is belt-and-braces for the owner role, not decorative.
 
-### 3. Create the `citext` extension
+`gymak_app`'s actual data access — `SELECT`/`INSERT`/`UPDATE`/`DELETE` on specific tables — is
+granted by the migration itself (`737d03a7c353`), not by the command above, because by the
+time that migration runs, `gymak_migrator` is the table owner and the only role with authority
+to grant on those tables. This command only grants what the bootstrap superuser (`postgres`),
+not `gymak_migrator`, has authority over: schema- and database-level access.
 
-`CREATE EXTENSION citext` requires a superuser, and `gymak_app` cannot create extensions —
-so it must be created by the `postgres` role, once, before `alembic upgrade head` runs:
-
-```bash
-docker exec gymak-db psql -U postgres -d gymak -c "CREATE EXTENSION IF NOT EXISTS citext;"
-```
-
-This manual step only exists because the migrator and application roles are not yet split
-(spec Appendix A.5 items 1 and 11 — item 1 is the role split, item 11 is this exact gap, tracked
-as High severity, owned by T-09). Once that split lands, `gymak_migrator` can own extension
-creation and this step goes away.
-
-### 4. Run the migrations
+### 3. Run the migrations
 
 ```bash
 alembic upgrade head
 ```
 
-`tests/conftest.py` provisions an equivalent role and extension automatically for each test
-session, so steps 2–4 above are only needed for a real local or staging database.
+No manual `CREATE EXTENSION citext` step is needed. `CREATE EXTENSION citext` does **not**
+require a superuser on Postgres 13+ — `citext` is a "trusted" extension, installable by any
+non-superuser role holding `CREATE` on the *database* (confirmed empirically against a real
+container; the schema-level `CREATE` alone is not enough and fails with a different error).
+`gymak_migrator` holds exactly that, so `alembic upgrade head` creates the extension itself as
+part of the first migration — a fresh deployment completes with zero SQL run by hand, which is
+also the answer to spec §13.2 item 8: a managed host only needs to let you create two
+non-superuser roles with the grants in step 2 above; it does not need to hand out superuser
+access or run any DDL for you.
 
-### 5. Run the app
+`tests/conftest.py` provisions both roles automatically for each test session, so steps 2–3
+above are only needed for a real local or staging database.
+
+### 4. Run the app
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -124,7 +134,7 @@ IP address you use.
 `GET http://localhost:8000/api/v1/health` returns `{"status": "ok", "database": "reachable"}`
 once Postgres at `DATABASE_URL` is reachable.
 
-### 6. Make it reachable from a phone
+### 5. Make it reachable from a phone
 
 Two things are required on Windows, both in an **elevated** PowerShell:
 
@@ -141,7 +151,7 @@ category with:
 Get-NetConnectionProfile
 ```
 
-### 7. Find the LAN IP
+### 6. Find the LAN IP
 
 ```bash
 ipconfig

@@ -87,7 +87,7 @@ async def database_is_reachable() -> bool:
         return bool(result.scalar_one() == 1)
 
 
-async def _fetch_connection_role_privileges(database_url: str) -> tuple[bool, bool]:
+async def _fetch_connection_role_privileges(database_url: str) -> tuple[bool, bool, bool]:
     # A dedicated, disposable engine -- never the shared module-level `engine` -- so this
     # one-off probe cannot leave a pooled connection bound to whatever event loop happens
     # to be running when it is awaited. That exact pattern (a connection pooled under one
@@ -98,10 +98,14 @@ async def _fetch_connection_role_privileges(database_url: str) -> tuple[bool, bo
     try:
         async with probe_engine.connect() as connection:
             result = await connection.execute(
-                text("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")
+                text(
+                    "SELECT rolsuper, rolbypassrls, "
+                    "has_schema_privilege(current_user, 'public', 'CREATE') AS can_create "
+                    "FROM pg_roles WHERE rolname = current_user"
+                )
             )
             row = result.one()
-            return bool(row.rolsuper), bool(row.rolbypassrls)
+            return bool(row.rolsuper), bool(row.rolbypassrls), bool(row.can_create)
     finally:
         await probe_engine.dispose()
 
@@ -109,6 +113,11 @@ async def _fetch_connection_role_privileges(database_url: str) -> tuple[bool, bo
 async def assert_connection_is_not_privileged(database_url: str | None = None) -> None:
     """Spec 4.7: 'The application must connect as a NON-superuser role, asserted at
     startup, otherwise RLS is silently bypassed and this whole barrier is decorative.'
+    A.5 item 1: extended to also refuse a role that can CREATE in schema public -- the
+    application must never be able to connect as gymak_migrator, whether by a misconfigured
+    DATABASE_URL or any other mixup, because a role that can create can also ALTER TABLE
+    or DROP POLICY on its own tables, which is the exact self-revocable barrier the role
+    split exists to close (see the split migration's docstring).
 
     Awaited from the FastAPI lifespan handler in main.py, not run at import time: this
     module is imported before any event loop exists under pytest (collection is
@@ -125,9 +134,11 @@ async def assert_connection_is_not_privileged(database_url: str | None = None) -
 
     Superuser and BYPASSRLS are the two role attributes that silently bypass every RLS
     policy regardless of what the policy says; either one makes profiles/refresh_tokens
-    RLS decorative, so either one is fatal here.
+    RLS decorative, so either one is fatal here. CREATE on schema public is fatal for a
+    different reason: it identifies a role that can perform DDL at all, which the
+    application's role must never be able to do post-split.
     """
-    is_superuser, bypasses_rls = await _fetch_connection_role_privileges(
+    is_superuser, bypasses_rls, can_create_in_schema = await _fetch_connection_role_privileges(
         database_url if database_url is not None else settings.DATABASE_URL
     )
     if is_superuser or bypasses_rls:
@@ -137,4 +148,15 @@ async def assert_connection_is_not_privileged(database_url: str | None = None) -
             "security is silently bypassed for such roles, so the profiles/"
             "refresh_tokens RLS policies would never actually apply. Connect as a "
             "dedicated, unprivileged application role instead (see .env.example)."
+        )
+    if can_create_in_schema:
+        raise RuntimeError(
+            "Refusing to start: the database connection can CREATE objects in schema "
+            "'public'. The application role (gymak_app) must hold DML only -- SELECT/"
+            "INSERT/UPDATE/DELETE on specific tables -- and never schema-level CREATE. "
+            "A connection that can create is either gymak_migrator (the Alembic-only "
+            "role -- see MIGRATOR_DATABASE_URL) or a misconfigured DATABASE_URL; either "
+            "way it must never serve the application, because it could ALTER TABLE ... "
+            "NO FORCE or DROP POLICY on its own tables and make row-level security "
+            "decorative (see .env.example)."
         )

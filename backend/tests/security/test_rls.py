@@ -12,8 +12,10 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
+import pytest
 from sqlalchemy import select, text
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ids import new_id
@@ -93,9 +95,17 @@ async def test_rls_scopes_select_to_the_current_user_only(db_session: AsyncSessi
     assert user_a.id not in {row.user_id for row in visible}
 
 
-async def test_rls_blocks_cross_user_update_and_delete_as_zero_rows_not_an_error(
+async def test_rls_blocks_cross_user_update_as_zero_rows_not_an_error(
     db_session: AsyncSession,
 ) -> None:
+    """Was named "...update_and_delete..." before the A.5 item 1 role split: gymak_app
+    used to hold GRANT ALL, so a cross-user DELETE on profiles was blocked by RLS alone,
+    the same as UPDATE. Post-split, gymak_app has no DELETE grant on profiles at all --
+    no repository ever deletes a profile row -- so a DELETE now fails at the grant layer
+    before RLS is even evaluated (see test_gymak_app_cannot_delete_profiles below, in
+    the A.5 item 1 section). That is a *stronger* guarantee, not a weaker one, but it is
+    a different mechanism, so it needed its own test rather than living in this one.
+    """
     user_a = await _insert_user_with_profile(db_session)
     user_b = await _insert_user_with_profile(db_session)
     # Plain values, not ORM attributes: the commit boundaries below can expire the
@@ -116,15 +126,7 @@ async def test_rls_blocks_cross_user_update_and_delete_as_zero_rows_not_an_error
     # another user's resource, so the API does not confirm that the record exists."
     # RLS gives that behaviour for free at the database layer.
     assert update_result.rowcount == 0
-
-    delete_result = cast(
-        CursorResult[Any],
-        await db_session.execute(
-            text("DELETE FROM profiles WHERE user_id = :uid"), {"uid": user_a_id}
-        ),
-    )
-    assert delete_result.rowcount == 0
-    # COMMIT, not rollback: if either statement above had actually matched user_a's row,
+    # COMMIT, not rollback: if the statement above had actually matched user_a's row,
     # committing is what would make that damage stick. Rolling back here would undo it
     # and let this test pass for the wrong reason.
     await db_session.commit()
@@ -252,3 +254,74 @@ async def test_refresh_tokens_select_is_permissive_by_design(db_session: AsyncSe
         .all()
     )
     assert [row.user_id for row in visible_unset] == [user_a.id]
+
+
+# --- A.5 item 1: gymak_app holds DML only, never DDL -----------------------------------
+#
+# Migration 737d03a7c353 (see its docstring) transfers table ownership to gymak_migrator
+# and leaves gymak_app with table-level GRANTs only. These tests prove that split holds
+# for the exact attack the task names: before it, the role that ran the migration also
+# served the application, so nothing stopped it from DROPping its own protections.
+# Every assertion below runs a real DDL/DCL statement as gymak_app (db_session's
+# connection, same role RLS is proven against above) and asserts it is refused, not that
+# it merely "still works" -- a control that can never fail is decoration, same reasoning
+# as this file's own preamble.
+
+
+async def test_gymak_app_cannot_create_table(db_session: AsyncSession) -> None:
+    with pytest.raises(ProgrammingError, match="permission denied for schema"):
+        await db_session.execute(text("CREATE TABLE not_allowed (id int)"))
+
+
+async def test_gymak_app_cannot_alter_table(db_session: AsyncSession) -> None:
+    with pytest.raises(ProgrammingError, match="must be owner of table"):
+        await db_session.execute(text("ALTER TABLE profiles ADD COLUMN not_allowed int"))
+
+
+async def test_gymak_app_cannot_drop_policy(db_session: AsyncSession) -> None:
+    """The exact scenario A.5 item 1 named: before the split, gymak_app owned this
+    table (it ran the migration that created it), so it could DROP POLICY on its own
+    RLS barrier at will. gymak_migrator owns it now.
+    """
+    with pytest.raises(ProgrammingError, match="must be owner of relation"):
+        await db_session.execute(text("DROP POLICY p_profiles_owner ON profiles"))
+
+
+async def test_gymak_app_cannot_disable_force_row_level_security(
+    db_session: AsyncSession,
+) -> None:
+    """The other half of the same scenario: spec 4.7's own comment on FORCE says
+    Postgres exempts a table's OWNER from its own policies. Before the split, gymak_app
+    was that owner, so `ALTER TABLE ... NO FORCE` was one statement away from making
+    every policy in this file a no-op for its own connection.
+    """
+    with pytest.raises(ProgrammingError, match="must be owner of table"):
+        await db_session.execute(text("ALTER TABLE profiles NO FORCE ROW LEVEL SECURITY"))
+
+
+async def test_gymak_app_cannot_update_audit_log(db_session: AsyncSession) -> None:
+    """Spec 4.6: the app role holds INSERT and SELECT only on audit_log. Before the
+    split this was also true by GRANT, but gymak_app *owned* audit_log (having created
+    it), so it could always re-GRANT itself UPDATE/DELETE regardless of any prior
+    REVOKE -- an owner can always grant on its own object. gymak_migrator owns it now.
+    """
+    with pytest.raises(ProgrammingError, match="permission denied for table audit_log"):
+        await db_session.execute(text("UPDATE audit_log SET action = 'tampered'"))
+
+
+async def test_gymak_app_cannot_delete_audit_log(db_session: AsyncSession) -> None:
+    with pytest.raises(ProgrammingError, match="permission denied for table audit_log"):
+        await db_session.execute(text("DELETE FROM audit_log"))
+
+
+async def test_gymak_app_cannot_delete_profiles(db_session: AsyncSession) -> None:
+    """profile_repo.py never deletes a row (§4.3: onboarding is captured once, edited
+    afterwards, never removed independently of the user), so migration 737d03a7c353
+    grants no DELETE on profiles at all -- scoped to what is actually used, per A.5 item
+    1's "the tables that need each," not "every table gets every verb." A cross-user
+    DELETE therefore now fails here, at the grant layer, before RLS is even reached --
+    see test_rls_blocks_cross_user_update_as_zero_rows_not_an_error's docstring for why
+    that test no longer also covers DELETE.
+    """
+    with pytest.raises(ProgrammingError, match="permission denied for table profiles"):
+        await db_session.execute(text("DELETE FROM profiles"))

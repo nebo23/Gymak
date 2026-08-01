@@ -180,6 +180,15 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
 
+    # A.5 item 1: Alembic-only, read by alembic/env.py, never by the application itself --
+    # app/database.py's engine is built from DATABASE_URL alone, always the DML-only
+    # gymak_app role. Optional here, not required: uvicorn (the running application) never
+    # needs a migrator credential to start, only `alembic upgrade`/`downgrade` do. Kept on
+    # this same Settings class, like every other Appendix A.1 variable, rather than a
+    # separate loader for alembic/env.py -- that would decouple alembic's config from the
+    # rest of Appendix A.1, which is a bigger change than this task's scope.
+    MIGRATOR_DATABASE_URL: str | None = None
+
     JWT_PRIVATE_KEY_PEM: str
     JWT_PUBLIC_KEY_PEM: str
     JWT_AUDIENCE: str = "gymak-app"

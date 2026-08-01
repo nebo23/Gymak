@@ -102,39 +102,62 @@ _REQUIRED_TEST_ENV = {
     "EMAIL_BACKEND": "console",
 }
 
-# The role the app connects as everywhere -- name matches .env.example's DATABASE_URL so
-# behaviour under test matches behaviour outside it. Deliberately NOT the testcontainers
-# bootstrap role, which is always a Postgres superuser (it is the initdb-created role for
-# a fresh cluster) -- a passing RLS test under a superuser connection would be a false
-# guarantee, since RLS is bypassed for superusers and BYPASSRLS roles regardless of policy.
+# A.5 item 1: two roles, not one. gymak_migrator owns the schema and runs Alembic;
+# gymak_app is DML-only and serves the application -- name matches .env.example's
+# DATABASE_URL so behaviour under test matches behaviour outside it. Neither is the
+# testcontainers bootstrap role, which is always a Postgres superuser (it is the
+# initdb-created role for a fresh cluster) -- a passing RLS test under a superuser
+# connection would be a false guarantee, since RLS is bypassed for superusers and
+# BYPASSRLS roles regardless of policy.
+_MIGRATOR_ROLE = "gymak_migrator"
+_MIGRATOR_ROLE_PASSWORD = "gymak_migrator_test_password"  # noqa: S105 -- throwaway, ephemeral
 _APP_ROLE = "gymak_app"
 _APP_ROLE_PASSWORD = "gymak_app_test_password"  # noqa: S105 -- throwaway, ephemeral container only
 
 _container: PostgresContainer | None = None
 
 
-async def _provision_app_role(
+async def _provision_roles(
     host: str, port: int, superuser: str, superuser_password: str, dbname: str
 ) -> None:
-    """Create the dedicated non-superuser role migrations and the app both connect as.
+    """Create the two non-superuser roles the split (A.5 item 1) relies on.
 
-    NOSUPERUSER and NOBYPASSRLS are the two attributes that matter: either one bypasses
-    RLS entirely regardless of policy. GRANT ALL on the database and public schema (not
-    superuser, not BYPASSRLS) is enough privilege to run the migration -- verified
-    empirically against a real container, including CREATE EXTENSION citext, which is a
-    "trusted" extension installable by a sufficiently-privileged non-superuser on
-    Postgres 13+.
+    NOSUPERUSER and NOBYPASSRLS are the two attributes that matter for both roles:
+    either one bypasses RLS entirely regardless of policy, which would make gymak_app's
+    connection a false guarantee for every RLS test in tests/security/test_rls.py.
+
+    gymak_migrator gets CONNECT + CREATE on the database and CREATE + USAGE on schema
+    public -- the schema-level grant lets it create the six Phase 1 tables (and
+    everything it subsequently owns), and CREATE on the *database* (not merely the
+    schema) is specifically what CREATE EXTENSION citext checks for a non-superuser role
+    installing a "trusted" extension on Postgres 13+ -- confirmed empirically against a
+    real container: schema-only CREATE fails with "Must have CREATE privilege on
+    current database to create this extension," which is not the error the previous,
+    single-role version of this function's docstring assumed. See backend/README.md.
+
+    gymak_app gets CONNECT on the database and USAGE (never CREATE) on schema public --
+    no privilege to create anything, anywhere. Its actual data access -- SELECT/INSERT/
+    UPDATE/DELETE on specific tables -- is granted by migration 737d03a7c353, not here,
+    because by the time that migration runs, gymak_migrator (not this bootstrap
+    superuser) owns those tables and is the only role with authority to grant on them.
     """
     conn = await asyncpg.connect(
         host=host, port=port, user=superuser, password=superuser_password, database=dbname
     )
     try:
         await conn.execute(
+            f"CREATE ROLE {_MIGRATOR_ROLE} LOGIN PASSWORD '{_MIGRATOR_ROLE_PASSWORD}' "
+            "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
+        )
+        await conn.execute(f"GRANT CONNECT, CREATE ON DATABASE {dbname} TO {_MIGRATOR_ROLE}")
+        await conn.execute(f"GRANT CREATE, USAGE ON SCHEMA public TO {_MIGRATOR_ROLE}")
+
+        await conn.execute(
             f"CREATE ROLE {_APP_ROLE} LOGIN PASSWORD '{_APP_ROLE_PASSWORD}' "
             "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
         )
-        await conn.execute(f"GRANT ALL PRIVILEGES ON DATABASE {dbname} TO {_APP_ROLE}")
-        await conn.execute(f"GRANT ALL PRIVILEGES ON SCHEMA public TO {_APP_ROLE}")
+        await conn.execute(f"GRANT CONNECT ON DATABASE {dbname} TO {_APP_ROLE}")
+        await conn.execute(f"GRANT USAGE ON SCHEMA public TO {_APP_ROLE}")
     finally:
         await conn.close()
 
@@ -163,7 +186,7 @@ def pytest_configure(config: pytest.Config) -> None:
     port = int(_container.get_exposed_port(5432))
     dbname = _container.dbname
     asyncio.run(
-        _provision_app_role(
+        _provision_roles(
             host=host,
             port=port,
             superuser=_container.username,
@@ -172,6 +195,13 @@ def pytest_configure(config: pytest.Config) -> None:
         )
     )
 
+    # Both settings are in place before app.config.Settings is ever constructed (that
+    # first happens inside _run_migrations_to_head, when alembic/env.py imports it) --
+    # so there is no mutate-after-construction hazard here, unlike DATABASE_URL alone
+    # would have if it were flipped from one role to another after the fact.
+    os.environ["MIGRATOR_DATABASE_URL"] = (
+        f"postgresql+asyncpg://{_MIGRATOR_ROLE}:{_MIGRATOR_ROLE_PASSWORD}@{host}:{port}/{dbname}"
+    )
     os.environ["DATABASE_URL"] = (
         f"postgresql+asyncpg://{_APP_ROLE}:{_APP_ROLE_PASSWORD}@{host}:{port}/{dbname}"
     )
@@ -187,6 +217,24 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 @pytest.fixture(scope="session")
 def postgres_url() -> str:
     return os.environ["DATABASE_URL"]
+
+
+@pytest.fixture(scope="session")
+def migrator_database_url() -> str:
+    """A DATABASE_URL authenticated as gymak_migrator -- the schema-owning, DDL-capable
+    role Alembic connects as (see MIGRATOR_DATABASE_URL). Used only by
+    tests/integration/test_startup_privilege_check.py, to prove the application refuses
+    to start if DATABASE_URL is ever pointed at this role instead of the DML-only
+    gymak_app -- the exact misconfiguration A.5 item 1 names as unacceptable ("the
+    application must never be able to connect as the migrator").
+    """
+    assert _container is not None
+    host = _container.get_container_host_ip()
+    port = int(_container.get_exposed_port(5432))
+    return (
+        f"postgresql+asyncpg://{_MIGRATOR_ROLE}:{_MIGRATOR_ROLE_PASSWORD}"
+        f"@{host}:{port}/{_container.dbname}"
+    )
 
 
 @pytest.fixture(scope="session")
