@@ -29,7 +29,7 @@ from app.core.security import (
     reset_code_matches,
     validate_password,
 )
-from app.database import set_rls_user
+from app.database import bind_pre_auth_rls_user
 from app.integrations.email.base import EmailMessage, get_email_sender, render_template
 from app.repositories import audit_repo, reset_repo, token_repo, user_repo
 from app.schemas.auth import (
@@ -134,9 +134,9 @@ async def forgot(
         return None
 
     # password_reset_codes carries no RLS (§4.7: read/written pre-auth, like `users`),
-    # so -- unlike `reset` below -- no set_rls_user call belongs on this path; A.5
-    # item 9 is specifically about the FORCE-RLS `refresh_tokens` table, which forgot
-    # never touches.
+    # so -- unlike `reset` below -- no bind_pre_auth_rls_user call belongs on this path;
+    # A.5 item 9 is specifically about the FORCE-RLS `refresh_tokens` table, which
+    # forgot never touches.
     await reset_repo.consume_previous_unconsumed(session, user.id)
 
     code = generate_reset_code()
@@ -237,8 +237,9 @@ async def reset(
 
     # A.5 item 9: the caller has no bearer (a reset token, not an access token,
     # authenticates this request), so app.user_id must be bound by hand before the
-    # refresh_tokens write below, exactly as _issue_session does pre-auth.
-    await set_rls_user(session, str(user_id))
+    # refresh_tokens write below, through the same helper _issue_session and refresh
+    # use pre-auth.
+    await bind_pre_auth_rls_user(session, user_id)
 
     user = await user_repo.get_active_user_by_id(session, user_id)
     if user is None or not user.is_active:

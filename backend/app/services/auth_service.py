@@ -32,7 +32,7 @@ from app.core.security import (
     validate_password,
     verify_password,
 )
-from app.database import set_rls_user
+from app.database import bind_pre_auth_rls_user
 from app.models.profile import Profile
 from app.models.user import User
 from app.repositories import identity_repo, profile_repo, token_repo, user_repo
@@ -81,7 +81,8 @@ async def _onboarding_completed_for(session: AsyncSession, user_id: uuid.UUID) -
     only while nothing in this codebase could create a profile at all, and became wrong
     the moment T-08 shipped one. profiles carries FORCE RLS (§4.7), so this must only be
     called after app.user_id is bound for `user_id` in the current transaction -- every
-    caller below binds it (via set_rls_user) immediately before reaching here.
+    caller below binds it (via bind_pre_auth_rls_user or get_current_user) immediately
+    before reaching here.
     """
     profile = await profile_repo.get_by_user_id(session, user_id)
     return profile.onboarding_completed if profile is not None else False
@@ -93,10 +94,10 @@ async def _issue_session(session: AsyncSession, user: User) -> IssuedSession:
     """
     # §4.7's RLS policy on refresh_tokens checks app.user_id on INSERT too (no WITH CHECK
     # is declared, so the USING clause doubles as one). dependencies.py binds this for
-    # already-authenticated requests; register and login are pre-bearer-auth, so this is
-    # the first point either flow knows *which* user_id the row about to be inserted
-    # belongs to.
-    await set_rls_user(session, str(user.id))
+    # already-authenticated requests; register, login and social sign-in (which reuses
+    # this function, A.5 item 9) are pre-bearer-auth, so this is the first point any of
+    # them knows *which* user_id the row about to be inserted belongs to.
+    await bind_pre_auth_rls_user(session, user.id)
     access_token, expires_in = create_access_token(
         user_id=user.id, token_version=user.token_version
     )
@@ -221,10 +222,11 @@ async def refresh(
     bound before that first lookup runs. Resolved in two phases (see
     token_repo.peek_user_id_by_hash's docstring for why a single locked SELECT cannot
     do this alone): an unscoped peek to discover the owning user, then app.user_id
-    bound to that discovery -- the same technique _issue_session uses once a user row
-    is in hand, which is Appendix A.5 item 9's pattern, extended here to a lookup that
-    precedes the write rather than only a write that follows a fresh user row -- and
-    only then the authoritative, locked read the rest of this function acts on.
+    bound to that discovery via bind_pre_auth_rls_user -- the same helper
+    _issue_session uses once a user row is in hand (Appendix A.5 item 9's pattern),
+    extended here to a lookup that precedes the write rather than only a write that
+    follows a fresh user row -- and only then the authoritative, locked read the rest
+    of this function acts on.
     """
     token_hash = hash_opaque_token(request.refresh_token)
     peeked_user_id = await token_repo.peek_user_id_by_hash(session, token_hash)
@@ -237,7 +239,7 @@ async def refresh(
     # The user is now known. Bind RLS before the locked read and any write below --
     # the locked read, consume, revoke-family, and insert-successor are all governed by
     # refresh_tokens' owner policy.
-    await set_rls_user(session, str(peeked_user_id))
+    await bind_pre_auth_rls_user(session, peeked_user_id)
 
     row = await token_repo.get_for_update_by_hash(session, peeked_user_id, token_hash)
     if row is None:

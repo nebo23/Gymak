@@ -4,6 +4,13 @@ had ever exercised a real policy end to end until now. Runs under the gymak_app
 non-superuser role (see conftest.py) -- RLS is bypassed entirely for superusers and
 BYPASSRLS roles regardless of what any policy says, so anything less would be a false
 guarantee, which is exactly why database.py now asserts against that at import time.
+
+A.5 item 13: every fixture below seeds its rows over a superuser connection
+(`superuser_database_url`), which bypasses RLS unconditionally -- regardless of
+whether the policy under test is correct, broken, or missing entirely. The app-role
+`db_session` connection (the one RLS actually applies to) is used only for the
+read/update/insert each test is actually about, so a broken policy shows up as a
+failed assertion, never as a crash while building the fixture.
 """
 
 from __future__ import annotations
@@ -16,38 +23,79 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import ProgrammingError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.ids import new_id
 from app.database import set_rls_user
-from app.models import Profile, RefreshToken, User
+from app.models import Profile, RefreshToken
 
 
 def _new_email() -> str:
     return f"{uuid.uuid4()}@example.com"
 
 
-async def _insert_user_with_profile(session: AsyncSession, *, name: str = "Test User") -> User:
-    user = User(id=new_id(), email=_new_email(), password_hash="hash", email_verified=True)
-    session.add(user)
-    await session.flush()
-    # FORCE ROW LEVEL SECURITY (migration) means even the owner role must satisfy the
-    # policy's WITH CHECK to insert -- simulates the real flow, where app.user_id is
-    # already set to the acting user (via authentication) before any profile is created.
-    await set_rls_user(session, str(user.id))
-    session.add(
-        Profile(
-            user_id=user.id,
-            name=name,
-            gender="male",
-            birth_date=date(1995, 1, 1),
-            height_cm=175,
-            goal="maintain",
-            experience_level="beginner",
-        )
-    )
-    await session.flush()
-    return user
+async def _seed_user_with_profile(
+    superuser_database_url: str, *, name: str = "Test User"
+) -> uuid.UUID:
+    """A.5 item 13: insert a user + profile with plain SQL over a superuser
+    connection. Superuser connections bypass row-level security unconditionally in
+    Postgres -- FORCE or not -- so this insert succeeds whether profiles' owner
+    policy is correct, broken, or absent, and no test below can fail here because of
+    the very mechanism it exists to exercise. A dedicated, disposable engine (never
+    the shared app engine) mirrors the pattern `database._fetch_connection_role_
+    privileges` already uses for the same reason: a one-off probe connection must
+    never linger in a pool bound to this test's event loop.
+    """
+    user_id = new_id()
+    engine = create_async_engine(superuser_database_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO users (id, email, password_hash, email_verified) "
+                    "VALUES (:id, :email, 'hash', true)"
+                ),
+                {"id": user_id, "email": _new_email()},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO profiles "
+                    "(user_id, name, gender, birth_date, height_cm, goal, experience_level) "
+                    "VALUES (:user_id, :name, 'male', :birth_date, 175, 'maintain', 'beginner')"
+                ),
+                {"user_id": user_id, "name": name, "birth_date": date(1995, 1, 1)},
+            )
+    finally:
+        await engine.dispose()
+    return user_id
+
+
+async def _seed_refresh_token(
+    superuser_database_url: str, user_id: uuid.UUID, *, token_hash: str
+) -> None:
+    """Same rationale as `_seed_user_with_profile`: the refresh_tokens tests below are
+    about what the owner policy does to a SELECT or UPDATE against an *existing* row,
+    not about whether the app role can INSERT one -- so the row is seeded past RLS
+    entirely rather than through a `set_rls_user`-bound app-role insert.
+    """
+    engine = create_async_engine(superuser_database_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO refresh_tokens (id, user_id, token_hash, family_id, expires_at) "
+                    "VALUES (:id, :user_id, :token_hash, :family_id, :expires_at)"
+                ),
+                {
+                    "id": new_id(),
+                    "user_id": user_id,
+                    "token_hash": token_hash,
+                    "family_id": new_id(),
+                    "expires_at": datetime.now(UTC) + timedelta(days=60),
+                },
+            )
+    finally:
+        await engine.dispose()
 
 
 async def test_preconditions_that_make_every_other_test_here_meaningful(
@@ -83,20 +131,21 @@ async def test_preconditions_that_make_every_other_test_here_meaningful(
     ]
 
 
-async def test_rls_scopes_select_to_the_current_user_only(db_session: AsyncSession) -> None:
-    user_a = await _insert_user_with_profile(db_session)
-    user_b = await _insert_user_with_profile(db_session)
-    await db_session.commit()
+async def test_rls_scopes_select_to_the_current_user_only(
+    superuser_database_url: str, db_session: AsyncSession
+) -> None:
+    user_a_id = await _seed_user_with_profile(superuser_database_url)
+    user_b_id = await _seed_user_with_profile(superuser_database_url)
 
-    await set_rls_user(db_session, str(user_b.id))
+    await set_rls_user(db_session, str(user_b_id))
     visible = (await db_session.execute(select(Profile))).scalars().all()
 
-    assert [row.user_id for row in visible] == [user_b.id]
-    assert user_a.id not in {row.user_id for row in visible}
+    assert [row.user_id for row in visible] == [user_b_id]
+    assert user_a_id not in {row.user_id for row in visible}
 
 
 async def test_rls_blocks_cross_user_update_as_zero_rows_not_an_error(
-    db_session: AsyncSession,
+    superuser_database_url: str, db_session: AsyncSession
 ) -> None:
     """Was named "...update_and_delete..." before the A.5 item 1 role split: gymak_app
     used to hold GRANT ALL, so a cross-user DELETE on profiles was blocked by RLS alone,
@@ -106,13 +155,8 @@ async def test_rls_blocks_cross_user_update_as_zero_rows_not_an_error(
     the A.5 item 1 section). That is a *stronger* guarantee, not a weaker one, but it is
     a different mechanism, so it needed its own test rather than living in this one.
     """
-    user_a = await _insert_user_with_profile(db_session)
-    user_b = await _insert_user_with_profile(db_session)
-    # Plain values, not ORM attributes: the commit boundaries below can expire the
-    # instances, and touching an expired attribute afterwards triggers a lazy reload --
-    # sync IO from async context, which fails rather than returning the id.
-    user_a_id, user_b_id = user_a.id, user_b.id
-    await db_session.commit()
+    user_a_id = await _seed_user_with_profile(superuser_database_url)
+    user_b_id = await _seed_user_with_profile(superuser_database_url)
 
     await set_rls_user(db_session, str(user_b_id))
     update_result = cast(
@@ -145,44 +189,35 @@ async def test_rls_blocks_cross_user_update_as_zero_rows_not_an_error(
 
 
 async def test_rls_with_no_app_user_id_set_returns_zero_rows_not_all_rows(
-    db_session: AsyncSession,
+    superuser_database_url: str, db_session: AsyncSession
 ) -> None:
     """The failure mode that matters: if app.user_id is missing entirely and the policy
     evaluates permissively, RLS is decoration, not a barrier. current_setting(..., true)
     returns NULL when the variable was never set, and `user_id = NULL` is never true in
     SQL -- this confirms that holds against a real policy, not just in theory."""
-    await _insert_user_with_profile(db_session)
-    await _insert_user_with_profile(db_session)
-    await db_session.commit()
+    await _seed_user_with_profile(superuser_database_url)
+    await _seed_user_with_profile(superuser_database_url)
 
     visible = (await db_session.execute(select(Profile))).scalars().all()
     assert visible == []
 
 
-async def test_refresh_tokens_writes_still_scope_to_the_owner(db_session: AsyncSession) -> None:
+async def test_refresh_tokens_writes_still_scope_to_the_owner(
+    superuser_database_url: str, db_session: AsyncSession
+) -> None:
     """profiles' owner policy is spelled out explicitly in spec 4.7; refresh_tokens' was
     inferred from the same pattern in T-02, since the spec enables RLS on it but only
     shows the CREATE POLICY line for profiles. INSERT/UPDATE/DELETE are unchanged by
     migration 6b18a9095bb4 (see the next test) -- confirm the owner policy still governs
     writes: user_b's session cannot revoke user_a's token.
-    """
-    user_a = await _insert_user_with_profile(db_session)
-    user_b = await _insert_user_with_profile(db_session)
-    user_a_id, user_b_id = user_a.id, user_b.id
 
-    # Same WITH CHECK reasoning as _insert_user_with_profile: re-establish app.user_id
-    # to match whichever user's own token is being inserted next.
-    await set_rls_user(db_session, str(user_a_id))
-    db_session.add(
-        RefreshToken(
-            id=new_id(),
-            user_id=user_a_id,
-            token_hash="token-hash-a",
-            family_id=new_id(),
-            expires_at=datetime.now(UTC) + timedelta(days=60),
-        )
-    )
-    await db_session.commit()
+    The initial token is seeded past RLS (A.5 item 13): this test is about the UPDATE
+    side of the owner policy, not the INSERT side, so the row's existence must not
+    depend on the app role satisfying refresh_tokens' WITH CHECK.
+    """
+    user_a_id = await _seed_user_with_profile(superuser_database_url)
+    user_b_id = await _seed_user_with_profile(superuser_database_url)
+    await _seed_refresh_token(superuser_database_url, user_a_id, token_hash="token-hash-a")
 
     await set_rls_user(db_session, str(user_b_id))
     update_result = cast(
@@ -205,7 +240,9 @@ async def test_refresh_tokens_writes_still_scope_to_the_owner(db_session: AsyncS
     assert revoked_at is None
 
 
-async def test_refresh_tokens_select_is_permissive_by_design(db_session: AsyncSession) -> None:
+async def test_refresh_tokens_select_is_permissive_by_design(
+    superuser_database_url: str, db_session: AsyncSession
+) -> None:
     """Migration 6b18a9095bb4 deliberately widens refresh_tokens' SELECT policy to
     `USING (true)`: /auth/refresh must look up a token by hash before it knows which
     user it belongs to (spec 5.5 step 1), and with app.user_id unset the original
@@ -215,23 +252,15 @@ async def test_refresh_tokens_select_is_permissive_by_design(db_session: AsyncSe
     widened policy is what's actually in force for refresh_tokens: a row inserted under
     one user is still SELECT-able with app.user_id bound to a *different* user, or
     unset entirely -- the opposite of profiles' behaviour, and intentionally so.
+
+    A.5 item 13: the row is seeded past RLS -- this test is about SELECT permissiveness,
+    not about whether an app-role INSERT under the owner policy would have succeeded.
     """
-    user_a = await _insert_user_with_profile(db_session)
-    user_b = await _insert_user_with_profile(db_session)
+    user_a_id = await _seed_user_with_profile(superuser_database_url)
+    user_b_id = await _seed_user_with_profile(superuser_database_url)
+    await _seed_refresh_token(superuser_database_url, user_a_id, token_hash="token-hash-lookup-a")
 
-    await set_rls_user(db_session, str(user_a.id))
-    db_session.add(
-        RefreshToken(
-            id=new_id(),
-            user_id=user_a.id,
-            token_hash="token-hash-lookup-a",
-            family_id=new_id(),
-            expires_at=datetime.now(UTC) + timedelta(days=60),
-        )
-    )
-    await db_session.commit()
-
-    await set_rls_user(db_session, str(user_b.id))
+    await set_rls_user(db_session, str(user_b_id))
     visible_as_other_user = (
         (
             await db_session.execute(
@@ -241,7 +270,7 @@ async def test_refresh_tokens_select_is_permissive_by_design(db_session: AsyncSe
         .scalars()
         .all()
     )
-    assert [row.user_id for row in visible_as_other_user] == [user_a.id]
+    assert [row.user_id for row in visible_as_other_user] == [user_a_id]
 
     await set_rls_user(db_session, None)
     visible_unset = (
@@ -253,7 +282,78 @@ async def test_refresh_tokens_select_is_permissive_by_design(db_session: AsyncSe
         .scalars()
         .all()
     )
-    assert [row.user_id for row in visible_unset] == [user_a.id]
+    assert [row.user_id for row in visible_unset] == [user_a_id]
+
+
+async def test_dropping_the_owner_policy_makes_the_barrier_provably_load_bearing(
+    migrator_database_url: str, superuser_database_url: str, db_session: AsyncSession
+) -> None:
+    """A.5 item 13, the important half of that task. Every assertion above proves a
+    permitted read succeeds or a forbidden one returns zero rows -- which looks
+    identical whether the owner policy is doing that or was never wired up at all
+    (spec 6.5: "test that a control prevents, not that it functions ... An RLS test
+    that can never fail is decoration"). This is the one test that removes the barrier,
+    shows the read every test above relies on being blocked now leaks, then puts the
+    barrier back -- so this file provably fails if `p_profiles_owner` is ever dropped
+    from the real migration, per spec 11.1 and 11.3 item 3.
+
+    A bare DROP POLICY here would not demonstrate a leak: Postgres's documented
+    behaviour for a table with ENABLE ROW LEVEL SECURITY and zero policies is
+    default-deny for every command and every role that does not bypass RLS -- that
+    would hide the row from its own legitimate owner too, not open it up, so "the
+    forbidden read now succeeds" would never hold. So this drops the real policy and
+    installs a deliberately permissive stand-in (`USING (true)`) instead of leaving
+    none -- matching the historical T-01b bug class (a policy present but not actually
+    restricting anything), which is the failure this test needs to reproduce. The
+    original expression is restored from spec 4.7 in a `finally` block regardless of
+    outcome, since the testcontainer is session-scoped and no later test in this file
+    may run against a permanently weakened policy.
+    """
+    owner_id = await _seed_user_with_profile(superuser_database_url, name="Policy Drop Owner")
+    intruder_id = uuid.uuid4()
+
+    migrator_engine = create_async_engine(migrator_database_url)
+    try:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_profiles_owner ON profiles"))
+            await conn.execute(text("CREATE POLICY p_profiles_owner ON profiles USING (true)"))
+
+        # Barrier gone: a session bound to an unrelated identity can now read the
+        # owner's row -- the exact read every test above relies on coming back empty.
+        await set_rls_user(db_session, str(intruder_id))
+        leaked = (
+            (await db_session.execute(select(Profile).where(Profile.user_id == owner_id)))
+            .scalars()
+            .all()
+        )
+        # Commit before the finally block's DROP POLICY below: db_session's read left
+        # its transaction open (idle in transaction), holding a lock that would
+        # otherwise deadlock against the ACCESS EXCLUSIVE lock DROP POLICY needs on
+        # the same table -- confirmed against a real hang, not assumed. Committing
+        # here, before the assertion, means the lock is released even if the
+        # assertion below fails.
+        await db_session.commit()
+        assert [row.user_id for row in leaked] == [owner_id]
+    finally:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_profiles_owner ON profiles"))
+            await conn.execute(
+                text(
+                    "CREATE POLICY p_profiles_owner ON profiles USING "
+                    "(user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)"
+                )
+            )
+        await migrator_engine.dispose()
+
+    # Restored: the same read, from the same unrelated identity, is blocked again --
+    # confirming the restore actually took effect rather than merely not raising.
+    await set_rls_user(db_session, str(intruder_id))
+    still_hidden = (
+        (await db_session.execute(select(Profile).where(Profile.user_id == owner_id)))
+        .scalars()
+        .all()
+    )
+    assert still_hidden == []
 
 
 # --- A.5 item 1: gymak_app holds DML only, never DDL -----------------------------------

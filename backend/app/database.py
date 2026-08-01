@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from collections.abc import AsyncGenerator
 
 from sqlalchemy import text
@@ -74,6 +75,22 @@ async def set_rls_user(session: AsyncSession, user_id: str | None) -> None:
     await session.execute(
         text("SELECT set_config('app.user_id', :user_id, true)"), {"user_id": user_id or ""}
     )
+
+
+async def bind_pre_auth_rls_user(session: AsyncSession, user_id: uuid.UUID | str) -> None:
+    """A.5 item 9: the one helper behind every pre-auth `app.user_id` bind.
+
+    `auth_service._issue_session` (used by register, login, and social sign-in via
+    reuse), `auth_service.refresh` (after its peek discovers the owning user), and
+    `password_reset_service.reset` all reach a first write to a FORCE-RLS table
+    (refresh_tokens, spec 4.7) with no bearer token yet to bind app.user_id from --
+    each used to call `set_rls_user` directly, duplicating the same "no bearer token
+    yet" rationale three times over. This is that pattern's one named call site; all
+    three now go through it instead of `set_rls_user` directly. It changes nothing
+    about the bind itself -- see `set_rls_user`'s docstring for the actual
+    transaction-scoping invariant.
+    """
+    await set_rls_user(session, str(user_id))
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
