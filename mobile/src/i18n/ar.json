@@ -73,6 +73,133 @@
       "retryIn": "محاولات كثيرة جدًا. حاول مرة أخرى خلال {{seconds}} ثانية."
     }
   },
+  "onboarding": {
+    "continue": "متابعة",
+    "step1": {
+      "title": "عنك",
+      "name": "الاسم الكامل",
+      "male": "ذكر",
+      "female": "أنثى"
+    },
+    "step2": {
+      "title": "تاريخ الميلاد",
+      "label": "تاريخ الميلاد"
+    },
+    "step3": {
+      "title": "الطول والوزن",
+      "metric": "متري (سم / كجم)",
+      "imperial": "إمبراطوري (قدم / رطل)",
+      "heightCm": "الطول (سم)",
+      "weightKg": "الوزن (كجم)",
+      "feet": "قدم",
+      "inches": "إنش",
+      "weightLb": "الوزن (رطل)"
+    },
+    "step4": {
+      "title": "هدفك",
+      "lose": "إنقاص الوزن",
+      "gain": "زيادة الكتلة العضلية",
+      "maintain": "الحفاظ على الوزن",
+      "loseDisabledReason": "غير متاح للحسابات دون سن 18",
+      "serverRejected": "هذا الهدف غير متاح لحسابك. يرجى اختيار هدف آخر."
+    },
+    "step5": {
+      "title": "مستوى الخبرة",
+      "beginner": "مبتدئ",
+      "beginnerDescription": "جديد على التمرين المنتظم",
+      "intermediate": "متوسط",
+      "intermediateDescription": "تمرّن بانتظام من 6 أشهر إلى سنتين",
+      "advanced": "متقدّم",
+      "advancedDescription": "تمرّن بانتظام لأكثر من سنتين"
+    },
+    "step6": {
+      "title": "الوحدات واللغة",
+      "units": "الوحدات",
+      "metric": "متري",
+      "imperial": "إمبراطوري",
+      "language": "اللغة",
+      "arabic": "العربية",
+      "english": "English"
+    },
+    "review": {
+      "title": "المراجعة",
+      "name": "الاسم",
+      "gender": "الجنس",
+      "birthDate": "تاريخ الميلاد",
+      "height": "الطول",
+      "weight": "الوزن",
+      "goal": "الهدف",
+      "experienceLevel": "مستوى الخبرة",
+      "units": "الوحدات",
+      "language": "اللغة",
+      "edit": "تعديل",
+      "finish": "إنهاء"
+    }
+  },
+  "home": {
+    "settingsButton": "الإعدادات",
+    "greeting": "مرحبًا، {{name}}",
+    "greetingFallback": "مرحبًا بعودتك",
+    "planPanelTitle": "خطتك التدريبية",
+    "planPanelBody": "خطتك التدريبية تصل في المرحلة القادمة. حاليًا، هذه فقط الصفحة الرئيسية لحسابك — بلا تمارين وبلا رسوم بيانية وبلا أي بيانات وهمية."
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "sections": {
+      "profile": "الملف الشخصي",
+      "preferences": "التفضيلات",
+      "account": "الحساب"
+    },
+    "fields": {
+      "name": "الاسم الكامل",
+      "gender": "الجنس",
+      "male": "ذكر",
+      "female": "أنثى",
+      "birthDate": "تاريخ الميلاد",
+      "heightCm": "الطول (سم)",
+      "weightKg": "الوزن (كجم)",
+      "feet": "قدم",
+      "inches": "إنش",
+      "weightLb": "الوزن (رطل)",
+      "goal": "الهدف",
+      "goalLose": "إنقاص الوزن",
+      "goalGain": "زيادة الكتلة العضلية",
+      "goalMaintain": "الحفاظ على الوزن",
+      "goalLoseDisabledReason": "غير متاح للحسابات دون سن 18",
+      "experienceLevel": "مستوى الخبرة",
+      "experienceBeginner": "مبتدئ",
+      "experienceIntermediate": "متوسط",
+      "experienceAdvanced": "متقدّم",
+      "activityLevel": "مستوى النشاط",
+      "activitySedentary": "خامل",
+      "activityLight": "خفيف",
+      "activityModerate": "متوسط",
+      "activityHigh": "عالٍ",
+      "activityVeryHigh": "عالٍ جدًا"
+    },
+    "units": {
+      "metric": "متري (سم / كجم)",
+      "imperial": "إمبراطوري (قدم / رطل)"
+    },
+    "language": {
+      "arabic": "العربية",
+      "english": "English"
+    },
+    "save": "حفظ التغييرات",
+    "saved": "تم حفظ التغييرات.",
+    "account": {
+      "logOut": "تسجيل الخروج",
+      "logOutAll": "تسجيل الخروج من كل الأجهزة",
+      "deleteAccount": "حذف الحساب",
+      "deleteWarning": "سيتم تقديم طلب حذف حسابك. لديك 30 يومًا قبل الحذف النهائي.",
+      "deletePasswordLabel": "كلمة المرور",
+      "deleteConfirmLabel": "اكتب DELETE للتأكيد",
+      "deleteConfirmWord": "DELETE",
+      "deleteConfirmButton": "حذف نهائيًا",
+      "deleteCancel": "إلغاء",
+      "deletedNotice": "تم تقديم طلب حذف حسابك."
+    }
+  },
   "fieldErrors": {
     "email": {
       "INVALID": "أدخل بريدًا إلكترونيًا صالحًا"
@@ -91,6 +218,27 @@
     },
     "code": {
       "INVALID": "أدخل الأحرف الثمانية كاملة"
+    },
+    "name": {
+      "INVALID": "أدخل اسمًا صالحًا (٢-٦٠ حرفًا)"
+    },
+    "gender": {
+      "REQUIRED": "اختر خيارًا"
+    },
+    "birthDate": {
+      "OUT_OF_RANGE": "أدخل تاريخ ميلاد صالحًا"
+    },
+    "height": {
+      "OUT_OF_RANGE": "أدخل طولًا بين 100 و250 سم"
+    },
+    "weight": {
+      "OUT_OF_RANGE": "أدخل وزنًا بين 30 و300 كجم"
+    },
+    "goal": {
+      "REQUIRED": "اختر هدفًا"
+    },
+    "experienceLevel": {
+      "REQUIRED": "اختر مستوى خبرتك"
     }
   },
   "components": {

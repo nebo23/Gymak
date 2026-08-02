@@ -73,6 +73,133 @@
       "retryIn": "Too many attempts. Try again in {{seconds}}s."
     }
   },
+  "onboarding": {
+    "continue": "Continue",
+    "step1": {
+      "title": "About you",
+      "name": "Full name",
+      "male": "Male",
+      "female": "Female"
+    },
+    "step2": {
+      "title": "Birth date",
+      "label": "Date of birth"
+    },
+    "step3": {
+      "title": "Height & weight",
+      "metric": "Metric (cm / kg)",
+      "imperial": "Imperial (ft / lb)",
+      "heightCm": "Height (cm)",
+      "weightKg": "Weight (kg)",
+      "feet": "Feet",
+      "inches": "Inches",
+      "weightLb": "Weight (lb)"
+    },
+    "step4": {
+      "title": "Your goal",
+      "lose": "Lose weight",
+      "gain": "Gain muscle",
+      "maintain": "Maintain",
+      "loseDisabledReason": "Not available for accounts under 18",
+      "serverRejected": "That goal isn't available for your account. Please choose another."
+    },
+    "step5": {
+      "title": "Experience level",
+      "beginner": "Beginner",
+      "beginnerDescription": "New to structured training",
+      "intermediate": "Intermediate",
+      "intermediateDescription": "Trained consistently for 6 months to 2 years",
+      "advanced": "Advanced",
+      "advancedDescription": "Trained consistently for over 2 years"
+    },
+    "step6": {
+      "title": "Units & language",
+      "units": "Units",
+      "metric": "Metric",
+      "imperial": "Imperial",
+      "language": "Language",
+      "arabic": "العربية",
+      "english": "English"
+    },
+    "review": {
+      "title": "Review",
+      "name": "Name",
+      "gender": "Gender",
+      "birthDate": "Birth date",
+      "height": "Height",
+      "weight": "Weight",
+      "goal": "Goal",
+      "experienceLevel": "Experience level",
+      "units": "Units",
+      "language": "Language",
+      "edit": "Edit",
+      "finish": "Finish"
+    }
+  },
+  "home": {
+    "settingsButton": "Settings",
+    "greeting": "Welcome, {{name}}",
+    "greetingFallback": "Welcome back",
+    "planPanelTitle": "Your training plan",
+    "planPanelBody": "Your training plan arrives in the next phase. For now, this is just your account home — no workouts, no charts, nothing made up."
+  },
+  "settings": {
+    "title": "Settings",
+    "sections": {
+      "profile": "Profile",
+      "preferences": "Preferences",
+      "account": "Account"
+    },
+    "fields": {
+      "name": "Full name",
+      "gender": "Gender",
+      "male": "Male",
+      "female": "Female",
+      "birthDate": "Birth date",
+      "heightCm": "Height (cm)",
+      "weightKg": "Weight (kg)",
+      "feet": "Feet",
+      "inches": "Inches",
+      "weightLb": "Weight (lb)",
+      "goal": "Goal",
+      "goalLose": "Lose weight",
+      "goalGain": "Gain muscle",
+      "goalMaintain": "Maintain",
+      "goalLoseDisabledReason": "Not available for accounts under 18",
+      "experienceLevel": "Experience level",
+      "experienceBeginner": "Beginner",
+      "experienceIntermediate": "Intermediate",
+      "experienceAdvanced": "Advanced",
+      "activityLevel": "Activity level",
+      "activitySedentary": "Sedentary",
+      "activityLight": "Light",
+      "activityModerate": "Moderate",
+      "activityHigh": "High",
+      "activityVeryHigh": "Very high"
+    },
+    "units": {
+      "metric": "Metric (cm / kg)",
+      "imperial": "Imperial (ft / lb)"
+    },
+    "language": {
+      "arabic": "العربية",
+      "english": "English"
+    },
+    "save": "Save changes",
+    "saved": "Your changes were saved.",
+    "account": {
+      "logOut": "Log out",
+      "logOutAll": "Log out of all devices",
+      "deleteAccount": "Delete account",
+      "deleteWarning": "This requests deletion of your account. You'll have 30 days before it's permanently removed.",
+      "deletePasswordLabel": "Password",
+      "deleteConfirmLabel": "Type DELETE to confirm",
+      "deleteConfirmWord": "DELETE",
+      "deleteConfirmButton": "Permanently delete",
+      "deleteCancel": "Cancel",
+      "deletedNotice": "Your account deletion was requested."
+    }
+  },
   "fieldErrors": {
     "email": {
       "INVALID": "Enter a valid email address"
@@ -91,6 +218,27 @@
     },
     "code": {
       "INVALID": "Enter all 8 characters"
+    },
+    "name": {
+      "INVALID": "Enter a valid name (2-60 letters)"
+    },
+    "gender": {
+      "REQUIRED": "Select an option"
+    },
+    "birthDate": {
+      "OUT_OF_RANGE": "Enter a valid birth date"
+    },
+    "height": {
+      "OUT_OF_RANGE": "Enter a height between 100 and 250 cm"
+    },
+    "weight": {
+      "OUT_OF_RANGE": "Enter a weight between 30 and 300 kg"
+    },
+    "goal": {
+      "REQUIRED": "Select a goal"
+    },
+    "experienceLevel": {
+      "REQUIRED": "Select your experience level"
     }
   },
   "components": {
