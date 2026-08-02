@@ -1,6 +1,27 @@
 {
   "common": {
-    "appName": "Gymak"
+    "appName": "Gymak",
+    "back": "Back",
+    "retry": "Retry",
+    "dismiss": "Dismiss"
+  },
+  "components": {
+    "textInput": {
+      "showPassword": "Show password",
+      "hidePassword": "Hide password"
+    },
+    "otp": {
+      "label": "Reset code",
+      "progress": "{{count}} of {{total}} characters entered",
+      "invalid": "That code isn't valid"
+    },
+    "progressBar": {
+      "stepLabel": "Step {{step}} of {{total}}"
+    }
+  },
+  "errors": {
+    "GENERIC": "Something went wrong. Please try again.",
+    "OFFLINE": "You're offline. Check your connection and try again."
   },
   "placeholder": {
     "auth": {
@@ -14,6 +35,47 @@
     "app": {
       "title": "Home",
       "body": "The signed-in app shell lands in T-14."
+    }
+  },
+  "devGallery": {
+    "title": "Component gallery",
+    "badge": "DEV ONLY — not part of the app flow",
+    "sections": {
+      "button": "GButton",
+      "textInput": "GTextInput",
+      "otp": "GOtpInput",
+      "selectCard": "GSelectCard",
+      "progressBar": "GProgressBar",
+      "errorBanner": "GErrorBanner",
+      "logo": "GLogo"
+    },
+    "state": {
+      "idle": "Idle",
+      "filled": "Filled",
+      "loading": "Loading",
+      "disabled": "Disabled",
+      "error": "Error",
+      "selected": "Selected",
+      "unselected": "Unselected",
+      "withRetry": "With retry",
+      "dismissible": "Dismissible",
+      "secure": "Secure, with reveal toggle",
+      "fullWidth": "Full width"
+    },
+    "sample": {
+      "textInputLabel": "Email",
+      "textInputPlaceholder": "you@example.com",
+      "textInputError": "Enter a valid email address",
+      "passwordLabel": "Password",
+      "selectCardATitle": "Option A",
+      "selectCardADescription": "A short clarifying line",
+      "selectCardBTitle": "Option B",
+      "selectCardCTitle": "Option C",
+      "selectCardDisabledReason": "Not available for this account",
+      "buttonPrimary": "Continue",
+      "buttonSecondary": "Secondary",
+      "buttonGhost": "Ghost",
+      "buttonSocial": "Continue with Google"
     }
   }
 }

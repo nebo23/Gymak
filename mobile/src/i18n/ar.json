@@ -1,6 +1,27 @@
 {
   "common": {
-    "appName": "Gymak"
+    "appName": "Gymak",
+    "back": "رجوع",
+    "retry": "إعادة المحاولة",
+    "dismiss": "إغلاق"
+  },
+  "components": {
+    "textInput": {
+      "showPassword": "إظهار كلمة المرور",
+      "hidePassword": "إخفاء كلمة المرور"
+    },
+    "otp": {
+      "label": "رمز إعادة التعيين",
+      "progress": "تم إدخال {{count}} من {{total}} حرفًا",
+      "invalid": "هذا الرمز غير صحيح"
+    },
+    "progressBar": {
+      "stepLabel": "الخطوة {{step}} من {{total}}"
+    }
+  },
+  "errors": {
+    "GENERIC": "حدث خطأ ما. حاول مرة أخرى.",
+    "OFFLINE": "لا يوجد اتصال بالإنترنت. تحقق من الاتصال وحاول مرة أخرى."
   },
   "placeholder": {
     "auth": {
@@ -14,6 +35,47 @@
     "app": {
       "title": "الرئيسية",
       "body": "واجهة التطبيق بعد تسجيل الدخول تُضاف في T-14."
+    }
+  },
+  "devGallery": {
+    "title": "معرض المكونات",
+    "badge": "لأغراض التطوير فقط — ليس جزءًا من التطبيق",
+    "sections": {
+      "button": "GButton",
+      "textInput": "GTextInput",
+      "otp": "GOtpInput",
+      "selectCard": "GSelectCard",
+      "progressBar": "GProgressBar",
+      "errorBanner": "GErrorBanner",
+      "logo": "GLogo"
+    },
+    "state": {
+      "idle": "الحالة الافتراضية",
+      "filled": "معبأ",
+      "loading": "تحميل",
+      "disabled": "معطّل",
+      "error": "خطأ",
+      "selected": "محدد",
+      "unselected": "غير محدد",
+      "withRetry": "مع إعادة المحاولة",
+      "dismissible": "قابل للإغلاق",
+      "secure": "سري، مع زر الإظهار",
+      "fullWidth": "عرض كامل"
+    },
+    "sample": {
+      "textInputLabel": "البريد الإلكتروني",
+      "textInputPlaceholder": "you@example.com",
+      "textInputError": "أدخل بريدًا إلكترونيًا صالحًا",
+      "passwordLabel": "كلمة المرور",
+      "selectCardATitle": "الخيار أ",
+      "selectCardADescription": "سطر توضيحي قصير",
+      "selectCardBTitle": "الخيار ب",
+      "selectCardCTitle": "الخيار ج",
+      "selectCardDisabledReason": "غير متاح لهذا الحساب",
+      "buttonPrimary": "متابعة",
+      "buttonSecondary": "ثانوي",
+      "buttonGhost": "شبح",
+      "buttonSocial": "المتابعة باستخدام Google"
     }
   }
 }
