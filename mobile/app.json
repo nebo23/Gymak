@@ -15,7 +15,7 @@
       "bundleIdentifier": "fitness.gymak.app"
     },
     "android": {
-      "package": "fitness.gymak.app"
+      "package": "com.gymak.app"
     },
     "plugins": [
       "expo-router"
