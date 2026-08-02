@@ -21,7 +21,30 @@
   },
   "errors": {
     "GENERIC": "Something went wrong. Please try again.",
-    "OFFLINE": "You're offline. Check your connection and try again."
+    "OFFLINE": "You're offline. Check your connection and try again.",
+    "MALFORMED_BODY": "We couldn't process that request. Please try again.",
+    "PROVIDER_NOT_SUPPORTED": "That sign-in method isn't available yet.",
+    "INVALID_CREDENTIALS": "That email or password isn't right.",
+    "TOKEN_MISSING": "Please sign in to continue.",
+    "TOKEN_EXPIRED": "Your session expired. Please sign in again.",
+    "TOKEN_INVALID": "Your session is no longer valid. Please sign in again.",
+    "TOKEN_REUSED": "You were signed out for your security. Please sign in again.",
+    "SOCIAL_TOKEN_INVALID": "We couldn't verify that sign-in. Please try again.",
+    "RESET_TOKEN_INVALID": "This reset link has expired or was already used.",
+    "ACCOUNT_DISABLED": "This account has been disabled.",
+    "NOT_FOUND": "We couldn't find that.",
+    "PROFILE_NOT_FOUND": "Let's finish setting up your profile first.",
+    "EMAIL_ALREADY_REGISTERED": "An account with this email already exists.",
+    "PROFILE_ALREADY_EXISTS": "Your profile is already set up.",
+    "IDENTITY_ALREADY_LINKED": "That account is already linked to a different Gymak profile.",
+    "VALIDATION_ERROR": "Please check the highlighted fields.",
+    "GOAL_NOT_PERMITTED_FOR_MINOR": "This goal isn't available for accounts under 18.",
+    "RESET_CODE_INVALID": "That code isn't valid.",
+    "RESET_CODE_EXPIRED": "That code has expired. Request a new one.",
+    "RATE_LIMIT_EXCEEDED": "Too many attempts. Please try again shortly.",
+    "RESET_CODE_ATTEMPTS_EXCEEDED": "Too many incorrect attempts. Request a new code.",
+    "INTERNAL_ERROR": "Something went wrong on our end. Please try again.",
+    "UPSTREAM_UNAVAILABLE": "We're having trouble reaching a required service. Please try again shortly."
   },
   "placeholder": {
     "auth": {
