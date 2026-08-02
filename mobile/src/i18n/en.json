@@ -1,0 +1,19 @@
+{
+  "common": {
+    "appName": "Gymak"
+  },
+  "placeholder": {
+    "auth": {
+      "title": "Auth",
+      "body": "Welcome, login and registration land in T-13."
+    },
+    "onboarding": {
+      "title": "Onboarding",
+      "body": "The onboarding flow lands in T-14."
+    },
+    "app": {
+      "title": "Home",
+      "body": "The signed-in app shell lands in T-14."
+    }
+  }
+}

@@ -5,6 +5,10 @@ __pycache__/
 .venv/
 node_modules/
 .expo/
+dist/
 *-service-account*.json
 
 backend/.coverage
+
+*.jks
+*.keystore

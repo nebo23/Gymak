@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Gymak",
+    "slug": "gymak",
+    "scheme": "gymak",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "fitness.gymak.app"
+    },
+    "android": {
+      "package": "fitness.gymak.app"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "edd86e0e-e6fd-46a0-bab4-665c6a500c7c"
+      }
+    }
+  }
+}
