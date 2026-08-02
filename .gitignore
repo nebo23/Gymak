@@ -1,4 +1,4 @@
-﻿.env
+.env
 .env.local
 __pycache__/
 *.pyc
@@ -12,4 +12,3 @@ backend/.coverage
 
 *.jks
 *.keystore
-mobile/google-services.json

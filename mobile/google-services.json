@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "603892086493",
+    "project_id": "gymak-2d4ab",
+    "storage_bucket": "gymak-2d4ab.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:603892086493:android:8fb56da5186fc4b77a8d34",
+        "android_client_info": {
+          "package_name": "com.gymak.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "603892086493-ft6kcj85bu0io13a2qgfdmrl167mdaf7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gymak.app",
+            "certificate_hash": "d6d6a6930677ac1d2cc04016927bcf7994964adb"
+          }
+        },
+        {
+          "client_id": "603892086493-119ivapgkun56qrhog6077iedrc5mbvj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmilkSx6014I8mIljeo5mUq8ZAzMTfi_8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "603892086493-119ivapgkun56qrhog6077iedrc5mbvj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
