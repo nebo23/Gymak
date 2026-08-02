@@ -17,8 +17,29 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { router } from "expo-router";
 
-import { useSessionStore } from "../auth/session";
 import { parseApiError } from "./errors";
+
+// Type-only: erased by TypeScript, so this line never becomes a real `require`
+// and can't feed the cycle below. It exists purely so `getSessionStore()` is
+// fully typed instead of `any`.
+type SessionStore = typeof import("../auth/session").useSessionStore;
+
+/**
+ * Lazily `require`d — not a static top-level `import` — to break the require
+ * cycle Metro flags: auth/session.ts -> api/auth.ts -> api/client.ts ->
+ * auth/session.ts. app/_layout.tsx imports session.ts first, so session.ts is
+ * still mid-evaluation (its own top-level imports, including this file via
+ * api/auth.ts, haven't returned yet) the moment the cycle would close back
+ * into it. A static `import` here would run right at that moment and Metro's
+ * runtime require-guard would catch session.ts still "in progress".
+ * Deferring the require into this function means it only ever runs when an
+ * interceptor actually fires — after the app has finished booting and every
+ * module in the cycle has already fully initialised — so there's nothing
+ * left in progress to cycle back into.
+ */
+function getSessionStore(): SessionStore {
+  return (require("../auth/session") as typeof import("../auth/session")).useSessionStore;
+}
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -64,7 +85,7 @@ const refreshClient = axios.create({
 });
 
 client.interceptors.request.use((config) => {
-  const { accessToken } = useSessionStore.getState();
+  const { accessToken } = getSessionStore().getState();
   if (accessToken && !isAuthExemptUrl(config.url)) {
     config.headers.set("Authorization", `Bearer ${accessToken}`);
   }
@@ -72,7 +93,7 @@ client.interceptors.request.use((config) => {
 });
 
 async function handleSessionExpired(): Promise<void> {
-  await useSessionStore.getState().signOut();
+  await getSessionStore().getState().signOut();
   try {
     router.replace("/(auth)/welcome");
   } catch {
@@ -89,7 +110,7 @@ async function handleSessionExpired(): Promise<void> {
 let refreshPromise: Promise<{ accessToken: string }> | null = null;
 
 async function refreshTokens(): Promise<{ accessToken: string }> {
-  const { refreshToken } = useSessionStore.getState();
+  const { refreshToken } = getSessionStore().getState();
   if (!refreshToken) {
     throw new Error("No refresh token available");
   }
@@ -98,7 +119,7 @@ async function refreshTokens(): Promise<{ accessToken: string }> {
     access_token: string;
     refresh_token: string;
   };
-  await useSessionStore.getState().setTokens(accessToken, newRefreshToken);
+  await getSessionStore().getState().setTokens(accessToken, newRefreshToken);
   return { accessToken };
 }
 
