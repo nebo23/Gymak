@@ -3,7 +3,95 @@
     "appName": "Gymak",
     "back": "رجوع",
     "retry": "إعادة المحاولة",
-    "dismiss": "إغلاق"
+    "dismiss": "إغلاق",
+    "languageToggleLabel": "تبديل اللغة"
+  },
+  "auth": {
+    "welcome": {
+      "tagline": "ابدأ رحلتك نحو لياقة أفضل.",
+      "createAccount": "إنشاء حساب",
+      "logIn": "تسجيل الدخول",
+      "or": "أو"
+    },
+    "social": {
+      "continueWithGoogle": "المتابعة باستخدام Google"
+    },
+    "register": {
+      "title": "إنشاء حساب",
+      "email": "البريد الإلكتروني",
+      "password": "كلمة المرور",
+      "confirmPassword": "تأكيد كلمة المرور",
+      "passwordHint": "8 أحرف على الأقل",
+      "termsPrefix": "أوافق على",
+      "termsLink": "شروط الخدمة",
+      "termsAnd": "و",
+      "privacyLink": "سياسة الخصوصية",
+      "submit": "إنشاء حساب",
+      "haveAccount": "لديك حساب بالفعل؟",
+      "logIn": "تسجيل الدخول"
+    },
+    "login": {
+      "title": "تسجيل الدخول",
+      "email": "البريد الإلكتروني",
+      "password": "كلمة المرور",
+      "forgotPassword": "نسيت كلمة المرور؟",
+      "submit": "تسجيل الدخول",
+      "noAccount": "ليس لديك حساب؟",
+      "createAccount": "إنشاء حساب",
+      "passwordResetNotice": "تم تغيير كلمة المرور. تم تسجيل خروجك من كل الأجهزة — يرجى تسجيل الدخول مرة أخرى."
+    },
+    "forgotPassword": {
+      "title": "نسيت كلمة المرور",
+      "instructions": "أدخل بريدك الإلكتروني وسنرسل رمزًا إذا كان هناك حساب مرتبط به.",
+      "email": "البريد الإلكتروني",
+      "submit": "إرسال الرمز",
+      "backToLogin": "العودة لتسجيل الدخول"
+    },
+    "verifyCode": {
+      "title": "أدخل الرمز",
+      "instructions": "أدخل الرمز المكوّن من 8 أحرف الذي أرسلناه إلى {{email}}.",
+      "resend": "إعادة إرسال الرمز",
+      "resendIn": "إعادة الإرسال خلال {{seconds}} ثانية",
+      "codeSent": "تم إرسال رمز جديد.",
+      "submit": "تحقّق"
+    },
+    "newPassword": {
+      "title": "كلمة مرور جديدة",
+      "instructions": "اختر كلمة مرور جديدة. سيتم تسجيل خروجك من كل الأجهزة.",
+      "newPassword": "كلمة المرور الجديدة",
+      "confirmPassword": "تأكيد كلمة المرور",
+      "submit": "تعيين كلمة المرور",
+      "startOver": "طلب رمز جديد"
+    },
+    "language": {
+      "switchTo": "English",
+      "reloadTitle": "تم تغيير اللغة",
+      "reloadMessage": "أعد تشغيل التطبيق لتطبيق التغيير بالكامل.",
+      "ok": "حسنًا"
+    },
+    "rateLimited": {
+      "retryIn": "محاولات كثيرة جدًا. حاول مرة أخرى خلال {{seconds}} ثانية."
+    }
+  },
+  "fieldErrors": {
+    "email": {
+      "INVALID": "أدخل بريدًا إلكترونيًا صالحًا"
+    },
+    "password": {
+      "REQUIRED": "أدخل كلمة المرور",
+      "TOO_SHORT": "يجب ألا تقل كلمة المرور عن 8 أحرف",
+      "TOO_LONG": "يجب ألا تزيد كلمة المرور عن 128 حرفًا",
+      "TOO_COMMON": "كلمة المرور هذه شائعة جدًا. اختر كلمة أخرى."
+    },
+    "confirmPassword": {
+      "MISMATCH": "كلمتا المرور غير متطابقتين"
+    },
+    "terms": {
+      "REQUIRED": "يجب الموافقة على شروط الخدمة وسياسة الخصوصية"
+    },
+    "code": {
+      "INVALID": "أدخل الأحرف الثمانية كاملة"
+    }
   },
   "components": {
     "textInput": {

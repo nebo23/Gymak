@@ -15,10 +15,13 @@
       "bundleIdentifier": "fitness.gymak.app"
     },
     "android": {
-      "package": "com.gymak.app"
+      "package": "com.gymak.app",
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "@react-native-firebase/app",
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "router": {},

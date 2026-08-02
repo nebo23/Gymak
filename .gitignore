@@ -12,3 +12,4 @@ backend/.coverage
 
 *.jks
 *.keystore
+mobile/google-services.json

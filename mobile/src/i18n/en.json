@@ -3,7 +3,95 @@
     "appName": "Gymak",
     "back": "Back",
     "retry": "Retry",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "languageToggleLabel": "Switch language"
+  },
+  "auth": {
+    "welcome": {
+      "tagline": "Build strength, one honest rep at a time.",
+      "createAccount": "Create account",
+      "logIn": "Log in",
+      "or": "or"
+    },
+    "social": {
+      "continueWithGoogle": "Continue with Google"
+    },
+    "register": {
+      "title": "Create account",
+      "email": "Email",
+      "password": "Password",
+      "confirmPassword": "Confirm password",
+      "passwordHint": "At least 8 characters",
+      "termsPrefix": "I agree to the",
+      "termsLink": "Terms of Service",
+      "termsAnd": "and the",
+      "privacyLink": "Privacy Policy",
+      "submit": "Create account",
+      "haveAccount": "Already have an account?",
+      "logIn": "Log in"
+    },
+    "login": {
+      "title": "Log in",
+      "email": "Email",
+      "password": "Password",
+      "forgotPassword": "Forgot password?",
+      "submit": "Log in",
+      "noAccount": "Don't have an account?",
+      "createAccount": "Create account",
+      "passwordResetNotice": "Your password was changed. Every device was signed out — please log in again."
+    },
+    "forgotPassword": {
+      "title": "Forgot password",
+      "instructions": "Enter your email and we'll send a code if an account exists for it.",
+      "email": "Email",
+      "submit": "Send code",
+      "backToLogin": "Back to log in"
+    },
+    "verifyCode": {
+      "title": "Enter code",
+      "instructions": "Enter the 8-character code we sent to {{email}}.",
+      "resend": "Resend code",
+      "resendIn": "Resend in {{seconds}}s",
+      "codeSent": "A new code was sent.",
+      "submit": "Verify"
+    },
+    "newPassword": {
+      "title": "New password",
+      "instructions": "Choose a new password. Every device will be signed out.",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm password",
+      "submit": "Set new password",
+      "startOver": "Request a new code"
+    },
+    "language": {
+      "switchTo": "العربية",
+      "reloadTitle": "Language changed",
+      "reloadMessage": "Restart the app for the change to take full effect.",
+      "ok": "OK"
+    },
+    "rateLimited": {
+      "retryIn": "Too many attempts. Try again in {{seconds}}s."
+    }
+  },
+  "fieldErrors": {
+    "email": {
+      "INVALID": "Enter a valid email address"
+    },
+    "password": {
+      "REQUIRED": "Enter your password",
+      "TOO_SHORT": "Password must be at least 8 characters",
+      "TOO_LONG": "Password must be at most 128 characters",
+      "TOO_COMMON": "That password is too common. Please choose another."
+    },
+    "confirmPassword": {
+      "MISMATCH": "Passwords don't match"
+    },
+    "terms": {
+      "REQUIRED": "You must agree to the Terms of Service and Privacy Policy"
+    },
+    "code": {
+      "INVALID": "Enter all 8 characters"
+    }
   },
   "components": {
     "textInput": {
