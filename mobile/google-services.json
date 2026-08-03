@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "603892086493-qbhc340naoqa94p7b8b1c1q15gpqq3ih.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gymak.app",
+            "certificate_hash": "288ed4aa83980a581c75ee7a3666ba34912f0110"
+          }
+        },
+        {
           "client_id": "603892086493-119ivapgkun56qrhog6077iedrc5mbvj.apps.googleusercontent.com",
           "client_type": 3
         }
