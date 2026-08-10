@@ -1,7 +1,8 @@
 /**
  * §10.5 GErrorBanner — localised message from an error `code`, optional
  * retry, dismissible. Announced on appearance (§10.6: errors are announced,
- * not only coloured).
+ * not only coloured — the start-side accent border carries the same meaning
+ * structurally, so colour is never the only signal).
  */
 import { useEffect } from "react";
 import { AccessibilityInfo, Pressable, StyleSheet, Text, View } from "react-native";
@@ -34,46 +35,50 @@ export function GErrorBanner({ code, message, onRetry, onDismiss, testID }: GErr
   return (
     <View
       testID={testID}
-      style={[styles.container, { backgroundColor: theme.errorBg }]}
+      style={[styles.container, { backgroundColor: theme.errorBg, borderStartColor: theme.error }]}
       accessibilityRole="alert"
       accessibilityLiveRegion="polite"
     >
-      <Text style={[textStyle("body", locale), styles.message, { color: theme.error }]}>
+      <Text style={[textStyle("label", locale), styles.message, { color: theme.error }]}>
         {resolved}
       </Text>
-      <View style={styles.actions}>
-        {onRetry ? (
-          <Pressable
-            onPress={onRetry}
-            accessibilityRole="button"
-            accessibilityLabel={t("common.retry")}
-            style={styles.action}
-            hitSlop={actionHitSlop}
-          >
-            <Text style={[textStyle("label", locale), { color: theme.error }]}>
-              {t("common.retry")}
-            </Text>
-          </Pressable>
-        ) : null}
-        {onDismiss ? (
-          <Pressable
-            onPress={onDismiss}
-            accessibilityRole="button"
-            accessibilityLabel={t("common.dismiss")}
-            style={styles.action}
-            hitSlop={actionHitSlop}
-          >
-            <Text style={[textStyle("label", locale), { color: theme.error }]}>
-              {t("common.dismiss")}
-            </Text>
-          </Pressable>
-        ) : null}
-      </View>
+      {onRetry || onDismiss ? (
+        <View style={styles.actions}>
+          {onRetry ? (
+            <Pressable
+              onPress={onRetry}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.retry")}
+              style={styles.action}
+              hitSlop={actionHitSlop}
+            >
+              <Text style={[textStyle("label", locale), { color: theme.error }]}>
+                {t("common.retry")}
+              </Text>
+            </Pressable>
+          ) : null}
+          {onDismiss ? (
+            <Pressable
+              onPress={onDismiss}
+              accessibilityRole="button"
+              accessibilityLabel={t("common.dismiss")}
+              style={styles.action}
+              hitSlop={actionHitSlop}
+            >
+              <Text style={[styles.dismissGlyph, { color: theme.error }]}>✕</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
 
-const actionHitSlopPad = Math.max(0, (minTouchTarget - 20) / 2);
+// The retry/dismiss controls are visually compact; hit-slop brings each
+// one's effective touch area up to the §10.6 floor — the same pattern
+// GTextInput's toggleHitSlop uses.
+const actionVisualSize = 20;
+const actionHitSlopPad = Math.max(0, (minTouchTarget - actionVisualSize) / 2);
 const actionHitSlop = {
   top: actionHitSlopPad,
   bottom: actionHitSlopPad,
@@ -83,19 +88,27 @@ const actionHitSlop = {
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: radius.md,
-    padding: space[3],
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[3],
+    borderRadius: radius.sm,
+    borderStartWidth: 3,
+    paddingVertical: space[2],
+    paddingHorizontal: space[3],
   },
   message: {
-    marginBottom: space[1],
+    flex: 1,
   },
   actions: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: space[2],
   },
   action: {
-    marginStart: space[3],
-    minHeight: minTouchTarget,
-    justifyContent: "center",
+    paddingVertical: space[1],
+  },
+  dismissGlyph: {
+    fontSize: 16,
+    lineHeight: 20,
   },
 });

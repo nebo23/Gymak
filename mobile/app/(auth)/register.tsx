@@ -251,22 +251,39 @@ export default function Register() {
           <Text style={[textStyle("body", locale), { color: theme.textSecondary }]}>
             {t("auth.register.haveAccount")}
           </Text>
-          <GButton
-            variant="ghost"
-            label={t("auth.register.logIn")}
+          <Pressable
             onPress={() => router.replace("/(auth)/login")}
+            hitSlop={linkHitSlop}
+            accessibilityRole="button"
+            accessibilityLabel={t("auth.register.logIn")}
             testID="register-go-login"
-          />
+          >
+            <Text style={[textStyle("bodyStrong", locale), { color: theme.textLink }]}>
+              {t("auth.register.logIn")}
+            </Text>
+          </Pressable>
         </View>
       </View>
     </GScreen>
   );
 }
 
+// The inline footer link is shorter than `minTouchTarget`; hit-slop brings
+// its effective touch area up to the §10.6 floor (same pattern as
+// GErrorBanner's actionHitSlop / GTextInput's toggleHitSlop).
+const linkVisualHeight = 24;
+const linkHitSlopPad = Math.max(0, (minTouchTarget - linkVisualHeight) / 2);
+const linkHitSlop = {
+  top: linkHitSlopPad,
+  bottom: linkHitSlopPad,
+  left: linkHitSlopPad,
+  right: linkHitSlopPad,
+};
+
 const styles = StyleSheet.create({
   form: {
     gap: space[3],
-    marginTop: space[2],
+    marginTop: space[4],
   },
   hint: {
     marginTop: space[1],
@@ -294,6 +311,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: space[1],
     marginTop: space[2],
   },
 });

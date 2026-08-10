@@ -318,6 +318,7 @@
       "unselected": "Unselected",
       "withRetry": "With retry",
       "dismissible": "Dismissible",
+      "messageOnly": "Message only (no actions)",
       "secure": "Secure, with reveal toggle",
       "fullWidth": "Full width"
     },

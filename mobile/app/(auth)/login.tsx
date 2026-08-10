@@ -5,7 +5,7 @@
  * successful reset: every device was signed out, sign in again.
  */
 import { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Controller, useForm, type FieldErrors, type Resolver } from "react-hook-form";
 import type { ZodIssue, z } from "zod";
@@ -22,7 +22,7 @@ import { GButton, GErrorBanner, GScreen, GTextInput } from "../../src/components
 import { useI18n } from "../../src/i18n";
 import { useTheme } from "../../src/theme/useTheme";
 import { textStyle } from "../../src/theme/typography";
-import { radius, space } from "../../src/theme/tokens";
+import { minTouchTarget, radius, space } from "../../src/theme/tokens";
 import { loginSchema } from "../../src/validation/schemas";
 
 type LoginForm = z.infer<typeof loginSchema>;
@@ -171,31 +171,38 @@ export default function Login() {
           )}
         />
 
-        <Controller
-          control={control}
-          name="password"
-          render={({ field }) => (
-            <GTextInput
-              label={t("auth.login.password")}
-              value={field.value}
-              onChangeText={field.onChange}
-              error={
-                errors.password ? t(errors.password.message ?? "errors.VALIDATION_ERROR") : undefined
-              }
-              secure
-              autoComplete="password"
-              disabled={disabled}
-              testID="login-password"
-            />
-          )}
-        />
-
-        <GButton
-          variant="ghost"
-          label={t("auth.login.forgotPassword")}
-          onPress={() => router.push("/(auth)/forgot-password")}
-          testID="login-forgot-password"
-        />
+        <View>
+          <Controller
+            control={control}
+            name="password"
+            render={({ field }) => (
+              <GTextInput
+                label={t("auth.login.password")}
+                value={field.value}
+                onChangeText={field.onChange}
+                error={
+                  errors.password ? t(errors.password.message ?? "errors.VALIDATION_ERROR") : undefined
+                }
+                secure
+                autoComplete="password"
+                disabled={disabled}
+                testID="login-password"
+              />
+            )}
+          />
+          <Pressable
+            onPress={() => router.push("/(auth)/forgot-password")}
+            hitSlop={linkHitSlop}
+            accessibilityRole="button"
+            accessibilityLabel={t("auth.login.forgotPassword")}
+            style={styles.forgotPasswordLink}
+            testID="login-forgot-password"
+          >
+            <Text style={[textStyle("bodyStrong", locale), { color: theme.textLink }]}>
+              {t("auth.login.forgotPassword")}
+            </Text>
+          </Pressable>
+        </View>
 
         <GButton
           label={t("auth.login.submit")}
@@ -228,12 +235,17 @@ export default function Login() {
           <Text style={[textStyle("body", locale), { color: theme.textSecondary }]}>
             {t("auth.login.noAccount")}
           </Text>
-          <GButton
-            variant="ghost"
-            label={t("auth.login.createAccount")}
+          <Pressable
             onPress={() => router.replace("/(auth)/register")}
+            hitSlop={linkHitSlop}
+            accessibilityRole="button"
+            accessibilityLabel={t("auth.login.createAccount")}
             testID="login-go-register"
-          />
+          >
+            <Text style={[textStyle("bodyStrong", locale), { color: theme.textLink }]}>
+              {t("auth.login.createAccount")}
+            </Text>
+          </Pressable>
         </View>
       </View>
     </GScreen>
@@ -248,7 +260,11 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: space[3],
-    marginTop: space[2],
+    marginTop: space[4],
+  },
+  forgotPasswordLink: {
+    alignSelf: "flex-end",
+    marginTop: space[1],
   },
   dividerRow: {
     flexDirection: "row",
@@ -264,6 +280,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: space[1],
     marginTop: space[2],
   },
 });
+
+// The inline text links (forgot-password, footer) are shorter than
+// `minTouchTarget`; hit-slop brings each one's effective touch area up to
+// the §10.6 floor (same pattern as GErrorBanner's actionHitSlop /
+// GTextInput's toggleHitSlop).
+const linkVisualHeight = 24;
+const linkHitSlopPad = Math.max(0, (minTouchTarget - linkVisualHeight) / 2);
+const linkHitSlop = {
+  top: linkHitSlopPad,
+  bottom: linkHitSlopPad,
+  left: linkHitSlopPad,
+  right: linkHitSlopPad,
+};

@@ -97,11 +97,13 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: screenPadding,
+    paddingTop: space[3],
     paddingBottom: space[5],
   },
   plainContent: {
     flex: 1,
     paddingHorizontal: screenPadding,
+    paddingTop: space[3],
     paddingBottom: space[5],
   },
   header: {

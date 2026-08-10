@@ -5,7 +5,7 @@
  * and a language toggle in the corner. Built only from T-11 primitives.
  */
 import { useState } from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Alert, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { router } from "expo-router";
 
 import { socialSignIn } from "../../src/api/auth";
@@ -25,6 +25,8 @@ import { space } from "../../src/theme/tokens";
 export default function Welcome() {
   const theme = useTheme();
   const { t, locale, setLocale } = useI18n();
+  const { width } = useWindowDimensions();
+  const logoSize = Math.min(140, width * 0.38);
   const [socialLoading, setSocialLoading] = useState(false);
   const [error, setError] = useState<ResolvedErrorCode | null>(null);
 
@@ -69,7 +71,7 @@ export default function Welcome() {
       </View>
 
       <View style={styles.hero}>
-        <GLogo size={96} />
+        <GLogo size={logoSize} />
         <Text
           style={[textStyle("body", locale), styles.tagline, { color: theme.textSecondary }]}
         >
@@ -124,17 +126,18 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   hero: {
+    flex: 1,
     alignItems: "center",
-    marginTop: space[6],
-    marginBottom: space[6],
+    justifyContent: "center",
   },
   tagline: {
     textAlign: "center",
-    marginTop: space[2],
+    marginTop: space[3],
     paddingHorizontal: space[4],
   },
   actions: {
     gap: space[3],
+    marginBottom: space[4],
   },
   dividerRow: {
     flexDirection: "row",

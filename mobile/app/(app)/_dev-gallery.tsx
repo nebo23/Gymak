@@ -213,6 +213,12 @@ export default function DevGallery() {
             <GErrorBanner code="OFFLINE" onDismiss={() => setBannerDismissed(true)} />
           )}
         </Row>
+        <Row label={t("devGallery.state.messageOnly")}>
+          <GErrorBanner
+            message={t("auth.rateLimited.retryIn", { seconds: 30 })}
+            testID="dev-gallery-error-message-only"
+          />
+        </Row>
       </Section>
 
       <Section title={t("devGallery.sections.logo")}>

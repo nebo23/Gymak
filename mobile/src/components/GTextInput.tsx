@@ -108,11 +108,7 @@ export function GTextInput({
             }
             style={styles.toggle}
           >
-            <Text style={[textStyle("label", locale), { color: theme.textLink }]}>
-              {revealed
-                ? t("components.textInput.hidePassword")
-                : t("components.textInput.showPassword")}
-            </Text>
+            <EyeIcon revealed={revealed} color={theme.textMuted} />
           </Pressable>
         ) : null}
       </View>
@@ -129,10 +125,30 @@ export function GTextInput({
   );
 }
 
-// The reveal toggle's text is shorter than `minTouchTarget`; hit-slop
+interface EyeIconProps {
+  revealed: boolean;
+  color: string;
+}
+
+// Hand-drawn reveal-toggle glyph: @expo/vector-icons is not installed in
+// this project (checked mobile/node_modules/@expo/vector-icons), and A.2
+// permits no new dependency without asking first, so the eye is an ellipse
+// ring plus a pupil, with a rotated bar overlaid for the "hidden" state.
+function EyeIcon({ revealed, color }: EyeIconProps) {
+  return (
+    <View style={styles.eyeIcon}>
+      <View style={[styles.eyeOutline, { borderColor: color }]}>
+        <View style={[styles.eyePupil, { backgroundColor: color }]} />
+      </View>
+      {revealed ? null : <View style={[styles.eyeSlash, { backgroundColor: color }]} />}
+    </View>
+  );
+}
+
+// The reveal toggle's icon is shorter than `minTouchTarget`; hit-slop
 // brings its effective touch area up to the §10.6 floor.
-const toggleTextHeight = 20;
-const toggleHitSlopPad = Math.max(0, (minTouchTarget - toggleTextHeight) / 2);
+const toggleIconSize = 22;
+const toggleHitSlopPad = Math.max(0, (minTouchTarget - toggleIconSize) / 2);
 // `hitSlop`'s Insets type is physical (left/right), not logical — it has no
 // start/end variant, so this is not a §9.6 layout-direction violation.
 const toggleHitSlop = {
@@ -162,6 +178,33 @@ const styles = StyleSheet.create({
     minHeight: minTouchTarget,
     justifyContent: "center",
     paddingStart: space[2],
+  },
+  eyeIcon: {
+    width: 22,
+    height: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eyeOutline: {
+    width: 20,
+    height: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eyePupil: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  eyeSlash: {
+    position: "absolute",
+    top: 10,
+    left: 0,
+    width: 22,
+    height: 1.5,
+    transform: [{ rotate: "45deg" }],
   },
   error: {
     marginTop: space[1],
