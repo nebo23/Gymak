@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
   eyeSlash: {
     position: "absolute",
     top: 10,
-    left: 0,
+    start: 0,
     width: 22,
     height: 1.5,
     transform: [{ rotate: "45deg" }],
