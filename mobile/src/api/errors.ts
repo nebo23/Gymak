@@ -37,7 +37,7 @@ export const API_ERROR_CODES = [
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
 /** Client-only fallback codes, not part of §7.3 but sharing the same `errors.<code>` i18n namespace. */
-export type ClientFallbackCode = "GENERIC" | "OFFLINE";
+export type ClientFallbackCode = "GENERIC" | "OFFLINE" | "SOCIAL_SIGN_IN_MISCONFIGURED";
 
 export type ResolvedErrorCode = ApiErrorCode | ClientFallbackCode;
 

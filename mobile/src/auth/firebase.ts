@@ -31,6 +31,22 @@ export class SocialSignInCancelledError extends Error {}
 /** Play Services missing/outdated, or Google returned no ID token. */
 export class SocialSignInUnavailableError extends Error {}
 
+/**
+ * The signing certificate's SHA-1 (or the OAuth client itself) isn't
+ * registered for this package in Firebase — DEVELOPER_ERROR — or the
+ * native module asked for an interactive sign-in it didn't get. Either way
+ * this is a build/config problem, not a transient network one, so it gets
+ * its own banner copy instead of falling through to UPSTREAM_UNAVAILABLE.
+ */
+export class SocialSignInMisconfiguredError extends Error {}
+
+// DEVELOPER_ERROR's native code. Not part of @react-native-google-signin's
+// own `statusCodes` enum, because a correctly configured app should never
+// see it — it means the SHA-1 of whatever signed this build isn't
+// registered for com.gymak.app in Firebase console → Project settings →
+// "Add fingerprint" (see mobile/google-services.json's oauth_client list).
+const GOOGLE_SIGN_IN_DEVELOPER_ERROR = "10";
+
 let configured = false;
 
 function ensureConfigured(): void {
@@ -76,12 +92,21 @@ export async function signInWithGoogle(): Promise<string> {
     return await userCredential.user.getIdToken();
   } catch (error) {
     if (isErrorWithCode(error)) {
+      if (__DEV__) {
+        // Only the native error's own code/message — never the ID token or
+        // the Firebase token, mirroring the no-secret-logging discipline
+        // backend/tests/security/test_no_secret_logging.py enforces server-side.
+        console.warn("[signInWithGoogle]", error.code, error.message);
+      }
       switch (error.code) {
         case statusCodes.SIGN_IN_CANCELLED:
         case statusCodes.IN_PROGRESS:
           throw new SocialSignInCancelledError();
         case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
           throw new SocialSignInUnavailableError("Google Play Services unavailable");
+        case statusCodes.SIGN_IN_REQUIRED:
+        case GOOGLE_SIGN_IN_DEVELOPER_ERROR:
+          throw new SocialSignInMisconfiguredError(`Google Sign-In error code ${error.code}`);
         default:
           throw error;
       }

@@ -6,13 +6,24 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "603892086493-119ivapgkun56qrhog6077iedrc5mbvj.apps.googleusercontent.com",
+        "EXPO_PUBLIC_API_BASE_URL": "http://192.168.1.3:8000/api/v1"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "603892086493-119ivapgkun56qrhog6077iedrc5mbvj.apps.googleusercontent.com",
+        "EXPO_PUBLIC_API_BASE_URL": "http://192.168.1.3:8000/api/v1"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "603892086493-119ivapgkun56qrhog6077iedrc5mbvj.apps.googleusercontent.com"
+      }
     }
   },
   "submit": {

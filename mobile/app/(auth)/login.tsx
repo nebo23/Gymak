@@ -14,6 +14,7 @@ import { login, socialSignIn } from "../../src/api/auth";
 import { parseApiError, resolveErrorCode, type ResolvedErrorCode } from "../../src/api/errors";
 import {
   SocialSignInCancelledError,
+  SocialSignInMisconfiguredError,
   SocialSignInUnavailableError,
   signInWithGoogle,
 } from "../../src/auth/firebase";
@@ -113,6 +114,8 @@ export default function Login() {
     } catch (err) {
       if (err instanceof SocialSignInCancelledError) {
         // User backed out — §9.4 has no error state for this.
+      } else if (err instanceof SocialSignInMisconfiguredError) {
+        setRequestError("SOCIAL_SIGN_IN_MISCONFIGURED");
       } else if (err instanceof SocialSignInUnavailableError) {
         setRequestError("UPSTREAM_UNAVAILABLE");
       } else {

@@ -12,6 +12,7 @@ import { socialSignIn } from "../../src/api/auth";
 import { resolveErrorCode, type ResolvedErrorCode } from "../../src/api/errors";
 import {
   SocialSignInCancelledError,
+  SocialSignInMisconfiguredError,
   SocialSignInUnavailableError,
   signInWithGoogle,
 } from "../../src/auth/firebase";
@@ -49,6 +50,8 @@ export default function Welcome() {
     } catch (err) {
       if (err instanceof SocialSignInCancelledError) {
         // User backed out of the picker — §9.4 has no error state for this.
+      } else if (err instanceof SocialSignInMisconfiguredError) {
+        setError("SOCIAL_SIGN_IN_MISCONFIGURED");
       } else if (err instanceof SocialSignInUnavailableError) {
         setError("UPSTREAM_UNAVAILABLE");
       } else {

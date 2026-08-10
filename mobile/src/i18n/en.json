@@ -280,7 +280,8 @@
     "RATE_LIMIT_EXCEEDED": "Too many attempts. Please try again shortly.",
     "RESET_CODE_ATTEMPTS_EXCEEDED": "Too many incorrect attempts. Request a new code.",
     "INTERNAL_ERROR": "Something went wrong on our end. Please try again.",
-    "UPSTREAM_UNAVAILABLE": "We're having trouble reaching a required service. Please try again shortly."
+    "UPSTREAM_UNAVAILABLE": "We're having trouble reaching a required service. Please try again shortly.",
+    "SOCIAL_SIGN_IN_MISCONFIGURED": "Google sign-in isn't available on this build right now. Please use email instead."
   },
   "placeholder": {
     "auth": {
