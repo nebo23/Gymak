@@ -20,6 +20,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
 import pytest
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select, text
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import ProgrammingError
@@ -627,6 +628,62 @@ async def test_new_tables_have_rls_enabled_and_forced(db_session: AsyncSession) 
     assert [(row.relname, row.relrowsecurity, row.relforcerowsecurity) for row in rows] == [
         (name, True, True) for name in sorted(_NEW_RLS_TABLES)
     ]
+
+
+async def test_referential_integrity_cascade_bypasses_row_security_entirely(
+    superuser_database_url: str,
+) -> None:
+    """T-16b, remediating a false belief T-15's report stated: that `ON DELETE CASCADE`
+    and `ON DELETE SET NULL` "work correctly once the connection is properly
+    authorized" -- i.e., that the cascade itself depends on `app.user_id` being bound.
+    PostgreSQL's own docs say the opposite: row security is never evaluated while a
+    foreign key action (CASCADE, SET NULL, RESTRICT) is being enforced, on either side
+    of the constraint, regardless of any GUC. What T-15 actually needed `app.user_id`
+    for was the *direct*, top-level `DELETE` -- an ordinary RLS-governed statement like
+    any other, unrelated to cascading.
+
+    Proved the hard way: nothing on this connection ever calls
+    `set_config('app.user_id', ...)` -- not for the inserts, not for the delete. It
+    still works only because this is a superuser connection, which bypasses `programs`'
+    own `FORCE ROW LEVEL SECURITY` unconditionally for that top-level statement.
+    `program_days`, the cascade target, is *also* `FORCE ROW LEVEL SECURITY` with its
+    own owner-`EXISTS` policy (see `test_new_tables_have_rls_enabled_and_forced` just
+    above, and `_PROGRAM_DAYS_OWNER_POLICY_SQL` below). If T-15's claim were literally
+    true, the cascaded delete onto `program_days` would need `app.user_id` bound too,
+    and the row would still be there, since it never was. It is not.
+    """
+    user_id = await _seed_user_with_profile(superuser_database_url)
+
+    engine = create_async_engine(superuser_database_url)
+    try:
+        async with AsyncSession(engine) as session:
+            program = Program(**_program_kwargs(user_id))
+            session.add(program)
+            await session.flush()
+            program_day = ProgramDay(**_program_day_kwargs(program.id))
+            session.add(program_day)
+            await session.flush()
+            # Captured before commit expires these instances' attributes -- reading
+            # either afterwards would need IO outside this greenlet (confirmed
+            # empirically; see the identical comment in tests/unit/test_models.py's
+            # cascade tests).
+            program_id = program.id
+            program_day_id = program_day.id
+            await session.commit()
+
+        async with AsyncSession(engine) as session:
+            # The entire experiment: app.user_id is never bound on this connection, at
+            # any point, and this DELETE is the top-level statement the cascade hangs
+            # off of.
+            await session.execute(sa_delete(Program).where(Program.id == program_id))
+            await session.commit()
+
+        async with AsyncSession(engine) as session:
+            remaining = await session.get(ProgramDay, program_day_id)
+    finally:
+        await engine.dispose()
+
+    assert remaining is None
 
 
 async def test_exercises_has_no_rls_at_all(db_session: AsyncSession) -> None:

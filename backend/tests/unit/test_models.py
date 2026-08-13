@@ -585,11 +585,21 @@ async def test_deleting_program_cascades_to_days_and_exercises(
 
     # programs is FORCE ROW LEVEL SECURITY, and gymak_migrator (the connection below) is
     # its owner -- FORCE means the owner is subject to its own policy too (confirmed
-    # empirically: without binding app.user_id first, this DELETE silently matches zero
-    # rows and every assertion below would pass for the wrong reason, the rows never
-    # having been touched). Setting it to the row's real owner is what an authorized
-    # deletion would require in practice -- gymak_app itself holds no DELETE grant on
-    # programs at all (§4.3: old programs are kept), so this path is admin-only anyway.
+    # empirically: without binding app.user_id first, this top-level DELETE silently
+    # matches zero rows and every assertion below would pass for the wrong reason, the
+    # rows never having been touched). Setting it to the row's real owner is what an
+    # authorized deletion would require in practice -- gymak_app itself holds no DELETE
+    # grant on programs at all (§4.3: old programs are kept), so this path is
+    # admin-only anyway.
+    #
+    # This binding is only for that top-level DELETE to match a row at all. The
+    # *cascade* it triggers onto program_days/program_exercises does not depend on
+    # app.user_id in any way -- PostgreSQL never evaluates row security while enforcing
+    # a foreign key action (CASCADE/SET NULL/RESTRICT), on either side of the
+    # constraint, regardless of any GUC. See
+    # tests/security/test_rls.py::test_referential_integrity_cascade_bypasses_row_
+    # security_entirely for the empirical proof (T-16b remediating a false belief T-15's
+    # report stated about this).
     engine = create_async_engine(migrator_database_url)
     try:
         async with engine.begin() as conn:
@@ -770,7 +780,9 @@ async def test_deleting_program_day_sets_workout_session_program_day_id_null(
 
     # See test_deleting_program_cascades_to_days_and_exercises for why app.user_id must
     # be bound: program_days is FORCE ROW LEVEL SECURITY and its owner-EXISTS policy
-    # would otherwise make this DELETE match zero rows.
+    # would otherwise make this top-level DELETE match zero rows. The SET NULL it
+    # triggers on workout_sessions.program_day_id is unaffected by app.user_id either
+    # way -- foreign key actions bypass row security entirely.
     engine = create_async_engine(migrator_database_url)
     try:
         async with engine.begin() as conn:
@@ -891,8 +903,10 @@ async def test_deleting_workout_session_cascades_to_its_sets(
     session_id = session_row.id
 
     # See test_deleting_program_cascades_to_days_and_exercises for why app.user_id must
-    # be bound: workout_sessions is FORCE ROW LEVEL SECURITY, so this DELETE would
-    # otherwise match zero rows and the cascade below would never actually be exercised.
+    # be bound: workout_sessions is FORCE ROW LEVEL SECURITY, so this top-level DELETE
+    # would otherwise match zero rows and there would be nothing left to cascade from.
+    # The cascade itself, once the row is actually deleted, does not depend on
+    # app.user_id -- foreign key actions bypass row security entirely.
     engine = create_async_engine(migrator_database_url)
     try:
         async with engine.begin() as conn:

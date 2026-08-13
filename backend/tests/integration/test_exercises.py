@@ -8,6 +8,17 @@ re-proven per HTTP test), filters combine with AND, an Arabic-language profile
 receives Arabic names (also covered from the cross-tenant angle in
 tests/security/test_cross_tenant.py), and the cross-tenant matrix has no new findings
 (same file).
+
+T-16b (spec §5.2's note, added after T-16 shipped): three tests below --
+`test_q_filter_matches_arabic_substring_within_definite_article`,
+`test_q_filter_matches_arabic_bench_press_entries` and
+`test_q_filter_folds_arabic_alef_variants` -- are the note's own three named proof
+queries (`صدر`, `بنش`, `اسكوات`). Only the third actually failed against T-16's
+`unaccent`-based implementation; the first two already passed, since plain substring
+matching handles them without any folding. `test_q_filter_is_diacritic_insensitive`
+(the `unaccent`-driven "Café" case) is gone: `unaccent` itself is gone, dropped as a
+dependency that was not earning its place for a seed library with no accented Latin
+names (§11 item 9).
 """
 
 from __future__ import annotations
@@ -239,19 +250,52 @@ async def test_q_filter_matches_arabic_name(client: AsyncClient) -> None:
     assert all("سكوات" in item["name"] for item in items)
 
 
-async def test_q_filter_is_diacritic_insensitive(
-    client: AsyncClient, migrator_database_url: str
+async def test_q_filter_matches_arabic_substring_within_definite_article(
+    client: AsyncClient,
 ) -> None:
-    await _insert_synthetic_exercise(
-        migrator_database_url, slug=f"test-cafe-{uuid.uuid4()}", name_en="Café Curl"
-    )
+    """§5.2's note: "a query of صدر must match a name of الصدر (substring match handles
+    this)" -- proof point 1 of 3."""
     registered = await _register(client)
-    await _onboard(client, registered["access_token"], language="en")
+    await _onboard(client, registered["access_token"], language="ar")
 
-    response = await _list_exercises(client, registered["access_token"], q="cafe")
+    response = await _list_exercises(client, registered["access_token"], q="صدر")
     assert response.status_code == 200
     names = [item["name"] for item in json_body(response)["items"]]
-    assert "Café Curl" in names
+    assert names
+    assert all("صدر" in name for name in names)
+
+
+async def test_q_filter_matches_arabic_bench_press_entries(client: AsyncClient) -> None:
+    """§5.2's note -- proof point 2 of 3: q=بنش finds the bench-press entries."""
+    registered = await _register(client)
+    await _onboard(client, registered["access_token"], language="ar")
+
+    response = await _list_exercises(client, registered["access_token"], q="بنش")
+    assert response.status_code == 200
+    names = [item["name"] for item in json_body(response)["items"]]
+    assert names
+    assert all("بنش" in name for name in names)
+
+
+async def test_q_filter_folds_arabic_alef_variants(
+    client: AsyncClient, migrator_database_url: str
+) -> None:
+    """§5.2's note -- proof point 3 of 3: a query typed with a plain alef (ا, U+0627)
+    must find a name written with an alef variant (إ, U+0625 here). `unaccent` cannot
+    do this -- its default rules file is Latin/Greek/Cyrillic only -- which is the
+    actual defect the note describes."""
+    await _insert_synthetic_exercise(
+        migrator_database_url,
+        slug=f"test-alef-{uuid.uuid4()}",
+        name_ar="إسكوات تجريبي",
+    )
+    registered = await _register(client)
+    await _onboard(client, registered["access_token"], language="ar")
+
+    response = await _list_exercises(client, registered["access_token"], q="اسكوات")
+    assert response.status_code == 200
+    names = [item["name"] for item in json_body(response)["items"]]
+    assert "إسكوات تجريبي" in names
 
 
 async def test_inactive_exercise_excluded_from_list_but_resolves_by_id(

@@ -9,13 +9,15 @@ inserts nothing the second time and updates nothing silently -- a second run is 
 plain no-op, never a silent overwrite of a row someone may have reviewed and adjusted
 directly in a later, hand-written migration.
 
-Also installs the `unaccent` extension: spec §5.2's `q` filter matches "case- and
-diacritic-insensitively", and `exercise_repo.list_active` wraps both sides of its
-ILIKE comparison in `unaccent(...)` to do that. Like `citext` in ba41f8eb5985,
-`unaccent` is one of Postgres's "trusted" extensions (installable by any non-superuser
-role holding CREATE on the database since PG13) -- gymak_migrator already holds
-exactly that, so this needs no extra provisioning. Installed here, in the migration
-that first needs it, rather than retroactively added to 88d15c15b877.
+T-16 also installed the `unaccent` extension here, for §5.2's "case- and
+diacritic-insensitive" `q` filter. T-16b (see the note under spec §5.2 and §11 item 9)
+found that extension did not deliver what Arabic search actually needs -- its default
+rules file is Latin/Greek/Cyrillic only -- and replaced it with normalisation done in
+`exercise_repo.py` itself (translate()/regexp_replace() in SQL, str.translate() in
+Python), which needs no extension at all. `unaccent` was never earning its place for
+the English side either: the seed data below carries no accented Latin characters. So
+this migration no longer installs it -- one fewer extension for spec §11 item 9's
+"is it on the provider's allowlist" question when a managed host is chosen.
 """
 
 from __future__ import annotations
@@ -74,8 +76,6 @@ def _load_exercises() -> list[dict[str, Any]]:
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS unaccent")
-
     rows = _load_exercises()
     connection = op.get_bind()
     connection.execute(
@@ -91,5 +91,3 @@ def downgrade() -> None:
     # DELETE FROM exercises -- a downgrade must never remove a row some other
     # migration or hand fix added later.
     connection.execute(sa.delete(exercises_table).where(exercises_table.c.id.in_(ids)))
-
-    op.execute("DROP EXTENSION IF EXISTS unaccent")
