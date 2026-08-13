@@ -200,6 +200,11 @@
       "deletedNotice": "Your account deletion was requested."
     }
   },
+  "plan": {
+    "day": {
+      "armsDelts": "Arms & delts"
+    }
+  },
   "fieldErrors": {
     "email": {
       "INVALID": "Enter a valid email address"

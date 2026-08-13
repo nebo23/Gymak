@@ -1,20 +1,19 @@
 """spec §6 (the plan generator, P2-ADR-01). Pure function, no I/O, so this file needs
 no database -- see plan_generator.py's own docstring for the boundary this protects.
 
-T-17's own "done when": a unit test drives all 135 input combinations (3 experience
-levels x 3 goals x 5 activity levels x 3 day-per-week samples, matching P2-ADR-01's own
-"3 experience levels x 3 goals x 5 activity levels x 3 day counts = 135" accounting) and
-asserts: the ceiling, slot completeness, ordering, the beginner cap, A/B difference and
+T-17b's own "done when": a unit test drives all 225 input combinations (3 experience
+levels x 3 goals x 5 activity levels x 5 day counts, matching §6.4's own "a unit test
+over all 225 input combinations" and P2-ADR-01's "5 day counts" accounting) and asserts:
+the ceiling, slot completeness, ordering, the beginner cap, A/B difference and
 determinism.
 
-The three days_per_week values sampled for that matrix are 2, 4 and 6 -- one
-representative of each §6.2 split_type (full_body, upper_lower, push_pull_legs)
-including the maximum, which is also what triggers the beginner cap.
-days_per_week=3 and =5 are covered by the targeted tests below instead of the full
-matrix; =5 in particular is *not* a safe combination to fold into an exhaustive
-"ceiling always holds" matrix -- see
-test_days_per_week_five_can_exceed_the_unreviewed_ceiling_for_gain_focused_plans below,
-and this task's report, for why.
+Every days_per_week from 2 to 6 is now in the sweep, none excluded. T-17 had held
+days_per_week=5 out of the matrix because the 5-day split's original full-body middle
+day gave quads a third compound exposure and could exceed §6.4's ceiling for a
+gain-focused plan -- see the "Why the 5-day split has no full-body day" note under
+§6.3. That was a defect in the split table, now fixed by replacing the middle day with
+an isolation-only Arms & delts day, so days_per_week=5 is exhaustively covered like
+every other day count.
 """
 
 from __future__ import annotations
@@ -45,7 +44,7 @@ _ACTIVITY_LEVELS: tuple[ActivityLevel, ...] = (
     "high",
     "very_high",
 )
-_SAMPLED_DAYS_PER_WEEK: tuple[int, ...] = (2, 4, 6)
+_DAYS_PER_WEEK: tuple[int, ...] = (2, 3, 4, 5, 6)
 
 _LABEL_KEY_TO_SLOT_COUNT: dict[str, int] = {
     "plan.day.fullBody": 5,
@@ -54,6 +53,7 @@ _LABEL_KEY_TO_SLOT_COUNT: dict[str, int] = {
     "plan.day.push": 4,
     "plan.day.pull": 4,
     "plan.day.legs": 4,
+    "plan.day.armsDelts": 5,
 }
 
 
@@ -95,15 +95,9 @@ def _spec(
 
 
 _COMBINATIONS: list[tuple[ExperienceLevel, Goal, ActivityLevel, int]] = list(
-    itertools.product(_EXPERIENCE_LEVELS, _GOALS, _ACTIVITY_LEVELS, _SAMPLED_DAYS_PER_WEEK)
+    itertools.product(_EXPERIENCE_LEVELS, _GOALS, _ACTIVITY_LEVELS, _DAYS_PER_WEEK)
 )
 _COMBINATION_IDS = [f"{e}-{g}-{a}-{d}d" for e, g, a, d in _COMBINATIONS]
-
-
-def test_matrix_has_135_combinations() -> None:
-    """Pins the sample itself to P2-ADR-01's own accounting before trusting any test
-    that iterates over it."""
-    assert len(_COMBINATIONS) == 135
 
 
 @pytest.mark.parametrize(
@@ -353,37 +347,7 @@ def test_insufficient_library_raises_plan_generation_error_naming_the_pattern() 
         )
 
 
-# --- a finding worth reporting, not hiding ----------------------------------------------------
-
-
-@pytest.mark.parametrize("experience_level,goal", [("intermediate", "gain"), ("advanced", "gain")])
-def test_days_per_week_five_can_exceed_the_unreviewed_ceiling_for_gain_focused_plans(
-    experience_level: ExperienceLevel, goal: Goal
-) -> None:
-    """Not part of the required 135-combination matrix, and deliberately so: this is a
-    genuine defect surfaced while implementing this task, kept here as a passing,
-    documented regression rather than swept under the rug (per this task's own
-    instruction: "if [a number] does look wrong, finish the task and say so").
-
-    §6.2's 5-day upper_lower split is Upper A, Lower A, Full body, Upper B, Lower B.
-    Both Lower days *and* the Full body day carry a squat slot, and Lower also carries
-    a lunge slot -- every seeded squat/lunge exercise targets quads as its primary
-    muscle, so quads gets 5 compound-slot exposures in one week from this split alone.
-    At advanced/gain (5 sets/compound exercise, ceiling 22) that is 25 sets/week; at
-    intermediate/gain (4 sets/exercise, ceiling 18) that is 20. Both exceed the
-    ceiling -- correctly, per §6.4's own "exceeding it is a PlanGenerationError, which
-    is a bug in the table" -- for *every* activity_level, since activity_level does not
-    affect set counts. See this task's final report for the recommendation.
-    """
-    with pytest.raises(PlanGenerationError, match="quads"):
-        generate_plan(
-            _spec(
-                experience_level=experience_level,
-                goal=goal,
-                activity_level="moderate",
-                days_per_week=5,
-            )
-        )
+# --- days_per_week=5, all goals (§6.3's fix for the T-17 finding) --------------------------
 
 
 @pytest.mark.parametrize(
@@ -391,17 +355,22 @@ def test_days_per_week_five_can_exceed_the_unreviewed_ceiling_for_gain_focused_p
     [
         ("intermediate", "lose"),
         ("intermediate", "maintain"),
+        ("intermediate", "gain"),
         ("advanced", "lose"),
         ("advanced", "maintain"),
+        ("advanced", "gain"),
     ],
 )
-def test_days_per_week_five_holds_for_lose_and_maintain_goals(
+def test_days_per_week_five_holds_for_every_goal(
     experience_level: ExperienceLevel, goal: Goal
 ) -> None:
-    """The same 5-day structure does *not* overflow for lose/maintain goals (fewer
-    compound sets per exercise), at either level that can reach a 5-day plan --
-    confirming the day=5 finding above is specific to gain-focused prescriptions, not a
-    blanket "5 days is broken"."""
+    """T-17 found that the 5-day split's original full-body middle day gave quads a
+    third compound exposure, exceeding the ceiling for gain-focused plans at both
+    levels that can reach 5 days (see the "Why the 5-day split has no full-body day"
+    note under §6.3). §6.3 now replaces that middle day with an isolation-only Arms &
+    delts day, which removes the third quad exposure entirely -- this test targets
+    exactly the combinations that used to fail, gain included, and asserts they now
+    produce a real plan rather than a `PlanGenerationError`."""
     plan = generate_plan(
         _spec(
             experience_level=experience_level,

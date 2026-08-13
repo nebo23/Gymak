@@ -24,7 +24,7 @@ ExperienceLevel = Literal["beginner", "intermediate", "advanced"]
 Goal = Literal["lose", "gain", "maintain"]
 ActivityLevel = Literal["sedentary", "light", "moderate", "high", "very_high"]
 
-GENERATOR_VERSION: Final[int] = 1
+GENERATOR_VERSION: Final[int] = 2
 
 _BEGINNER_DAY_CAP: Final[int] = 4
 _BEGINNER_CAPPED_NOTES_KEY: Final[str] = "plan.notes.beginnerCappedDays"
@@ -91,7 +91,7 @@ _SPLIT_TABLE: Final[dict[int, tuple[str, tuple[str, ...]]]] = {
     2: ("full_body", ("full_body", "full_body")),
     3: ("full_body", ("full_body", "full_body", "full_body")),
     4: ("upper_lower", ("upper", "lower", "upper", "lower")),
-    5: ("upper_lower", ("upper", "lower", "full_body", "upper", "lower")),
+    5: ("upper_lower", ("upper", "lower", "upper", "lower", "arms_delts")),
     6: ("push_pull_legs", ("push", "pull", "legs", "push", "pull", "legs")),
 }
 
@@ -102,6 +102,7 @@ _DAY_LABEL_KEYS: Final[dict[str, str]] = {
     "push": "plan.day.push",
     "pull": "plan.day.pull",
     "legs": "plan.day.legs",
+    "arms_delts": "plan.day.armsDelts",
 }
 
 # --- §6.3 day composition: fixed slot order per day type ---------------------------------
@@ -152,6 +153,13 @@ _DAY_SLOTS: Final[dict[str, tuple[_Slot, ...]]] = {
         ("pattern", "hinge"),
         ("pattern", "lunge"),
         ("isolation", "calves"),
+    ),
+    "arms_delts": (
+        ("isolation", "side_delts"),
+        ("isolation", "rear_delts"),
+        ("isolation", "biceps"),
+        ("isolation", "triceps"),
+        ("isolation", "abs"),
     ),
 }
 

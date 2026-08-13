@@ -200,6 +200,11 @@
       "deletedNotice": "تم تقديم طلب حذف حسابك."
     }
   },
+  "plan": {
+    "day": {
+      "armsDelts": "الذراعان والأكتاف"
+    }
+  },
   "fieldErrors": {
     "email": {
       "INVALID": "أدخل بريدًا إلكترونيًا صالحًا"

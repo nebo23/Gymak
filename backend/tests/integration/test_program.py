@@ -143,7 +143,7 @@ async def test_generate_happy_path_shape(client: AsyncClient) -> None:
     assert program["split_type"] == "upper_lower"
     assert program["goal"] == "gain"
     assert program["experience_level"] == "intermediate"
-    assert program["generator_version"] == 1
+    assert program["generator_version"] == 2
     assert len(program["days"]) == 4
     for day in program["days"]:
         assert set(day) == {"id", "day_index", "label_key", "focus_muscles", "exercise_count"}
@@ -240,7 +240,7 @@ async def test_generate_records_an_audit_row_without_the_exercise_list(
     assert entry.event_metadata == {
         "days_per_week": 6,
         "split_type": "push_pull_legs",
-        "generator_version": 1,
+        "generator_version": 2,
     }
 
 
