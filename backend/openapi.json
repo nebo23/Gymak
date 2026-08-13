@@ -122,6 +122,167 @@
         "title": "DerivedFields",
         "type": "object"
       },
+      "ExerciseDetail": {
+        "description": "\u00a75.2: \"GET /exercises/{id} additionally returns instructions.\" ",
+        "properties": {
+          "difficulty": {
+            "title": "Difficulty",
+            "type": "string"
+          },
+          "equipment": {
+            "title": "Equipment",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "instructions": {
+            "title": "Instructions",
+            "type": "string"
+          },
+          "is_compound": {
+            "title": "Is Compound",
+            "type": "boolean"
+          },
+          "movement_pattern": {
+            "title": "Movement Pattern",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "primary_muscle": {
+            "title": "Primary Muscle",
+            "type": "string"
+          },
+          "secondary_muscles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secondary Muscles",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "primary_muscle",
+          "secondary_muscles",
+          "equipment",
+          "movement_pattern",
+          "is_compound",
+          "difficulty",
+          "instructions"
+        ],
+        "title": "ExerciseDetail",
+        "type": "object"
+      },
+      "ExerciseDetailResponse": {
+        "properties": {
+          "exercise": {
+            "$ref": "#/components/schemas/ExerciseDetail"
+          }
+        },
+        "required": [
+          "exercise"
+        ],
+        "title": "ExerciseDetailResponse",
+        "type": "object"
+      },
+      "ExerciseListItem": {
+        "description": "\u00a75.2: `name` is resolved server-side from the caller's profile language -- the\none deliberate exception to \"the server never sends display text\" (Phase 1 \u00a79.6),\nmade because shipping both languages' names to every client for a ~60-row library\ndoubles the payload for no client that ever shows both at once.",
+        "properties": {
+          "difficulty": {
+            "title": "Difficulty",
+            "type": "string"
+          },
+          "equipment": {
+            "title": "Equipment",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_compound": {
+            "title": "Is Compound",
+            "type": "boolean"
+          },
+          "movement_pattern": {
+            "title": "Movement Pattern",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "primary_muscle": {
+            "title": "Primary Muscle",
+            "type": "string"
+          },
+          "secondary_muscles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secondary Muscles",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "primary_muscle",
+          "secondary_muscles",
+          "equipment",
+          "movement_pattern",
+          "is_compound",
+          "difficulty"
+        ],
+        "title": "ExerciseListItem",
+        "type": "object"
+      },
+      "ExerciseListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExerciseListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "ExerciseListResponse",
+        "type": "object"
+      },
       "ForgotPasswordRequest": {
         "additionalProperties": false,
         "description": "\u00a75.6 call 1. `email` is the only field -- deliberately unauthenticated.",
@@ -534,6 +695,285 @@
           }
         },
         "title": "ProfileUpdateRequest",
+        "type": "object"
+      },
+      "ProgramDayDetail": {
+        "properties": {
+          "day_index": {
+            "title": "Day Index",
+            "type": "integer"
+          },
+          "exercises": {
+            "items": {
+              "$ref": "#/components/schemas/ProgramDayExerciseDetail"
+            },
+            "title": "Exercises",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label_key": {
+            "title": "Label Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "day_index",
+          "label_key",
+          "exercises"
+        ],
+        "title": "ProgramDayDetail",
+        "type": "object"
+      },
+      "ProgramDayDetailResponse": {
+        "properties": {
+          "day": {
+            "$ref": "#/components/schemas/ProgramDayDetail"
+          }
+        },
+        "required": [
+          "day"
+        ],
+        "title": "ProgramDayDetailResponse",
+        "type": "object"
+      },
+      "ProgramDayExerciseDetail": {
+        "properties": {
+          "exercise": {
+            "$ref": "#/components/schemas/ProgramDayExerciseRef"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_performance": {
+            "title": "Last Performance",
+            "type": "null"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "rest_seconds": {
+            "title": "Rest Seconds",
+            "type": "integer"
+          },
+          "target_reps_max": {
+            "title": "Target Reps Max",
+            "type": "integer"
+          },
+          "target_reps_min": {
+            "title": "Target Reps Min",
+            "type": "integer"
+          },
+          "target_sets": {
+            "title": "Target Sets",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "exercise",
+          "target_sets",
+          "target_reps_min",
+          "target_reps_max",
+          "rest_seconds",
+          "last_performance"
+        ],
+        "title": "ProgramDayExerciseDetail",
+        "type": "object"
+      },
+      "ProgramDayExerciseRef": {
+        "description": "\u00a75.5's nested `exercise` object -- deliberately narrower than\nschemas/exercise.py's ExerciseListItem; the spec's own example shows exactly these\nfive fields and no more.",
+        "properties": {
+          "equipment": {
+            "title": "Equipment",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "primary_muscle": {
+            "title": "Primary Muscle",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "equipment",
+          "primary_muscle"
+        ],
+        "title": "ProgramDayExerciseRef",
+        "type": "object"
+      },
+      "ProgramDaySummary": {
+        "description": "\u00a75.3/\u00a75.4: a day inside the program object -- summary only, `exercise_count`\nrather than the exercise list itself. `GET /program/days/{day_id}` (below) is where\na day's full exercise list lives.",
+        "properties": {
+          "day_index": {
+            "title": "Day Index",
+            "type": "integer"
+          },
+          "exercise_count": {
+            "title": "Exercise Count",
+            "type": "integer"
+          },
+          "focus_muscles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Focus Muscles",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label_key": {
+            "title": "Label Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "day_index",
+          "label_key",
+          "focus_muscles",
+          "exercise_count"
+        ],
+        "title": "ProgramDaySummary",
+        "type": "object"
+      },
+      "ProgramGenerateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "days_per_week": {
+            "title": "Days Per Week",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "days_per_week"
+        ],
+        "title": "ProgramGenerateRequest",
+        "type": "object"
+      },
+      "ProgramGenerateResponse": {
+        "properties": {
+          "notes_key": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes Key",
+            "type": "array"
+          },
+          "program": {
+            "$ref": "#/components/schemas/ProgramSummary"
+          }
+        },
+        "required": [
+          "program",
+          "notes_key"
+        ],
+        "title": "ProgramGenerateResponse",
+        "type": "object"
+      },
+      "ProgramResponse": {
+        "properties": {
+          "program": {
+            "$ref": "#/components/schemas/ProgramSummary"
+          },
+          "stale": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale"
+          }
+        },
+        "required": [
+          "program",
+          "stale"
+        ],
+        "title": "ProgramResponse",
+        "type": "object"
+      },
+      "ProgramSummary": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/ProgramDaySummary"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "days_per_week": {
+            "title": "Days Per Week",
+            "type": "integer"
+          },
+          "experience_level": {
+            "title": "Experience Level",
+            "type": "string"
+          },
+          "generator_version": {
+            "title": "Generator Version",
+            "type": "integer"
+          },
+          "goal": {
+            "title": "Goal",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "split_type": {
+            "title": "Split Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "days_per_week",
+          "split_type",
+          "goal",
+          "experience_level",
+          "generator_version",
+          "created_at",
+          "days"
+        ],
+        "title": "ProgramSummary",
         "type": "object"
       },
       "RefreshRequest": {
@@ -1228,6 +1668,167 @@
         ]
       }
     },
+    "/api/v1/exercises": {
+      "get": {
+        "operationId": "list_exercises_route_api_v1_exercises_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "muscle",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Muscle"
+            }
+          },
+          {
+            "in": "query",
+            "name": "equipment",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Equipment"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExerciseListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Exercises Route",
+        "tags": [
+          "exercises"
+        ]
+      }
+    },
+    "/api/v1/exercises/{exercise_id}": {
+      "get": {
+        "operationId": "get_exercise_route_api_v1_exercises__exercise_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exercise_id",
+            "required": true,
+            "schema": {
+              "title": "Exercise Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExerciseDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Exercise Route",
+        "tags": [
+          "exercises"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "get_health_api_v1_health_get",
@@ -1364,6 +1965,125 @@
         "summary": "Create Profile Route",
         "tags": [
           "profile"
+        ]
+      }
+    },
+    "/api/v1/program": {
+      "get": {
+        "operationId": "get_current_program_route_api_v1_program_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgramResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Current Program Route",
+        "tags": [
+          "program"
+        ]
+      }
+    },
+    "/api/v1/program/days/{day_id}": {
+      "get": {
+        "operationId": "get_program_day_route_api_v1_program_days__day_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "day_id",
+            "required": true,
+            "schema": {
+              "title": "Day Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgramDayDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Program Day Route",
+        "tags": [
+          "program"
+        ]
+      }
+    },
+    "/api/v1/program/generate": {
+      "post": {
+        "operationId": "generate_program_route_api_v1_program_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProgramGenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgramGenerateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Generate Program Route",
+        "tags": [
+          "program"
         ]
       }
     }

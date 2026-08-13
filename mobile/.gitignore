@@ -1,0 +1,11 @@
+# Phase 2 §11 carry-over item 3 / §13.1 decision 2 ("Ignore it."). The project is
+# Expo-managed and app.json is the source of truth — `expo prebuild` regenerates
+# android/ deterministically from it, and a committed android/ invites hand-edits
+# that the next prebuild would silently discard. It also left a live debug.keystore
+# sitting in the working tree, tracked by neither git nor a gitignore rule, where a
+# careless `git add .` could commit it — root .gitignore's *.keystore/*.jks rules
+# only help once the directory itself isn't already staged wholesale.
+#
+# Regenerate with `npx expo prebuild --platform android` when a native build is
+# needed; local.properties (SDK path) is recreated per machine the same way.
+android/

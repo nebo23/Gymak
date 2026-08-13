@@ -14,6 +14,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "603892086493-bissiidj9a3dlij28hhqhvnomfsc9m8d.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gymak.app",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "603892086493-fgb9cd7fn3adn1rbk67oh80g7jqi90qg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gymak.app",
+            "certificate_hash": "8b4810c192128fe359bbc448f51a41a36d2bcc32"
+          }
+        },
+        {
           "client_id": "603892086493-ft6kcj85bu0io13a2qgfdmrl167mdaf7.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

@@ -27,7 +27,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.ids import new_id
 from app.database import set_rls_user
-from app.models import Profile, RefreshToken
+from app.models import (
+    BodyWeightEntry,
+    Profile,
+    Program,
+    ProgramDay,
+    ProgramExercise,
+    RefreshToken,
+    WorkoutSession,
+    WorkoutSet,
+)
 
 
 def _new_email() -> str:
@@ -425,3 +434,605 @@ async def test_gymak_app_cannot_delete_profiles(db_session: AsyncSession) -> Non
     """
     with pytest.raises(ProgrammingError, match="permission denied for table profiles"):
         await db_session.execute(text("DELETE FROM profiles"))
+
+
+# --- Phase 2 (T-15): RLS on the six new user-owned tables, plus exercises' exception ---
+#
+# P2-ADR-09 / spec §4.10. `programs`, `workout_sessions`, and `body_weight_entries` carry
+# `user_id` directly, so their proofs mirror this file's own `profiles` pattern above.
+# `program_days`, `program_exercises`, and `workout_sets` carry no `user_id` of their
+# own -- ownership reads through a parent chain -- so their proofs use the same
+# drop-a-permissive-stand-in technique but against the EXISTS policy shape. Every seed
+# below goes through db_session under the OWNER's own app.user_id, not past RLS: unlike
+# Phase 1's profiles/refresh_tokens (seeded pre-auth, A.5 item 13), every Phase 2 table
+# gymak_app writes to at all is written by an authenticated user with app.user_id already
+# bound -- there is no pre-auth gap here to route around.
+
+
+def _program_kwargs(user_id: uuid.UUID, **overrides: object) -> dict[str, object]:
+    kwargs: dict[str, object] = {
+        "id": new_id(),
+        "user_id": user_id,
+        "days_per_week": 4,
+        "split_type": "upper_lower",
+        "goal": "gain",
+        "experience_level": "beginner",
+        "generator_version": 1,
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+def _program_day_kwargs(program_id: uuid.UUID, **overrides: object) -> dict[str, object]:
+    kwargs: dict[str, object] = {
+        "id": new_id(),
+        "program_id": program_id,
+        "day_index": 1,
+        "label_key": "plan.day.upper",
+        "focus_muscles": ["chest", "back"],
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+def _program_exercise_kwargs(
+    program_day_id: uuid.UUID, exercise_id: uuid.UUID, **overrides: object
+) -> dict[str, object]:
+    kwargs: dict[str, object] = {
+        "id": new_id(),
+        "program_day_id": program_day_id,
+        "exercise_id": exercise_id,
+        "position": 1,
+        "target_sets": 3,
+        "target_reps_min": 8,
+        "target_reps_max": 12,
+        "rest_seconds": 90,
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+def _workout_session_kwargs(user_id: uuid.UUID, **overrides: object) -> dict[str, object]:
+    kwargs: dict[str, object] = {
+        "id": new_id(),
+        "user_id": user_id,
+        "status": "in_progress",
+        "local_date": date.today(),
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+def _workout_set_kwargs(
+    session_id: uuid.UUID, exercise_id: uuid.UUID, **overrides: object
+) -> dict[str, object]:
+    kwargs: dict[str, object] = {
+        "id": new_id(),
+        "session_id": session_id,
+        "exercise_id": exercise_id,
+        "set_index": 1,
+        "reps": 8,
+        "weight_kg": 60,
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+def _body_weight_kwargs(user_id: uuid.UUID, **overrides: object) -> dict[str, object]:
+    kwargs: dict[str, object] = {
+        "id": new_id(),
+        "user_id": user_id,
+        "measured_on": date.today(),
+        "weight_kg": 75,
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+_INSERT_EXERCISE_SQL = text(
+    "INSERT INTO exercises (id, slug, name_en, name_ar, primary_muscle, equipment, "
+    "movement_pattern, is_compound, difficulty, instructions_en, instructions_ar) "
+    "VALUES (:id, :slug, 'Test Exercise', 'تمرين تجريبي', 'chest', 'barbell', "
+    "'horizontal_push', true, 'beginner', 'Do the thing.', 'قم بالتمرين.')"
+)
+
+
+async def _insert_exercise(migrator_database_url: str) -> uuid.UUID:
+    """exercises is granted SELECT only to gymak_app (§4.10) -- seeded over a dedicated
+    migrator connection, the same rationale as tests/unit/test_models.py's identical
+    helper: no repository or fixture using the app role can ever INSERT here.
+    """
+    exercise_id = new_id()
+    engine = create_async_engine(migrator_database_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                _INSERT_EXERCISE_SQL, {"id": exercise_id, "slug": f"ex-{uuid.uuid4()}"}
+            )
+    finally:
+        await engine.dispose()
+    return exercise_id
+
+
+_NEW_RLS_TABLES = (
+    "programs",
+    "program_days",
+    "program_exercises",
+    "workout_sessions",
+    "workout_sets",
+    "body_weight_entries",
+)
+
+_OWNER_POLICY_NAMES = {
+    "programs": "p_programs_owner",
+    "program_days": "p_program_days_owner",
+    "program_exercises": "p_program_exercises_owner",
+    "workout_sessions": "p_workout_sessions_owner",
+    "workout_sets": "p_workout_sets_owner",
+    "body_weight_entries": "p_body_weight_entries_owner",
+}
+
+_DIRECT_OWNER_POLICY_SQL = {
+    table: (
+        f"CREATE POLICY {policy} ON {table} "
+        "USING (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid) "
+        "WITH CHECK (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)"
+    )
+    for table, policy in _OWNER_POLICY_NAMES.items()
+    if table in ("programs", "workout_sessions", "body_weight_entries")
+}
+
+_PROGRAM_DAYS_OWNER_POLICY_SQL = (
+    "CREATE POLICY p_program_days_owner ON program_days "
+    "USING (EXISTS (SELECT 1 FROM programs p WHERE p.id = program_days.program_id "
+    "AND p.user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)) "
+    "WITH CHECK (EXISTS (SELECT 1 FROM programs p WHERE p.id = program_days.program_id "
+    "AND p.user_id = NULLIF(current_setting('app.user_id', true), '')::uuid))"
+)
+
+_PROGRAM_EXERCISES_OWNER_POLICY_SQL = (
+    "CREATE POLICY p_program_exercises_owner ON program_exercises "
+    "USING (EXISTS (SELECT 1 FROM program_days d JOIN programs p ON p.id = d.program_id "
+    "WHERE d.id = program_exercises.program_day_id "
+    "AND p.user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)) "
+    "WITH CHECK (EXISTS (SELECT 1 FROM program_days d JOIN programs p ON p.id = d.program_id "
+    "WHERE d.id = program_exercises.program_day_id "
+    "AND p.user_id = NULLIF(current_setting('app.user_id', true), '')::uuid))"
+)
+
+# §4.10, verbatim -- the one policy the spec itself spells out in full.
+_WORKOUT_SETS_OWNER_POLICY_SQL = (
+    "CREATE POLICY p_workout_sets_owner ON workout_sets "
+    "USING (EXISTS (SELECT 1 FROM workout_sessions s WHERE s.id = workout_sets.session_id "
+    "AND s.user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)) "
+    "WITH CHECK (EXISTS (SELECT 1 FROM workout_sessions s WHERE s.id = workout_sets.session_id "
+    "AND s.user_id = NULLIF(current_setting('app.user_id', true), '')::uuid))"
+)
+
+
+async def test_new_tables_have_rls_enabled_and_forced(db_session: AsyncSession) -> None:
+    """Same guard as this file's own preamble test, extended to the six Phase 2 tables:
+    ENABLE without FORCE would silently exempt gymak_migrator (their owner) from its own
+    policies, which is exactly the historical bug class A.5 item 1 closed for Phase 1.
+    """
+    rows = (
+        await db_session.execute(
+            text(
+                "SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class "
+                "WHERE relname = ANY(:names) ORDER BY relname"
+            ),
+            {"names": list(_NEW_RLS_TABLES)},
+        )
+    ).all()
+    assert [(row.relname, row.relrowsecurity, row.relforcerowsecurity) for row in rows] == [
+        (name, True, True) for name in sorted(_NEW_RLS_TABLES)
+    ]
+
+
+async def test_exercises_has_no_rls_at_all(db_session: AsyncSession) -> None:
+    """§4.10's stated exception: exercises is public reference data with no user_id --
+    SELECT granted, no policy, and RLS never enabled on it at all. Asserted explicitly
+    so the absence reads as a deliberate decision, not an oversight (spec 10.1: 'exercises
+    is readable by any authenticated user and writable by none')."""
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+                "WHERE relname = 'exercises'"
+            )
+        )
+    ).one()
+    assert (row.relrowsecurity, row.relforcerowsecurity) == (False, False)
+
+
+async def test_exercises_is_readable_with_no_app_user_id_bound(db_session: AsyncSession) -> None:
+    """No policy means no owner column to scope by -- a plain GRANT SELECT, readable
+    regardless of whether app.user_id is bound at all."""
+    result = await db_session.execute(text("SELECT count(*) FROM exercises"))
+    assert result.scalar_one() >= 0  # the point is that this does not raise
+
+
+async def test_gymak_app_cannot_write_to_exercises(db_session: AsyncSession) -> None:
+    with pytest.raises(ProgrammingError, match="permission denied for table exercises"):
+        await db_session.execute(
+            text(
+                "INSERT INTO exercises (id, slug, name_en, name_ar, primary_muscle, "
+                "equipment, movement_pattern, is_compound, difficulty, instructions_en, "
+                "instructions_ar) VALUES (:id, 'hijack', 'x', 'x', 'chest', 'barbell', "
+                "'horizontal_push', true, 'beginner', 'x', 'x')"
+            ),
+            {"id": new_id()},
+        )
+
+
+async def test_gymak_app_cannot_update_exercises(db_session: AsyncSession) -> None:
+    with pytest.raises(ProgrammingError, match="permission denied for table exercises"):
+        await db_session.execute(text("UPDATE exercises SET is_active = false"))
+
+
+async def test_gymak_app_cannot_delete_exercises(db_session: AsyncSession) -> None:
+    with pytest.raises(ProgrammingError, match="permission denied for table exercises"):
+        await db_session.execute(text("DELETE FROM exercises"))
+
+
+async def test_gymak_app_cannot_create_policy_on_any_new_table(db_session: AsyncSession) -> None:
+    """A.5 item 1's exact scenario, extended to Phase 2: gymak_migrator owns every table
+    created in migration 88d15c15b877, so gymak_app -- DML-only from the split onward --
+    must not be able to install a policy of its own on any of them."""
+    for table in _NEW_RLS_TABLES:
+        with pytest.raises(ProgrammingError, match="must be owner of table"):
+            await db_session.execute(text(f"CREATE POLICY p_hijack ON {table} USING (true)"))
+        await db_session.rollback()
+
+
+async def test_gymak_app_cannot_drop_policy_on_any_new_table(db_session: AsyncSession) -> None:
+    for table, policy in _OWNER_POLICY_NAMES.items():
+        with pytest.raises(ProgrammingError, match="must be owner of relation"):
+            await db_session.execute(text(f"DROP POLICY {policy} ON {table}"))
+        await db_session.rollback()
+
+
+async def test_gymak_app_cannot_alter_any_new_table(db_session: AsyncSession) -> None:
+    for table in _NEW_RLS_TABLES:
+        with pytest.raises(ProgrammingError, match="must be owner of table"):
+            await db_session.execute(text(f"ALTER TABLE {table} ADD COLUMN not_allowed int"))
+        await db_session.rollback()
+
+
+async def test_gymak_app_cannot_disable_force_row_level_security_on_any_new_table(
+    db_session: AsyncSession,
+) -> None:
+    for table in _NEW_RLS_TABLES:
+        with pytest.raises(ProgrammingError, match="must be owner of table"):
+            await db_session.execute(text(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY"))
+        await db_session.rollback()
+
+
+async def test_dropping_programs_owner_policy_leaks_across_tenants(
+    migrator_database_url: str, superuser_database_url: str, db_session: AsyncSession
+) -> None:
+    owner_id = await _seed_user_with_profile(superuser_database_url, name="Programs Owner")
+    await set_rls_user(db_session, str(owner_id))
+    program = Program(**_program_kwargs(owner_id))
+    db_session.add(program)
+    # id is client-side (default=new_id, spec P1-ADR-06), so it is already populated
+    # before flush -- captured here rather than via a post-commit SELECT, because after
+    # commit() clears the transaction-scoped app.user_id (set_rls_user's own docstring),
+    # a SELECT as the very owner who just inserted it would come back empty until
+    # re-bound, which is not what this line is testing.
+    program_id = program.id
+    await db_session.commit()
+    intruder_id = uuid.uuid4()
+
+    migrator_engine = create_async_engine(migrator_database_url)
+    try:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_programs_owner ON programs"))
+            await conn.execute(text("CREATE POLICY p_programs_owner ON programs USING (true)"))
+
+        await set_rls_user(db_session, str(intruder_id))
+        leaked = (
+            (await db_session.execute(select(Program).where(Program.id == program_id)))
+            .scalars()
+            .all()
+        )
+        await db_session.commit()
+        assert [row.id for row in leaked] == [program_id]
+    finally:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_programs_owner ON programs"))
+            await conn.execute(text(_DIRECT_OWNER_POLICY_SQL["programs"]))
+        await migrator_engine.dispose()
+
+    await set_rls_user(db_session, str(intruder_id))
+    still_hidden = (
+        (await db_session.execute(select(Program).where(Program.id == program_id))).scalars().all()
+    )
+    assert still_hidden == []
+
+
+async def test_dropping_workout_sessions_owner_policy_leaks_across_tenants(
+    migrator_database_url: str, superuser_database_url: str, db_session: AsyncSession
+) -> None:
+    owner_id = await _seed_user_with_profile(superuser_database_url, name="Sessions Owner")
+    await set_rls_user(db_session, str(owner_id))
+    session = WorkoutSession(**_workout_session_kwargs(owner_id))
+    db_session.add(session)
+    session_id = session.id  # see the identical comment in the programs test above
+    await db_session.commit()
+    intruder_id = uuid.uuid4()
+
+    migrator_engine = create_async_engine(migrator_database_url)
+    try:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_workout_sessions_owner ON workout_sessions"))
+            await conn.execute(
+                text("CREATE POLICY p_workout_sessions_owner ON workout_sessions USING (true)")
+            )
+
+        await set_rls_user(db_session, str(intruder_id))
+        leaked = (
+            (
+                await db_session.execute(
+                    select(WorkoutSession).where(WorkoutSession.id == session_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await db_session.commit()
+        assert [row.id for row in leaked] == [session_id]
+    finally:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_workout_sessions_owner ON workout_sessions"))
+            await conn.execute(text(_DIRECT_OWNER_POLICY_SQL["workout_sessions"]))
+        await migrator_engine.dispose()
+
+    await set_rls_user(db_session, str(intruder_id))
+    still_hidden = (
+        (await db_session.execute(select(WorkoutSession).where(WorkoutSession.id == session_id)))
+        .scalars()
+        .all()
+    )
+    assert still_hidden == []
+
+
+async def test_dropping_body_weight_entries_owner_policy_leaks_across_tenants(
+    migrator_database_url: str, superuser_database_url: str, db_session: AsyncSession
+) -> None:
+    owner_id = await _seed_user_with_profile(superuser_database_url, name="Weight Owner")
+    await set_rls_user(db_session, str(owner_id))
+    entry = BodyWeightEntry(**_body_weight_kwargs(owner_id))
+    db_session.add(entry)
+    entry_id = entry.id  # see the identical comment in the programs test above
+    await db_session.commit()
+    intruder_id = uuid.uuid4()
+
+    migrator_engine = create_async_engine(migrator_database_url)
+    try:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(
+                text("DROP POLICY p_body_weight_entries_owner ON body_weight_entries")
+            )
+            await conn.execute(
+                text(
+                    "CREATE POLICY p_body_weight_entries_owner ON body_weight_entries USING (true)"
+                )
+            )
+
+        await set_rls_user(db_session, str(intruder_id))
+        leaked = (
+            (
+                await db_session.execute(
+                    select(BodyWeightEntry).where(BodyWeightEntry.id == entry_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await db_session.commit()
+        assert [row.id for row in leaked] == [entry_id]
+    finally:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(
+                text("DROP POLICY p_body_weight_entries_owner ON body_weight_entries")
+            )
+            await conn.execute(text(_DIRECT_OWNER_POLICY_SQL["body_weight_entries"]))
+        await migrator_engine.dispose()
+
+    await set_rls_user(db_session, str(intruder_id))
+    still_hidden = (
+        (await db_session.execute(select(BodyWeightEntry).where(BodyWeightEntry.id == entry_id)))
+        .scalars()
+        .all()
+    )
+    assert still_hidden == []
+
+
+async def test_dropping_program_days_owner_policy_leaks_across_tenants(
+    migrator_database_url: str, superuser_database_url: str, db_session: AsyncSession
+) -> None:
+    """program_days carries no user_id -- ownership reads through program_id (P2-ADR-09).
+    The stand-in policy below must still be permissive by row content, not by column
+    absence: USING (true) is the same 'looks protective but isn't' shape this file's
+    profiles test uses, applied to the EXISTS-policy tables.
+    """
+    owner_id = await _seed_user_with_profile(superuser_database_url, name="Program Days Owner")
+    await set_rls_user(db_session, str(owner_id))
+    program = Program(**_program_kwargs(owner_id))
+    db_session.add(program)
+    await db_session.flush()
+    program_day = ProgramDay(**_program_day_kwargs(program.id))
+    db_session.add(program_day)
+    program_day_id = program_day.id  # see the identical comment in the programs test above
+    await db_session.commit()
+    intruder_id = uuid.uuid4()
+
+    migrator_engine = create_async_engine(migrator_database_url)
+    try:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_program_days_owner ON program_days"))
+            await conn.execute(
+                text("CREATE POLICY p_program_days_owner ON program_days USING (true)")
+            )
+
+        await set_rls_user(db_session, str(intruder_id))
+        leaked = (
+            (await db_session.execute(select(ProgramDay).where(ProgramDay.id == program_day_id)))
+            .scalars()
+            .all()
+        )
+        await db_session.commit()
+        assert [row.id for row in leaked] == [program_day_id]
+    finally:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_program_days_owner ON program_days"))
+            await conn.execute(text(_PROGRAM_DAYS_OWNER_POLICY_SQL))
+        await migrator_engine.dispose()
+
+    await set_rls_user(db_session, str(intruder_id))
+    still_hidden = (
+        (await db_session.execute(select(ProgramDay).where(ProgramDay.id == program_day_id)))
+        .scalars()
+        .all()
+    )
+    assert still_hidden == []
+
+
+async def test_dropping_program_exercises_owner_policy_leaks_across_tenants(
+    migrator_database_url: str, superuser_database_url: str, db_session: AsyncSession
+) -> None:
+    """program_exercises' ownership chain is two hops deep (program_day_id -> program_id
+    -> user_id) -- the longest in Phase 2, and the one most likely to have a typo'd join.
+    """
+    owner_id = await _seed_user_with_profile(superuser_database_url, name="Program Ex Owner")
+    exercise_id = await _insert_exercise(migrator_database_url)
+    await set_rls_user(db_session, str(owner_id))
+    program = Program(**_program_kwargs(owner_id))
+    db_session.add(program)
+    await db_session.flush()
+    program_day = ProgramDay(**_program_day_kwargs(program.id))
+    db_session.add(program_day)
+    await db_session.flush()
+    program_exercise = ProgramExercise(**_program_exercise_kwargs(program_day.id, exercise_id))
+    db_session.add(program_exercise)
+    program_exercise_id = program_exercise.id  # see the comment in the programs test above
+    await db_session.commit()
+    intruder_id = uuid.uuid4()
+
+    migrator_engine = create_async_engine(migrator_database_url)
+    try:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_program_exercises_owner ON program_exercises"))
+            await conn.execute(
+                text("CREATE POLICY p_program_exercises_owner ON program_exercises USING (true)")
+            )
+
+        await set_rls_user(db_session, str(intruder_id))
+        leaked = (
+            (
+                await db_session.execute(
+                    select(ProgramExercise).where(ProgramExercise.id == program_exercise_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await db_session.commit()
+        assert [row.id for row in leaked] == [program_exercise_id]
+    finally:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_program_exercises_owner ON program_exercises"))
+            await conn.execute(text(_PROGRAM_EXERCISES_OWNER_POLICY_SQL))
+        await migrator_engine.dispose()
+
+    await set_rls_user(db_session, str(intruder_id))
+    still_hidden = (
+        (
+            await db_session.execute(
+                select(ProgramExercise).where(ProgramExercise.id == program_exercise_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert still_hidden == []
+
+
+async def test_dropping_workout_sets_owner_policy_leaks_across_tenants(
+    migrator_database_url: str, superuser_database_url: str, db_session: AsyncSession
+) -> None:
+    """§4.10, verbatim policy. P2-ADR-09: 'the cross-tenant test must prove that a set
+    belonging to another user's session is invisible, not merely that the session is' --
+    this is that proof for the load-bearing half; the direct by-id lookup half is
+    test_workout_set_in_another_users_session_is_invisible_even_by_its_own_id below.
+    """
+    owner_id = await _seed_user_with_profile(superuser_database_url, name="Sets Owner")
+    exercise_id = await _insert_exercise(migrator_database_url)
+    await set_rls_user(db_session, str(owner_id))
+    session_row = WorkoutSession(**_workout_session_kwargs(owner_id))
+    db_session.add(session_row)
+    await db_session.flush()
+    workout_set = WorkoutSet(**_workout_set_kwargs(session_row.id, exercise_id))
+    db_session.add(workout_set)
+    set_id = workout_set.id  # see the comment in the programs test above
+    await db_session.commit()
+    intruder_id = uuid.uuid4()
+
+    migrator_engine = create_async_engine(migrator_database_url)
+    try:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_workout_sets_owner ON workout_sets"))
+            await conn.execute(
+                text("CREATE POLICY p_workout_sets_owner ON workout_sets USING (true)")
+            )
+
+        # get() checks the session's identity map before it checks the database, and
+        # workout_set is already in it from the insert above -- without expiring it
+        # first, get() would return the cached instance without a query ever reaching
+        # RLS, making every assertion below true regardless of what the policy says.
+        db_session.expire_all()
+        await set_rls_user(db_session, str(intruder_id))
+        leaked = await db_session.get(WorkoutSet, set_id)
+        await db_session.commit()
+        assert leaked is not None
+        assert leaked.id == set_id
+    finally:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_workout_sets_owner ON workout_sets"))
+            await conn.execute(text(_WORKOUT_SETS_OWNER_POLICY_SQL))
+        await migrator_engine.dispose()
+
+    db_session.expire_all()
+    await set_rls_user(db_session, str(intruder_id))
+    still_hidden = await db_session.get(WorkoutSet, set_id)
+    assert still_hidden is None
+
+
+async def test_workout_set_in_another_users_session_is_invisible_even_by_its_own_id(
+    superuser_database_url: str, migrator_database_url: str, db_session: AsyncSession
+) -> None:
+    """P2-ADR-09's exact wording, with the real (undropped) policy in force: a set
+    belonging to another user's session is invisible looked up directly by its own
+    primary key, not merely absent from a list query that could hide the gap behind an
+    unrelated WHERE clause.
+    """
+    owner_id = await _seed_user_with_profile(superuser_database_url, name="Real Set Owner")
+    intruder_id = await _seed_user_with_profile(superuser_database_url, name="Real Set Intruder")
+    exercise_id = await _insert_exercise(migrator_database_url)
+
+    await set_rls_user(db_session, str(owner_id))
+    session_row = WorkoutSession(**_workout_session_kwargs(owner_id))
+    db_session.add(session_row)
+    await db_session.flush()
+    workout_set = WorkoutSet(**_workout_set_kwargs(session_row.id, exercise_id))
+    db_session.add(workout_set)
+    set_id = workout_set.id  # see the comment in the programs test above
+    await db_session.commit()
+
+    # See the identity-map comment in test_dropping_workout_sets_owner_policy_leaks_
+    # across_tenants above -- without this, get() never reaches the database at all.
+    db_session.expire_all()
+    await set_rls_user(db_session, str(intruder_id))
+    invisible = await db_session.get(WorkoutSet, set_id)
+    assert invisible is None

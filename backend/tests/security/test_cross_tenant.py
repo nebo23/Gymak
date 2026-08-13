@@ -136,6 +136,10 @@ _OWN_RESOURCE_FIELDS = {
     "unit_system",
     "language",
     "onboarding_completed",  # Profile{Create,Update}Request -- scalar content fields
+    "days_per_week",  # T-17: ProgramGenerateRequest -- a count the caller chooses for
+    # their own plan, not a reference to anyone else's row; program_service resolves
+    # the rest of generation entirely from the caller's own profile (§6.1's PlanInput
+    # is built server-side from the authenticated user's profile, never from the body).
 }
 
 
@@ -157,14 +161,16 @@ def _route_key(route: APIRoute) -> tuple[str, str]:
 
 
 def test_route_enumeration_finds_the_documented_catalogue() -> None:
-    """Canary for `_enumerate_api_routes` itself: spec §5.1's endpoint catalogue has
-    exactly 15 rows (14 API endpoints plus /health). If a future FastAPI version changes
-    how `include_router` wires routes again, this fails immediately instead of the
-    matrix below silently running zero cases.
+    """Canary for `_enumerate_api_routes` itself: Phase 1's §5.1 catalogue had 15 rows
+    (14 API endpoints plus /health); T-16 (spec §5.1/§5.2) adds GET /exercises and
+    GET /exercises/{id}, for 17; T-17 (§5.3-5.5) adds POST /program/generate,
+    GET /program and GET /program/days/{day_id}, for 20. If a future FastAPI version
+    changes how `include_router` wires routes again, this fails immediately instead of
+    the matrix below silently running zero cases.
     """
     routes = _enumerate_api_routes()
     found = sorted(_route_key(r) for r in routes)
-    assert len(routes) == 15, f"expected 15 routes per spec §5.1, found {len(routes)}: {found}"
+    assert len(routes) == 20, f"expected 20 routes per spec §5.1, found {len(routes)}: {found}"
 
 
 def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() -> None:
@@ -185,6 +191,26 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
         ("DELETE", "/account"): frozenset(),
         ("POST", "/auth/logout"): frozenset({"refresh_token"}),
         ("POST", "/auth/logout-all"): frozenset(),
+        # T-16: both depend on require_completed_profile, which itself depends on
+        # require_active -- authenticated the same way every other user-scoped route
+        # is. Neither takes a body (GET/path-param only), so neither has a reference
+        # field: the exercise a caller can reach is a function of the id in the path,
+        # never of anything naming another user's row (exercises has no owner at all).
+        ("GET", "/exercises"): frozenset(),
+        ("GET", "/exercises/{exercise_id}"): frozenset(),
+        # T-17: POST /program/generate's only body field is days_per_week, reviewed
+        # into _OWN_RESOURCE_FIELDS above (a count, not a reference). GET /program
+        # takes no body or path parameter at all. GET /program/days/{day_id} takes no
+        # body either, but -- unlike GET /exercises/{exercise_id} -- its path
+        # parameter *does* name an owned row (a program_days id, owned via the parent
+        # chain, P2-ADR-09): this scanner only inspects body fields, so that risk is
+        # not caught by the identifier-substitution matrix below at all. It is proven
+        # directly instead, both here
+        # (test_get_program_day_belonging_to_another_user_returns_404) and again in
+        # tests/integration/test_program.py's own fuller version of the same case.
+        ("POST", "/program/generate"): frozenset(),
+        ("GET", "/program"): frozenset(),
+        ("GET", "/program/days/{day_id}"): frozenset(),
     }
 
     assert set(user_scoped) == set(expected_reference_fields), (
@@ -200,16 +226,17 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
             "this file's cross-tenant case for it."
         )
 
-    # Of 15 enumerated routes, 8 are unauthenticated by design (register, login, social
+    # Of 20 enumerated routes, 8 are unauthenticated by design (register, login, social
     # sign-in, refresh, the three password-reset calls, and health) and are scoped, if
     # at all, by a submitted email/token under their own §7.3 error contract rather than
-    # by a bearer identity -- not this matrix's concern. The remaining 7 are user-scoped;
-    # of those, 6 accept no field that could name another user's resource at all (the
-    # only "identifier" is the bearer token itself), and are instead each proven
+    # by a bearer identity -- not this matrix's concern. The remaining 12 are user-scoped;
+    # of those, 11 accept no field that could name another user's resource at all (the
+    # only "identifier" is the bearer token itself, a reviewed own-content field, or --
+    # for the three T-16/T-17 GET routes -- a path id), and are instead each proven
     # isolated by their own test below; 1 (POST /auth/logout's refresh_token) does name
     # another row and is the one live identifier-substitution case.
-    assert len(routes) == 15
-    assert len(user_scoped) == 7
+    assert len(routes) == 20
+    assert len(user_scoped) == 12
 
 
 def _reference_field_cases() -> list[tuple[str, str, str]]:
@@ -476,3 +503,158 @@ async def test_delete_account_never_deletes_user_as_account(
     # A's session is still usable -- token_version was never bumped for A.
     still_a = await _refresh(client, user_a["refresh_token"])
     assert still_a.status_code == 200
+
+
+# --- T-16: GET /exercises, GET /exercises/{id} -- public reference data, no owner ---------
+#
+# Neither route has a reference field (both are body-less: query params / a path id),
+# so neither gets an identifier-substitution case above. What actually needs proving
+# for these two is different from the other eight: exercises has no user_id at all
+# (§4.10), so there is no "user A's row" to leak -- the caller-specific part is only
+# the profile language the name/instructions resolve to (§5.2).
+
+_EXERCISES = "/api/v1/exercises"
+
+
+async def _list_exercises(client: AsyncClient, access_token: str, **params: str | int) -> Response:
+    return await client.get(_EXERCISES, params=params, headers=_auth_headers(access_token))
+
+
+async def _get_exercise(client: AsyncClient, access_token: str, exercise_id: str) -> Response:
+    return await client.get(f"{_EXERCISES}/{exercise_id}", headers=_auth_headers(access_token))
+
+
+async def test_get_exercises_never_leaks_user_as_language_preference(client: AsyncClient) -> None:
+    """exercises has no owner column -- there is no "user A's exercise" for a
+    cross-tenant read to leak. What IS caller-specific here is language resolution
+    (§5.2): this proves user B's own profile language governs the names they see,
+    never user A's, and that both callers reach the identical shared catalogue.
+    """
+    user_a = await _register(client)
+    onboard_a = await _onboard(client, user_a["access_token"], language="en")
+    assert onboard_a.status_code == 201
+
+    user_b = await _register(client)
+    onboard_b = await _onboard(client, user_b["access_token"], language="ar")
+    assert onboard_b.status_code == 201
+
+    response_a = await _list_exercises(client, user_a["access_token"], limit=5)
+    response_b = await _list_exercises(client, user_b["access_token"], limit=5)
+    assert response_a.status_code == 200
+    assert response_b.status_code == 200
+
+    items_a = json_body(response_a)["items"]
+    items_b = json_body(response_b)["items"]
+    assert [item["id"] for item in items_a] == [item["id"] for item in items_b], (
+        "the shared exercise catalogue must not differ by caller"
+    )
+    # English names are plain ASCII; Arabic names are not -- a cheap, real assertion
+    # that the two responses actually resolved to different languages, not a fluke.
+    assert all(name.isascii() for name in (item["name"] for item in items_a))
+    assert any(not name.isascii() for name in (item["name"] for item in items_b))
+
+
+async def test_get_exercise_by_id_is_reachable_by_any_onboarded_user(
+    client: AsyncClient,
+) -> None:
+    """A known exercise id must resolve the same way regardless of who asks -- proving
+    no accidental per-user scoping bug hides it from (or 404s it for) one caller but
+    not another, unlike every owned resource elsewhere in this matrix.
+    """
+    user_a = await _register(client)
+    onboard_a = await _onboard(client, user_a["access_token"])
+    assert onboard_a.status_code == 201
+    listing = await _list_exercises(client, user_a["access_token"], limit=1)
+    exercise_id = json_body(listing)["items"][0]["id"]
+
+    user_b = await _register(client)
+    onboard_b = await _onboard(client, user_b["access_token"])
+    assert onboard_b.status_code == 201
+
+    response = await _get_exercise(client, user_b["access_token"], exercise_id)
+    assert response.status_code == 200
+    assert json_body(response)["exercise"]["id"] == exercise_id
+
+
+# --- T-17: POST /program/generate, GET /program, GET /program/days/{day_id} ---------------
+
+_GENERATE = "/api/v1/program/generate"
+_PROGRAM = "/api/v1/program"
+
+
+async def _generate(client: AsyncClient, access_token: str, days_per_week: int = 4) -> Response:
+    return await client.post(
+        _GENERATE, json={"days_per_week": days_per_week}, headers=_auth_headers(access_token)
+    )
+
+
+async def _get_program(client: AsyncClient, access_token: str) -> Response:
+    return await client.get(_PROGRAM, headers=_auth_headers(access_token))
+
+
+async def _get_program_day(client: AsyncClient, access_token: str, day_id: str) -> Response:
+    return await client.get(f"{_PROGRAM}/days/{day_id}", headers=_auth_headers(access_token))
+
+
+async def test_generate_program_never_supersedes_user_as_program(client: AsyncClient) -> None:
+    """User B generating their own plan must never touch user A's -- proven by A's
+    program id staying `is_current` (still returned by GET /program) after B's call,
+    the same invariant `ux_one_current_program` (§4.3) would only catch if it were
+    scoped globally instead of per-user.
+    """
+    user_a = await _register(client)
+    onboard_a = await _onboard(client, user_a["access_token"])
+    assert onboard_a.status_code == 201
+    generated_a = await _generate(client, user_a["access_token"], days_per_week=3)
+    assert generated_a.status_code == 201
+    program_a_id = json_body(generated_a)["program"]["id"]
+
+    user_b = await _register(client)
+    onboard_b = await _onboard(client, user_b["access_token"])
+    assert onboard_b.status_code == 201
+    generated_b = await _generate(client, user_b["access_token"], days_per_week=4)
+    assert generated_b.status_code == 201
+
+    still_a = await _get_program(client, user_a["access_token"])
+    assert still_a.status_code == 200
+    assert json_body(still_a)["program"]["id"] == program_a_id
+
+
+async def test_get_program_never_returns_user_as_program(client: AsyncClient) -> None:
+    user_a = await _register(client)
+    onboard_a = await _onboard(client, user_a["access_token"])
+    assert onboard_a.status_code == 201
+    generated_a = await _generate(client, user_a["access_token"])
+    assert generated_a.status_code == 201
+
+    user_b = await _register(client)
+    onboard_b = await _onboard(client, user_b["access_token"])
+    assert onboard_b.status_code == 201
+
+    # B never generated a plan; the correct 404 is theirs, not a leak of A's program.
+    response = await _get_program(client, user_b["access_token"])
+    assert response.status_code == 404
+    assert response.status_code != 403
+
+
+async def test_get_program_day_belonging_to_another_user_returns_404(client: AsyncClient) -> None:
+    """§6.5 applied to a path parameter this file's body-field scanner cannot see (see
+    the comment on this route in `expected_reference_fields` above) -- a program day is
+    owned via the parent chain (P2-ADR-09), not directly, so this is the RLS
+    parent-EXISTS policy under test, not a hand-written ownership check that could be
+    forgotten.
+    """
+    user_a = await _register(client)
+    onboard_a = await _onboard(client, user_a["access_token"])
+    assert onboard_a.status_code == 201
+    generated_a = await _generate(client, user_a["access_token"])
+    assert generated_a.status_code == 201
+    day_id = json_body(generated_a)["program"]["days"][0]["id"]
+
+    user_b = await _register(client)
+    onboard_b = await _onboard(client, user_b["access_token"])
+    assert onboard_b.status_code == 201
+
+    response = await _get_program_day(client, user_b["access_token"], day_id)
+    assert response.status_code == 404
+    assert response.status_code != 403

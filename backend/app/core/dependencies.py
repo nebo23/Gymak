@@ -12,11 +12,16 @@ from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AccountDisabledError, TokenInvalidError, TokenMissingError
+from app.core.errors import (
+    AccountDisabledError,
+    ProfileRequiredError,
+    TokenInvalidError,
+    TokenMissingError,
+)
 from app.core.security import assert_token_version_current, verify_access_token
 from app.database import get_db_session, set_rls_user
 from app.models.user import User
-from app.repositories import user_repo
+from app.repositories import profile_repo, user_repo
 
 # get_db is the name §3 gives this dependency; the engine and session factory stay in
 # database.py. An alias, not a wrapper, so there is exactly one session-producing generator
@@ -88,4 +93,25 @@ async def require_active(user: Annotated[User, Depends(get_current_user)]) -> Us
     self-documenting form at the route signature and as the seam for any future condition on
     "active" that should not gate every authenticated call.
     """
+    return user
+
+
+async def require_completed_profile(
+    user: Annotated[User, Depends(require_active)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """Phase 2 spec §5.1: 'Every one of these requires a completed profile. A request
+    from an account with onboarding_completed = false returns 409 PROFILE_REQUIRED --
+    not 404, because the resource is not missing, the precondition is.' First introduced
+    by T-16 (GET /exercises), and meant to be reused by every Phase 2 route from here
+    on -- the check itself is identical everywhere, only the route changes.
+
+    A second `profiles` read beyond `get_current_user`'s own path (that one only loads
+    `users`): profiles is FORCE ROW LEVEL SECURITY, and app.user_id is already bound by
+    `get_current_user` by the time this runs, so the read is scoped the same way any
+    other authenticated read of this user's own profile is.
+    """
+    profile = await profile_repo.get_by_user_id(session, user.id)
+    if profile is None or not profile.onboarding_completed:
+        raise ProfileRequiredError(detail="Complete onboarding before using this endpoint.")
     return user

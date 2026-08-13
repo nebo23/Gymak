@@ -106,6 +106,12 @@ class ProfileNotFoundError(AppError):
     title = "No profile exists for this account yet"
 
 
+class ExerciseNotFoundError(AppError):
+    code = "EXERCISE_NOT_FOUND"
+    status = 404
+    title = "Unknown exercise id"
+
+
 class EmailAlreadyRegisteredError(AppError):
     code = "EMAIL_ALREADY_REGISTERED"
     status = 409
@@ -122,6 +128,15 @@ class IdentityAlreadyLinkedError(AppError):
     code = "IDENTITY_ALREADY_LINKED"
     status = 409
     title = "This social identity is linked to a different account"
+
+
+class ProfileRequiredError(AppError):
+    """Phase 2 spec §5.1: every Phase 2 endpoint requires a completed profile. 409, not
+    404 -- the resource is not missing, the precondition is."""
+
+    code = "PROFILE_REQUIRED"
+    status = 409
+    title = "Onboarding must be completed first"
 
 
 class ValidationError(AppError):
