@@ -1051,6 +1051,61 @@
         "title": "ResetPasswordRequest",
         "type": "object"
       },
+      "SessionTotalsData": {
+        "properties": {
+          "sets": {
+            "title": "Sets",
+            "type": "integer"
+          },
+          "volume_kg": {
+            "title": "Volume Kg",
+            "type": "number"
+          }
+        },
+        "required": [
+          "sets",
+          "volume_kg"
+        ],
+        "title": "SessionTotalsData",
+        "type": "object"
+      },
+      "SetDerived": {
+        "description": "\u00a75.7's `derived` block -- computed fresh every time (P2-ADR-04): never stored.",
+        "properties": {
+          "e1rm_kg": {
+            "title": "E1Rm Kg",
+            "type": "number"
+          },
+          "volume_kg": {
+            "title": "Volume Kg",
+            "type": "number"
+          }
+        },
+        "required": [
+          "volume_kg",
+          "e1rm_kg"
+        ],
+        "title": "SetDerived",
+        "type": "object"
+      },
+      "SetRecordData": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "previous": {
+            "title": "Previous",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind",
+          "previous"
+        ],
+        "title": "SetRecordData",
+        "type": "object"
+      },
       "SocialSignInRequest": {
         "description": "\u00a75.4. \"The body carries exactly one field: id_token.\" Deliberately NOT\nextra=\"forbid\" like this module's other request schemas: \u00a75.4's own security note --\n\"the provider, the uid, and the email all come from the verified token -- never from\nthe request body\" -- means an attacker-supplied `email` or `provider` alongside a\nvalid id_token must be silently ignored, not rejected as an unknown field. See\ntest_social_auth.py's body-field-ignored control test.",
         "properties": {
@@ -1419,6 +1474,209 @@
           "program_day_id"
         ],
         "title": "WorkoutSessionSummary",
+        "type": "object"
+      },
+      "WorkoutSetActionResponse": {
+        "description": "\u00a75.7's POST response shape, reused for PATCH: both mutate a set and both need\nthe same freshly computed `derived`/`session_totals`/`is_record` triple\n(P2-ADR-04: computed on read, never stored -- there is no reason POST's row gets\nfresher numbers than PATCH's edited one).",
+        "properties": {
+          "is_record": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SetRecordData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_totals": {
+            "$ref": "#/components/schemas/SessionTotalsData"
+          },
+          "set": {
+            "$ref": "#/components/schemas/WorkoutSetData"
+          }
+        },
+        "required": [
+          "set",
+          "session_totals",
+          "is_record"
+        ],
+        "title": "WorkoutSetActionResponse",
+        "type": "object"
+      },
+      "WorkoutSetCreateRequest": {
+        "additionalProperties": false,
+        "description": "\u00a75.7 POST. `exercise_id` stays a bare `str` -- see the module docstring.",
+        "properties": {
+          "exercise_id": {
+            "title": "Exercise Id",
+            "type": "string"
+          },
+          "is_warmup": {
+            "default": false,
+            "title": "Is Warmup",
+            "type": "boolean"
+          },
+          "reps": {
+            "title": "Reps",
+            "type": "integer"
+          },
+          "rpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe"
+          },
+          "weight_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Weight Kg"
+          }
+        },
+        "required": [
+          "exercise_id",
+          "reps",
+          "weight_kg"
+        ],
+        "title": "WorkoutSetCreateRequest",
+        "type": "object"
+      },
+      "WorkoutSetData": {
+        "properties": {
+          "derived": {
+            "$ref": "#/components/schemas/SetDerived"
+          },
+          "exercise_id": {
+            "format": "uuid",
+            "title": "Exercise Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_warmup": {
+            "title": "Is Warmup",
+            "type": "boolean"
+          },
+          "logged_at": {
+            "format": "date-time",
+            "title": "Logged At",
+            "type": "string"
+          },
+          "reps": {
+            "title": "Reps",
+            "type": "integer"
+          },
+          "rpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe"
+          },
+          "set_index": {
+            "title": "Set Index",
+            "type": "integer"
+          },
+          "weight_kg": {
+            "title": "Weight Kg",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "exercise_id",
+          "set_index",
+          "reps",
+          "weight_kg",
+          "rpe",
+          "is_warmup",
+          "logged_at",
+          "derived"
+        ],
+        "title": "WorkoutSetData",
+        "type": "object"
+      },
+      "WorkoutSetPatchRequest": {
+        "additionalProperties": false,
+        "description": "\u00a75.7 PATCH: \"Any of reps, weight_kg, rpe, is_warmup. Not exercise_id\" --\n`exercise_id` has no field here at all, so `extra=\"forbid\"` rejects it with\nFastAPI's own body-parsing error rather than a dedicated code, matching\n`ProfileUpdateRequest`/`WorkoutFinishRequest`'s own precedent for a field that\nmust never be accepted. Every field optional, so `model_dump(exclude_unset=True)`\nin workout_service tells \"not sent\" from \"sent\" -- what a partial update needs\n(profile_service's `update_profile` sets the same convention).",
+        "properties": {
+          "is_warmup": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Warmup"
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps"
+          },
+          "rpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe"
+          },
+          "weight_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight Kg"
+          }
+        },
+        "title": "WorkoutSetPatchRequest",
         "type": "object"
       },
       "WorkoutStartRequest": {
@@ -2475,6 +2733,176 @@
           }
         ],
         "summary": "Finish Workout Route",
+        "tags": [
+          "workouts"
+        ]
+      }
+    },
+    "/api/v1/workouts/{session_id}/sets": {
+      "post": {
+        "operationId": "create_set_route_api_v1_workouts__session_id__sets_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkoutSetCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutSetActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Set Route",
+        "tags": [
+          "workouts"
+        ]
+      }
+    },
+    "/api/v1/workouts/{session_id}/sets/{set_id}": {
+      "delete": {
+        "operationId": "delete_set_route_api_v1_workouts__session_id__sets__set_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Set Route",
+        "tags": [
+          "workouts"
+        ]
+      },
+      "patch": {
+        "operationId": "update_set_route_api_v1_workouts__session_id__sets__set_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "title": "Set Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkoutSetPatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutSetActionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Set Route",
         "tags": [
           "workouts"
         ]

@@ -18,8 +18,9 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.program import Program, ProgramDay
@@ -67,6 +68,24 @@ async def get_session(
     return result.scalar_one_or_none()
 
 
+async def get_session_for_update(
+    session: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID
+) -> WorkoutSession | None:
+    """Same ownership scoping as `get_session`, but with `FOR UPDATE`: T-19's
+    `create_set` holds this lock for the rest of its transaction so a second,
+    concurrent POST for the same session cannot read `next_set_index`'s MAX(set_index)
+    before it changes underneath it -- see that function's own docstring for why a
+    lock, not a retry, is what closes the race here. PATCH/DELETE never allocate a new
+    index, so neither needs this -- `get_session` is enough for them.
+    """
+    result = await session.execute(
+        select(WorkoutSession)
+        .where(WorkoutSession.id == session_id, WorkoutSession.user_id == user_id)
+        .with_for_update()
+    )
+    return result.scalar_one_or_none()
+
+
 async def create_session(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -94,11 +113,11 @@ async def create_session(
 
 
 async def list_sets(session: AsyncSession, session_id: uuid.UUID) -> list[WorkoutSet]:
-    """§5.8: what finish needs to compute duration/volume/counts -- and, until T-19
-    adds POST /workouts/{id}/sets, what this task's own tests seed directly (T-18's
-    own note: "seed workout_sets directly in the test fixtures to exercise them").
-    No `user_id` filter: `workout_sets` carries none of its own (P2-ADR-09),
-    ownership already proven by the caller's prior `get_session` lookup.
+    """§5.8: what finish needs to compute duration/volume/counts. §5.7 (T-19): also
+    what `create_set`/`update_set` re-read after their own mutation to recompute
+    `session_totals` and `is_record` fresh (P2-ADR-04). No `user_id` filter:
+    `workout_sets` carries none of its own (P2-ADR-09), ownership already proven by
+    the caller's prior `get_session`/`get_session_for_update` lookup.
     """
     result = await session.execute(select(WorkoutSet).where(WorkoutSet.session_id == session_id))
     return list(result.scalars().all())
@@ -136,3 +155,77 @@ async def mark_abandoned(
     workout_session.ended_at = ended_at
     await session.flush()
     return workout_session
+
+
+async def next_set_index(
+    session: AsyncSession, session_id: uuid.UUID, exercise_id: uuid.UUID
+) -> int:
+    """§5.7: "the next integer for that exercise within that session." MAX(set_index)
+    + 1, not COUNT(*) + 1: DELETE never re-indexes (§5.7), so a session left with sets
+    1 and 3 (2 deleted) must produce 4 next, not 3 -- COUNT would collide with
+    `uq_workout_sets_session_exercise_index`. Concurrent callers for the same session
+    are serialized by `get_session_for_update`'s lock in the caller, not by a retry
+    here -- this function only ever runs with that lock already held.
+    """
+    result = await session.execute(
+        select(func.max(WorkoutSet.set_index)).where(
+            WorkoutSet.session_id == session_id, WorkoutSet.exercise_id == exercise_id
+        )
+    )
+    current_max = result.scalar_one_or_none()
+    return 1 if current_max is None else current_max + 1
+
+
+async def get_set(
+    session: AsyncSession, set_id: uuid.UUID, session_id: uuid.UUID
+) -> WorkoutSet | None:
+    """§7.2 SET_NOT_FOUND: "Unknown set, or not in this session" -- both collapse to
+    the same `None` here via the explicit `session_id` filter, the same generic-404
+    shape `get_session`'s own docstring uses for SESSION_NOT_FOUND."""
+    result = await session.execute(
+        select(WorkoutSet).where(WorkoutSet.id == set_id, WorkoutSet.session_id == session_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_set(
+    session: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    exercise_id: uuid.UUID,
+    set_index: int,
+    reps: int,
+    weight_kg: Decimal,
+    rpe: Decimal | None,
+    is_warmup: bool,
+) -> WorkoutSet:
+    workout_set = WorkoutSet(
+        session_id=session_id,
+        exercise_id=exercise_id,
+        set_index=set_index,
+        reps=reps,
+        weight_kg=weight_kg,
+        rpe=rpe,
+        is_warmup=is_warmup,
+    )
+    session.add(workout_set)
+    await session.flush()
+    return workout_set
+
+
+async def update_set(session: AsyncSession, workout_set: WorkoutSet, **fields: Any) -> WorkoutSet:
+    """§5.7 PATCH: apply only the fields the caller passed. Mutates the row the
+    caller already fetched (via `get_set`) rather than re-querying, matching
+    `profile_repo.update_profile`'s own `**fields` shape and `mark_finished`'s own
+    fetch-then-mutate one."""
+    for column, value in fields.items():
+        setattr(workout_set, column, value)
+    await session.flush()
+    return workout_set
+
+
+async def delete_set(session: AsyncSession, workout_set: WorkoutSet) -> None:
+    """§5.7 DELETE: "204. Remaining sets are not re-indexed" -- a plain delete, no
+    renumbering of any other row."""
+    await session.delete(workout_set)
+    await session.flush()
