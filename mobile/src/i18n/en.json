@@ -289,7 +289,11 @@
     "SOCIAL_SIGN_IN_MISCONFIGURED": "Google sign-in isn't available on this build right now. Please use email instead.",
     "PROGRAM_NOT_FOUND": "You haven't built a plan yet.",
     "SESSION_ACTIVE_BLOCKS_REGENERATION": "Finish or abandon your active workout before regenerating your plan.",
-    "PLAN_GENERATION_FAILED": "We couldn't build a plan right now. Please try again."
+    "PLAN_GENERATION_FAILED": "We couldn't build a plan right now. Please try again.",
+    "SESSION_NOT_FOUND": "We couldn't find that workout session.",
+    "SESSION_ALREADY_ACTIVE": "You already have a workout in progress.",
+    "SESSION_NOT_ACTIVE": "This workout has already been finished or abandoned.",
+    "EMPTY_SESSION": "Log at least one set before finishing your workout."
   },
   "placeholder": {
     "auth": {

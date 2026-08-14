@@ -72,6 +72,13 @@ class Profile(Base):
     onboarding_completed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    # Phase 2 §4.2, added by T-15's migration at the database level only. T-18 is the
+    # first consumer -- workout_sessions.local_date cannot be computed without it --
+    # and wires the ORM attribute plus the PATCH /profile editable-field list. IANA
+    # name, editable in Settings; T-23 sends the device zone from the client.
+    timezone: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'Africa/Cairo'")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

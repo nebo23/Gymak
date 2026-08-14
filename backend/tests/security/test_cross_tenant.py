@@ -140,6 +140,11 @@ _OWN_RESOURCE_FIELDS = {
     # their own plan, not a reference to anyone else's row; program_service resolves
     # the rest of generation entirely from the caller's own profile (§6.1's PlanInput
     # is built server-side from the authenticated user's profile, never from the body).
+    "timezone",  # T-18: ProfileUpdateRequest -- an IANA name describing the caller's
+    # own clock, not a reference to another row (validated against
+    # zoneinfo.available_timezones(), a fixed set with no per-user ownership).
+    "notes",  # T-18: WorkoutFinishRequest -- free text about the caller's own session,
+    # not a reference to anyone else's row.
 }
 
 
@@ -164,13 +169,15 @@ def test_route_enumeration_finds_the_documented_catalogue() -> None:
     """Canary for `_enumerate_api_routes` itself: Phase 1's §5.1 catalogue had 15 rows
     (14 API endpoints plus /health); T-16 (spec §5.1/§5.2) adds GET /exercises and
     GET /exercises/{id}, for 17; T-17 (§5.3-5.5) adds POST /program/generate,
-    GET /program and GET /program/days/{day_id}, for 20. If a future FastAPI version
-    changes how `include_router` wires routes again, this fails immediately instead of
-    the matrix below silently running zero cases.
+    GET /program and GET /program/days/{day_id}, for 20; T-18 (§5.6/§5.8) adds
+    POST /workouts, GET /workouts/active, POST /workouts/{id}/finish and
+    POST /workouts/{id}/abandon, for 24. If a future FastAPI version changes how
+    `include_router` wires routes again, this fails immediately instead of the matrix
+    below silently running zero cases.
     """
     routes = _enumerate_api_routes()
     found = sorted(_route_key(r) for r in routes)
-    assert len(routes) == 20, f"expected 20 routes per spec §5.1, found {len(routes)}: {found}"
+    assert len(routes) == 24, f"expected 24 routes per spec §5.1, found {len(routes)}: {found}"
 
 
 def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() -> None:
@@ -211,6 +218,21 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
         ("POST", "/program/generate"): frozenset(),
         ("GET", "/program"): frozenset(),
         ("GET", "/program/days/{day_id}"): frozenset(),
+        # T-18: POST /workouts's program_day_id names another user's program_day the
+        # same way POST /program/generate's days_per_week does not -- §5.6 states the
+        # 404 explicitly ("if the program_day_id belongs to another user's program"),
+        # so this is a second live identifier-substitution case below, not proven only
+        # by direct comparison. GET /workouts/active takes no body or path parameter.
+        # POST .../finish and .../abandon take a path `session_id` this scanner cannot
+        # see (the same body-field blind spot as GET /program/days/{day_id} above) --
+        # proven directly instead, in tests/integration/test_workout_sessions.py
+        # (test_finish_on_another_users_session_returns_404 and its abandon
+        # counterpart). `finish`'s only body field, `notes`, is reviewed into
+        # _OWN_RESOURCE_FIELDS above.
+        ("POST", "/workouts"): frozenset({"program_day_id"}),
+        ("GET", "/workouts/active"): frozenset(),
+        ("POST", "/workouts/{session_id}/finish"): frozenset(),
+        ("POST", "/workouts/{session_id}/abandon"): frozenset(),
     }
 
     assert set(user_scoped) == set(expected_reference_fields), (
@@ -226,17 +248,18 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
             "this file's cross-tenant case for it."
         )
 
-    # Of 20 enumerated routes, 8 are unauthenticated by design (register, login, social
+    # Of 24 enumerated routes, 8 are unauthenticated by design (register, login, social
     # sign-in, refresh, the three password-reset calls, and health) and are scoped, if
     # at all, by a submitted email/token under their own §7.3 error contract rather than
-    # by a bearer identity -- not this matrix's concern. The remaining 12 are user-scoped;
-    # of those, 11 accept no field that could name another user's resource at all (the
+    # by a bearer identity -- not this matrix's concern. The remaining 16 are user-scoped;
+    # of those, 14 accept no field that could name another user's resource at all (the
     # only "identifier" is the bearer token itself, a reviewed own-content field, or --
-    # for the three T-16/T-17 GET routes -- a path id), and are instead each proven
-    # isolated by their own test below; 1 (POST /auth/logout's refresh_token) does name
-    # another row and is the one live identifier-substitution case.
-    assert len(routes) == 20
-    assert len(user_scoped) == 12
+    # for the T-16/T-17/T-18 GET-and-path-id routes -- a path id), and are instead each
+    # proven isolated by their own test below; 2 (POST /auth/logout's refresh_token and
+    # POST /workouts's program_day_id) do name another row and are the live
+    # identifier-substitution cases.
+    assert len(routes) == 24
+    assert len(user_scoped) == 16
 
 
 def _reference_field_cases() -> list[tuple[str, str, str]]:
@@ -345,15 +368,27 @@ async def _load_profile(db_session: AsyncSession, user_id: uuid.UUID) -> Profile
 # --- the one live identifier-substitution case: POST /auth/logout's refresh_token ---------
 
 
-def _identifier_value_for(field: str, *, other_refresh_token: str) -> str:
-    """The real value belonging to "the other user" for a given reference field.
+async def _identifier_value_for(client: AsyncClient, field: str, *, user_a: JSONDict) -> str:
+    """The real value belonging to "the other user" (`user_a`) for a given reference
+    field.
 
     Deliberately a lookup, not a generic fabrication: a future reference field this
     file has not been taught to source raises KeyError, which fails its parametrized
     case loudly rather than silently passing an untested substitution.
     """
-    known = {"refresh_token": other_refresh_token}
-    return known[field]
+    if field == "refresh_token":
+        return str(user_a["refresh_token"])
+    if field == "program_day_id":
+        # T-18: needs a real program_day_id owned by user_a -- onboard and generate a
+        # plan for them first, the same setup test_workout_sessions.py's own
+        # another-user's-program-day case uses.
+        onboarded = await _onboard(client, user_a["access_token"])
+        assert onboarded.status_code == 201
+        generated = await _generate(client, user_a["access_token"])
+        assert generated.status_code == 201
+        day_id = json_body(generated)["program"]["days"][0]["id"]
+        return str(day_id)
+    raise KeyError(field)
 
 
 @pytest.mark.parametrize("method,path,field", _reference_field_cases())
@@ -375,9 +410,15 @@ async def test_user_b_cannot_use_user_as_identifier_on_a_reference_field(
     """
     user_a = await _register(client)
     user_b = await _register(client)
+    # Every user-scoped case below this file has reviewed requires a completed profile
+    # (require_completed_profile, per T-16/T-17/T-18) except POST /auth/logout, which
+    # onboarding never affects either way -- onboarding user_b unconditionally keeps
+    # this one case generic instead of branching per route.
+    onboard_b = await _onboard(client, user_b["access_token"])
+    assert onboard_b.status_code == 201
 
-    identifier = _identifier_value_for(field, other_refresh_token=user_a["refresh_token"])
-    body = {field: identifier} if field != "refresh_token" else {"refresh_token": identifier}
+    identifier = await _identifier_value_for(client, field, user_a=user_a)
+    body = {field: identifier}
 
     response = await client.request(
         method, f"/api/v1{path}", json=body, headers=_auth_headers(user_b["access_token"])
@@ -657,4 +698,36 @@ async def test_get_program_day_belonging_to_another_user_returns_404(client: Asy
 
     response = await _get_program_day(client, user_b["access_token"], day_id)
     assert response.status_code == 404
+    assert response.status_code != 403
+
+
+# --- T-18: GET /workouts/active -- proven by direct comparison ----------------------------
+#
+# POST /workouts/{id}/finish and .../abandon take a path `session_id` this file's
+# body-field scanner cannot see -- proven directly in
+# tests/integration/test_workout_sessions.py instead (the same pattern the comment on
+# GET /program/days/{day_id} above documents).
+
+_WORKOUTS = "/api/v1/workouts"
+_WORKOUTS_ACTIVE = "/api/v1/workouts/active"
+
+
+async def _get_active_workout(client: AsyncClient, access_token: str) -> Response:
+    return await client.get(_WORKOUTS_ACTIVE, headers=_auth_headers(access_token))
+
+
+async def test_get_active_workout_never_returns_user_as_session(client: AsyncClient) -> None:
+    user_a = await _register(client)
+    onboard_a = await _onboard(client, user_a["access_token"])
+    assert onboard_a.status_code == 201
+    started_a = await client.post(_WORKOUTS, json={}, headers=_auth_headers(user_a["access_token"]))
+    assert started_a.status_code == 201
+
+    user_b = await _register(client)
+    onboard_b = await _onboard(client, user_b["access_token"])
+    assert onboard_b.status_code == 201
+
+    # B has no session of their own -- the correct 204 is theirs, not a leak of A's.
+    response = await _get_active_workout(client, user_b["access_token"])
+    assert response.status_code == 204
     assert response.status_code != 403

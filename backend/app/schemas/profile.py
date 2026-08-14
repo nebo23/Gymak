@@ -71,6 +71,8 @@ class ProfileUpdateRequest(BaseModel):
     activity_level: str | None = None
     unit_system: str | None = None
     language: str | None = None
+    # Phase 2 §4.2, wired by T-18: "timezone joins the editable field list."
+    timezone: str | None = None
     onboarding_completed: bool | None = None
 
 
@@ -90,6 +92,7 @@ class ProfileData(BaseModel):
     activity_level: str | None
     unit_system: str
     language: str
+    timezone: str
     onboarding_completed: bool
     created_at: datetime
     updated_at: datetime

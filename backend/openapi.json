@@ -509,6 +509,10 @@
             "title": "Onboarding Completed",
             "type": "boolean"
           },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
           "unit_system": {
             "title": "Unit System",
             "type": "string"
@@ -541,6 +545,7 @@
           "activity_level",
           "unit_system",
           "language",
+          "timezone",
           "onboarding_completed",
           "created_at",
           "updated_at"
@@ -666,6 +671,17 @@
               }
             ],
             "title": "Onboarding Completed"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
           },
           "unit_system": {
             "anyOf": [
@@ -1231,6 +1247,208 @@
           "expires_in"
         ],
         "title": "VerifyCodeResponse",
+        "type": "object"
+      },
+      "WorkoutAbandonResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/WorkoutFinishedSummary"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "WorkoutAbandonResponse",
+        "type": "object"
+      },
+      "WorkoutFinishRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "title": "WorkoutFinishRequest",
+        "type": "object"
+      },
+      "WorkoutFinishResponse": {
+        "properties": {
+          "records_set": {
+            "default": [],
+            "items": {},
+            "title": "Records Set",
+            "type": "array"
+          },
+          "session": {
+            "$ref": "#/components/schemas/WorkoutFinishedSummary"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "WorkoutFinishResponse",
+        "type": "object"
+      },
+      "WorkoutFinishedSummary": {
+        "description": "\u00a75.8's session object -- returned by both finish and abandon. Abandon leaves\n`duration_seconds`/`total_volume_kg` null: \"abandon ... computes nothing\" (\u00a75.8),\nso those two fields on the row are whatever they already were (always NULL,\nsince a session that never finished never had them set).",
+        "properties": {
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "exercise_count": {
+            "title": "Exercise Count",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "set_count": {
+            "title": "Set Count",
+            "type": "integer"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "total_volume_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Volume Kg"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "started_at",
+          "ended_at",
+          "duration_seconds",
+          "total_volume_kg",
+          "set_count",
+          "exercise_count"
+        ],
+        "title": "WorkoutFinishedSummary",
+        "type": "object"
+      },
+      "WorkoutSessionSummary": {
+        "description": "\u00a75.6's session object -- the shape POST /workouts and GET /workouts/active\nboth return. `sets` is always `[]` here: no endpoint in this task can populate\none (T-19 owns POST /workouts/{id}/sets and its response shape), the same kind\nof deliberate, documented placeholder schemas/program.py's\n`last_performance: None` is for the same T-18/T-19 gap.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "local_date": {
+            "format": "date",
+            "title": "Local Date",
+            "type": "string"
+          },
+          "program_day_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Program Day Id"
+          },
+          "sets": {
+            "default": [],
+            "items": {},
+            "title": "Sets",
+            "type": "array"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "started_at",
+          "local_date",
+          "program_day_id"
+        ],
+        "title": "WorkoutSessionSummary",
+        "type": "object"
+      },
+      "WorkoutStartRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "program_day_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Program Day Id"
+          }
+        },
+        "title": "WorkoutStartRequest",
+        "type": "object"
+      },
+      "WorkoutStartResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/WorkoutSessionSummary"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "WorkoutStartResponse",
         "type": "object"
       }
     },
@@ -2084,6 +2302,181 @@
         "summary": "Generate Program Route",
         "tags": [
           "program"
+        ]
+      }
+    },
+    "/api/v1/workouts": {
+      "post": {
+        "operationId": "start_workout_route_api_v1_workouts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkoutStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Workout Route",
+        "tags": [
+          "workouts"
+        ]
+      }
+    },
+    "/api/v1/workouts/active": {
+      "get": {
+        "description": "\u00a75.1: \"the in-progress session, or 204.\" `response_model=None` so FastAPI\npasses a raw 204 Response straight through instead of trying to validate it\nagainst a body-carrying model.",
+        "operationId": "get_active_workout_route_api_v1_workouts_active_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Active Workout Route",
+        "tags": [
+          "workouts"
+        ]
+      }
+    },
+    "/api/v1/workouts/{session_id}/abandon": {
+      "post": {
+        "operationId": "abandon_workout_route_api_v1_workouts__session_id__abandon_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutAbandonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Abandon Workout Route",
+        "tags": [
+          "workouts"
+        ]
+      }
+    },
+    "/api/v1/workouts/{session_id}/finish": {
+      "post": {
+        "operationId": "finish_workout_route_api_v1_workouts__session_id__finish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkoutFinishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutFinishResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Finish Workout Route",
+        "tags": [
+          "workouts"
         ]
       }
     }

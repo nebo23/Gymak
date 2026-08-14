@@ -5,6 +5,7 @@ schema, the authenticated User) and gets a plain model or tuple back.
 
 from __future__ import annotations
 
+import zoneinfo
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -68,6 +69,9 @@ _EXPERIENCE_LEVELS = {"beginner", "intermediate", "advanced"}
 _ACTIVITY_LEVELS = {"sedentary", "light", "moderate", "high", "very_high"}
 _UNIT_SYSTEMS = {"metric", "imperial"}
 _LANGUAGES = {"ar", "en"}
+# §7.1: "timezone: a valid IANA name (zoneinfo.available_timezones())." Computed once
+# at import -- the underlying tzdata does not change within a process's lifetime.
+_TIMEZONES = zoneinfo.available_timezones()
 
 _MIN_AGE = 13
 _MAX_AGE = 100
@@ -164,6 +168,14 @@ def validate_unit_system(value: str) -> str:
 def validate_language(value: str) -> str:
     if value not in _LANGUAGES:
         raise _field_error("language", "NOT_ALLOWED", "language must be 'ar' or 'en'.")
+    return value
+
+
+def validate_timezone(value: str) -> str:
+    """§7.1/§4.2: "timezone: a valid IANA name." A client that omits it on new writes
+    (or sends a stale/misspelled one) is a bug the test suite catches (§4.2's note)."""
+    if value not in _TIMEZONES:
+        raise _field_error("timezone", "INVALID", "timezone must be a valid IANA name.")
     return value
 
 
@@ -298,6 +310,8 @@ async def update_profile(session: AsyncSession, user: User, body: ProfileUpdateR
         updates["unit_system"] = validate_unit_system(changes["unit_system"])
     if "language" in changes:
         updates["language"] = validate_language(changes["language"])
+    if "timezone" in changes:
+        updates["timezone"] = validate_timezone(changes["timezone"])
 
     # Re-checked on every PATCH (§5.8/§5.9), against the state that will result once
     # this update applies -- not just when birth_date or goal is the field that changed.

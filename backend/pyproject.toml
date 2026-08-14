@@ -22,6 +22,12 @@ dependencies = [
   # Identity broker only (P1-ADR-01) -- verifies a Google sign-in really happened;
   # never Firestore, never Firebase-managed email/password accounts.
   "firebase-admin>=6.5",
+  # T-18: pure IANA tz data, no code. Windows and slim-Linux base images ship no
+  # system tzdata, so stdlib `zoneinfo` (Phase 2 A.2's "zoneinfo covers everything")
+  # cannot resolve any zone without it -- `ZoneInfo(profile.timezone)` and
+  # `zoneinfo.available_timezones()` both need this to work on every deployment target,
+  # not only ones that happen to have the OS package installed.
+  "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
