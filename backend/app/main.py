@@ -13,7 +13,7 @@ from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.database import assert_connection_is_not_privileged
 from app.integrations import firebase
-from app.routers import account, auth, exercises, health, profile, program, workouts
+from app.routers import account, auth, body_weight, exercises, health, profile, program, workouts
 
 # Spec 6.5: security headers on every response.
 _SECURITY_HEADERS = {
@@ -94,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(exercises.router, prefix="/api/v1")
     app.include_router(program.router, prefix="/api/v1")
     app.include_router(workouts.router, prefix="/api/v1")
+    app.include_router(body_weight.router, prefix="/api/v1")
 
     return app
 

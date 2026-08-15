@@ -6,7 +6,7 @@ schema, the authenticated User) and gets a plain model or tuple back.
 from __future__ import annotations
 
 import zoneinfo
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -21,7 +21,7 @@ from app.core.errors import (
 )
 from app.models.profile import Profile
 from app.models.user import User
-from app.repositories import audit_repo, profile_repo
+from app.repositories import audit_repo, body_weight_repo, profile_repo
 from app.schemas.profile import ProfileCreateRequest, ProfileUpdateRequest
 
 # =========================================================================================
@@ -267,6 +267,11 @@ async def update_profile(session: AsyncSession, user: User, body: ProfileUpdateR
     "A client sending it is ignored, not rejected" -- so it can never appear in `changes`
     even though the schema accepts it. gender/birth_date changes are audited with their
     before and after value; the rest are not (the table marks only those two "audited").
+
+    P2-ADR-06's second direction: a `weight_kg` change also upserts today's
+    body-weight entry, in the same transaction, so PATCH /profile and PUT /body-weight
+    (T-20, body_weight_service.py) can never leave the log and the profile's cached
+    head disagreeing about the caller's most recent weight.
     """
     profile = await get_profile(session, user)
 
@@ -320,6 +325,22 @@ async def update_profile(session: AsyncSession, user: User, body: ProfileUpdateR
     assert_goal_permitted(resulting_birth_date, resulting_goal)
 
     updated = await profile_repo.update_profile(session, user.id, **updates)
+
+    # P2-ADR-06: "Editing weight_kg through PATCH /profile also upserts today's
+    # body-weight entry, so the two surfaces cannot diverge." Only when weight_kg is
+    # being set to a real value -- clearing it (weight_kg: null) leaves nothing to
+    # log. "Today" resolves through whichever timezone is in effect once this same
+    # PATCH applies (the same resulting_* pattern assert_goal_permitted uses above),
+    # so a request that changes both timezone and weight_kg in one call logs against
+    # the new zone's today, not the old one's. `upsert_weight_only`, not `upsert`:
+    # this caller knows only a weight, never a note, so an existing note on today's
+    # entry must survive untouched (see that repo function's own docstring).
+    if "weight_kg" in changes and updates["weight_kg"] is not None:
+        resulting_timezone = updates.get("timezone", profile.timezone)
+        today_local = datetime.now(UTC).astimezone(zoneinfo.ZoneInfo(resulting_timezone)).date()
+        await body_weight_repo.upsert_weight_only(
+            session, user.id, measured_on=today_local, weight_kg=updates["weight_kg"]
+        )
 
     if audit_metadata:
         await audit_repo.record(

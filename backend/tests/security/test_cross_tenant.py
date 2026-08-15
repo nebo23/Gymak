@@ -153,6 +153,11 @@ _OWN_RESOURCE_FIELDS = {
     "rpe",
     "is_warmup",  # T-19: WorkoutSet{Create,Patch}Request -- the caller's own set
     # content, not a reference to anyone else's row. (weight_kg already reviewed above.)
+    "measured_on",  # T-20: BodyWeightUpsertRequest -- the calendar day the caller is
+    # logging against, not a reference to anyone else's row; body_weight_entries has no
+    # cross-user addressing at all (UNIQUE per (user_id, measured_on), §4.8).
+    "note",  # T-20: BodyWeightUpsertRequest -- free text about the caller's own entry,
+    # not a reference to anyone else's row. (weight_kg already reviewed above.)
 }
 
 
@@ -180,13 +185,14 @@ def test_route_enumeration_finds_the_documented_catalogue() -> None:
     GET /program and GET /program/days/{day_id}, for 20; T-18 (§5.6/§5.8) adds
     POST /workouts, GET /workouts/active, POST /workouts/{id}/finish and
     POST /workouts/{id}/abandon, for 24; T-19 (§5.7) adds POST, PATCH and DELETE
-    /workouts/{id}/sets[/{set_id}], for 27. If a future FastAPI version changes how
+    /workouts/{id}/sets[/{set_id}], for 27; T-20 (§5.10) adds PUT, GET and DELETE
+    /body-weight[/{measured_on}], for 30. If a future FastAPI version changes how
     `include_router` wires routes again, this fails immediately instead of the matrix
     below silently running zero cases.
     """
     routes = _enumerate_api_routes()
     found = sorted(_route_key(r) for r in routes)
-    assert len(routes) == 27, f"expected 27 routes per spec §5.1, found {len(routes)}: {found}"
+    assert len(routes) == 30, f"expected 30 routes per spec §5.1, found {len(routes)}: {found}"
 
 
 def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() -> None:
@@ -254,6 +260,19 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
         ("POST", "/workouts/{session_id}/sets"): frozenset(),
         ("PATCH", "/workouts/{session_id}/sets/{set_id}"): frozenset(),
         ("DELETE", "/workouts/{session_id}/sets/{set_id}"): frozenset(),
+        # T-20: PUT /body-weight's fields (measured_on, weight_kg, note) are all
+        # reviewed into _OWN_RESOURCE_FIELDS above -- body_weight_entries has no
+        # cross-user addressing at all (UNIQUE per (user_id, measured_on)), so there is
+        # no "another user's entry" for any of them to name. GET /body-weight takes
+        # only query params, no body. DELETE /body-weight/{measured_on} takes a path
+        # parameter this scanner cannot see (the same blind spot as GET
+        # /program/days/{day_id} and the workout-sets routes above) -- proven directly
+        # instead in tests/integration/test_body_weight.py
+        # (test_delete_cannot_reach_another_users_entry_by_the_same_date), which also
+        # proves GET's own isolation by direct comparison.
+        ("PUT", "/body-weight"): frozenset(),
+        ("GET", "/body-weight"): frozenset(),
+        ("DELETE", "/body-weight/{measured_on}"): frozenset(),
     }
 
     assert set(user_scoped) == set(expected_reference_fields), (
@@ -269,18 +288,18 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
             "this file's cross-tenant case for it."
         )
 
-    # Of 27 enumerated routes, 8 are unauthenticated by design (register, login, social
+    # Of 30 enumerated routes, 8 are unauthenticated by design (register, login, social
     # sign-in, refresh, the three password-reset calls, and health) and are scoped, if
     # at all, by a submitted email/token under their own §7.3 error contract rather than
-    # by a bearer identity -- not this matrix's concern. The remaining 19 are user-scoped;
-    # of those, 17 accept no field that could name another user's resource at all (the
+    # by a bearer identity -- not this matrix's concern. The remaining 22 are user-scoped;
+    # of those, 20 accept no field that could name another user's resource at all (the
     # only "identifier" is the bearer token itself, a reviewed own-content field, or --
-    # for the T-16/T-17/T-18/T-19 GET-and-path-id routes -- a path id), and are instead
-    # each proven isolated by their own test below; 2 (POST /auth/logout's refresh_token
-    # and POST /workouts's program_day_id) do name another row and are the live
-    # identifier-substitution cases.
-    assert len(routes) == 27
-    assert len(user_scoped) == 19
+    # for the T-16/T-17/T-18/T-19/T-20 GET-and-path-id routes -- a path id), and are
+    # instead each proven isolated by their own test below; 2 (POST /auth/logout's
+    # refresh_token and POST /workouts's program_day_id) do name another row and are the
+    # live identifier-substitution cases.
+    assert len(routes) == 30
+    assert len(user_scoped) == 22
 
 
 def _reference_field_cases() -> list[tuple[str, str, str]]:

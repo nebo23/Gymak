@@ -69,6 +69,210 @@
         "title": "AuthMeUser",
         "type": "object"
       },
+      "BodyWeightEntryData": {
+        "description": "The full row shape -- PUT's own `entry` object.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "measured_on": {
+            "format": "date",
+            "title": "Measured On",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "weight_kg": {
+            "title": "Weight Kg",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "measured_on",
+          "weight_kg",
+          "note",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "BodyWeightEntryData",
+        "type": "object"
+      },
+      "BodyWeightListResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/BodyWeightPoint"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "moving_average_7d": {
+            "items": {
+              "$ref": "#/components/schemas/BodyWeightPoint"
+            },
+            "title": "Moving Average 7D",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/BodyWeightSummaryData"
+          }
+        },
+        "required": [
+          "entries",
+          "moving_average_7d",
+          "summary"
+        ],
+        "title": "BodyWeightListResponse",
+        "type": "object"
+      },
+      "BodyWeightPoint": {
+        "description": "\u00a75.10 GET's own worked example shape, shared by `entries` and\n`moving_average_7d` -- both are lean `{measured_on, weight_kg}` pairs, nothing more.",
+        "properties": {
+          "measured_on": {
+            "format": "date",
+            "title": "Measured On",
+            "type": "string"
+          },
+          "weight_kg": {
+            "title": "Weight Kg",
+            "type": "number"
+          }
+        },
+        "required": [
+          "measured_on",
+          "weight_kg"
+        ],
+        "title": "BodyWeightPoint",
+        "type": "object"
+      },
+      "BodyWeightSummaryData": {
+        "description": "\u00a75.10's `summary` block. All four are null/zero on an empty range -- there is no\nentry to report `first`/`latest`/`change_kg` from, and that is a well-formed 200,\nnot an error (P2-FR-009 is a log the caller may legitimately have zero rows in for\nany given window, unlike GET /program's \"never generated one\" 404).",
+        "properties": {
+          "change_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Kg"
+          },
+          "entry_count": {
+            "title": "Entry Count",
+            "type": "integer"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest"
+          }
+        },
+        "required": [
+          "first",
+          "latest",
+          "change_kg",
+          "entry_count"
+        ],
+        "title": "BodyWeightSummaryData",
+        "type": "object"
+      },
+      "BodyWeightUpsertRequest": {
+        "additionalProperties": false,
+        "description": "\u00a75.10 PUT. `note` defaults to `None` -- PUT is a full replace (P2-ADR-06: \"same-day\nwrites replace\"), so an omitted `note` clears one exactly the same as an explicit\n`null` would, matching the wire example's own `\"note\": null`.",
+        "properties": {
+          "measured_on": {
+            "title": "Measured On",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "weight_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Weight Kg"
+          }
+        },
+        "required": [
+          "measured_on",
+          "weight_kg"
+        ],
+        "title": "BodyWeightUpsertRequest",
+        "type": "object"
+      },
+      "BodyWeightUpsertResponse": {
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/BodyWeightEntryData"
+          },
+          "profile_weight_updated": {
+            "title": "Profile Weight Updated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entry",
+          "profile_weight_updated"
+        ],
+        "title": "BodyWeightUpsertResponse",
+        "type": "object"
+      },
       "DeleteAccountRequest": {
         "additionalProperties": false,
         "description": "\u00a75.10: \"password required when password_hash is not null; omitted for\nsocial-only accounts.\" `password` is optional at the schema level -- whether it\nis actually required depends on the authenticated user's row, which the schema\ncannot see, so auth_service.delete_account enforces that. A social-only caller\nstill sends a JSON object (`{}`); FastAPI has no body to parse from a request\nwith no content at all, only from an empty object.",
@@ -2141,6 +2345,162 @@
         "summary": "Social Sign In Route",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/body-weight": {
+      "get": {
+        "operationId": "list_body_weight_route_api_v1_body_weight_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BodyWeightListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Body Weight Route",
+        "tags": [
+          "body-weight"
+        ]
+      },
+      "put": {
+        "operationId": "upsert_body_weight_route_api_v1_body_weight_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BodyWeightUpsertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BodyWeightUpsertResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upsert Body Weight Route",
+        "tags": [
+          "body-weight"
+        ]
+      }
+    },
+    "/api/v1/body-weight/{measured_on}": {
+      "delete": {
+        "operationId": "delete_body_weight_route_api_v1_body_weight__measured_on__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "measured_on",
+            "required": true,
+            "schema": {
+              "title": "Measured On",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Body Weight Route",
+        "tags": [
+          "body-weight"
         ]
       }
     },
