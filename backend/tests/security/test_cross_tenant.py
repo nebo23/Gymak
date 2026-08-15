@@ -186,13 +186,14 @@ def test_route_enumeration_finds_the_documented_catalogue() -> None:
     POST /workouts, GET /workouts/active, POST /workouts/{id}/finish and
     POST /workouts/{id}/abandon, for 24; T-19 (§5.7) adds POST, PATCH and DELETE
     /workouts/{id}/sets[/{set_id}], for 27; T-20 (§5.10) adds PUT, GET and DELETE
-    /body-weight[/{measured_on}], for 30. If a future FastAPI version changes how
+    /body-weight[/{measured_on}], for 30; T-21 adds GET /records and GET /dashboard,
+    for 32. If a future FastAPI version changes how
     `include_router` wires routes again, this fails immediately instead of the matrix
     below silently running zero cases.
     """
     routes = _enumerate_api_routes()
     found = sorted(_route_key(r) for r in routes)
-    assert len(routes) == 30, f"expected 30 routes per spec §5.1, found {len(routes)}: {found}"
+    assert len(routes) == 32, f"expected 32 routes per spec §5.1, found {len(routes)}: {found}"
 
 
 def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() -> None:
@@ -273,6 +274,17 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
         ("PUT", "/body-weight"): frozenset(),
         ("GET", "/body-weight"): frozenset(),
         ("DELETE", "/body-weight/{measured_on}"): frozenset(),
+        # T-21: GET /records takes only a query parameter (exercise_id), never a body
+        # field, so this scanner's body-only view sees nothing at all -- and even that
+        # query parameter names a public Exercise row (no owner, P2-ADR-09's stated
+        # exception), not another user's data, the same reasoning already reviewed for
+        # WorkoutSetCreateRequest.exercise_id above. Proven directly instead, in
+        # tests/integration/test_dashboard.py
+        # (test_records_never_returns_another_users_sets). GET /dashboard takes no
+        # parameter of any kind -- "whose data" is entirely the bearer token, proven
+        # the same way in that file's test_dashboard_never_reflects_another_users_data.
+        ("GET", "/records"): frozenset(),
+        ("GET", "/dashboard"): frozenset(),
     }
 
     assert set(user_scoped) == set(expected_reference_fields), (
@@ -288,18 +300,18 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
             "this file's cross-tenant case for it."
         )
 
-    # Of 30 enumerated routes, 8 are unauthenticated by design (register, login, social
+    # Of 32 enumerated routes, 8 are unauthenticated by design (register, login, social
     # sign-in, refresh, the three password-reset calls, and health) and are scoped, if
     # at all, by a submitted email/token under their own §7.3 error contract rather than
-    # by a bearer identity -- not this matrix's concern. The remaining 22 are user-scoped;
-    # of those, 20 accept no field that could name another user's resource at all (the
+    # by a bearer identity -- not this matrix's concern. The remaining 24 are user-scoped;
+    # of those, 22 accept no field that could name another user's resource at all (the
     # only "identifier" is the bearer token itself, a reviewed own-content field, or --
-    # for the T-16/T-17/T-18/T-19/T-20 GET-and-path-id routes -- a path id), and are
+    # for the T-16/T-17/T-18/T-19/T-20/T-21 GET-and-path-id routes -- a path id), and are
     # instead each proven isolated by their own test below; 2 (POST /auth/logout's
     # refresh_token and POST /workouts's program_day_id) do name another row and are the
     # live identifier-substitution cases.
-    assert len(routes) == 30
-    assert len(user_scoped) == 22
+    assert len(routes) == 32
+    assert len(user_scoped) == 24
 
 
 def _reference_field_cases() -> list[tuple[str, str, str]]:

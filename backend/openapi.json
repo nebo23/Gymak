@@ -69,6 +69,60 @@
         "title": "AuthMeUser",
         "type": "object"
       },
+      "BestE1rmData": {
+        "properties": {
+          "local_date": {
+            "format": "date",
+            "title": "Local Date",
+            "type": "string"
+          },
+          "reps": {
+            "title": "Reps",
+            "type": "integer"
+          },
+          "value_kg": {
+            "title": "Value Kg",
+            "type": "number"
+          },
+          "weight_kg": {
+            "title": "Weight Kg",
+            "type": "number"
+          }
+        },
+        "required": [
+          "value_kg",
+          "weight_kg",
+          "reps",
+          "local_date"
+        ],
+        "title": "BestE1rmData",
+        "type": "object"
+      },
+      "BestSessionVolumeData": {
+        "properties": {
+          "local_date": {
+            "format": "date",
+            "title": "Local Date",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "volume_kg": {
+            "title": "Volume Kg",
+            "type": "number"
+          }
+        },
+        "required": [
+          "volume_kg",
+          "session_id",
+          "local_date"
+        ],
+        "title": "BestSessionVolumeData",
+        "type": "object"
+      },
       "BodyWeightEntryData": {
         "description": "The full row shape -- PUT's own `entry` object.",
         "properties": {
@@ -271,6 +325,83 @@
           "profile_weight_updated"
         ],
         "title": "BodyWeightUpsertResponse",
+        "type": "object"
+      },
+      "DashboardResponse": {
+        "properties": {
+          "active_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkoutSessionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disclaimer_key": {
+            "title": "Disclaimer Key",
+            "type": "string"
+          },
+          "greeting_name": {
+            "title": "Greeting Name",
+            "type": "string"
+          },
+          "next_workout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NextWorkoutData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "program_stale": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Program Stale"
+          },
+          "recent_records": {
+            "items": {
+              "$ref": "#/components/schemas/RecentRecordData"
+            },
+            "title": "Recent Records",
+            "type": "array"
+          },
+          "streak": {
+            "$ref": "#/components/schemas/StreakData"
+          },
+          "this_week": {
+            "$ref": "#/components/schemas/ThisWeekData"
+          },
+          "weight": {
+            "additionalProperties": true,
+            "title": "Weight",
+            "type": "object"
+          }
+        },
+        "required": [
+          "greeting_name",
+          "active_session",
+          "next_workout",
+          "streak",
+          "this_week",
+          "weight",
+          "recent_records",
+          "program_stale",
+          "disclaimer_key"
+        ],
+        "title": "DashboardResponse",
         "type": "object"
       },
       "DeleteAccountRequest": {
@@ -527,6 +658,36 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HeaviestSetData": {
+        "properties": {
+          "local_date": {
+            "format": "date",
+            "title": "Local Date",
+            "type": "string"
+          },
+          "reps": {
+            "title": "Reps",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "weight_kg": {
+            "title": "Weight Kg",
+            "type": "number"
+          }
+        },
+        "required": [
+          "weight_kg",
+          "reps",
+          "session_id",
+          "local_date"
+        ],
+        "title": "HeaviestSetData",
+        "type": "object"
+      },
       "LoginRequest": {
         "additionalProperties": false,
         "properties": {
@@ -559,6 +720,40 @@
           "refresh_token"
         ],
         "title": "LogoutRequest",
+        "type": "object"
+      },
+      "NextWorkoutData": {
+        "properties": {
+          "day_index": {
+            "title": "Day Index",
+            "type": "integer"
+          },
+          "estimated_minutes": {
+            "title": "Estimated Minutes",
+            "type": "integer"
+          },
+          "exercise_count": {
+            "title": "Exercise Count",
+            "type": "integer"
+          },
+          "label_key": {
+            "title": "Label Key",
+            "type": "string"
+          },
+          "program_day_id": {
+            "format": "uuid",
+            "title": "Program Day Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "program_day_id",
+          "day_index",
+          "label_key",
+          "exercise_count",
+          "estimated_minutes"
+        ],
+        "title": "NextWorkoutData",
         "type": "object"
       },
       "ProfileCreateRequest": {
@@ -1196,6 +1391,104 @@
         "title": "ProgramSummary",
         "type": "object"
       },
+      "RecentRecordData": {
+        "properties": {
+          "exercise_name": {
+            "title": "Exercise Name",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "local_date": {
+            "format": "date",
+            "title": "Local Date",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "exercise_name",
+          "kind",
+          "value",
+          "local_date"
+        ],
+        "title": "RecentRecordData",
+        "type": "object"
+      },
+      "RecordEntryData": {
+        "properties": {
+          "best_e1rm": {
+            "$ref": "#/components/schemas/BestE1rmData"
+          },
+          "best_session_volume": {
+            "$ref": "#/components/schemas/BestSessionVolumeData"
+          },
+          "exercise": {
+            "$ref": "#/components/schemas/RecordExerciseRef"
+          },
+          "heaviest_set": {
+            "$ref": "#/components/schemas/HeaviestSetData"
+          },
+          "total_sets": {
+            "title": "Total Sets",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "exercise",
+          "heaviest_set",
+          "best_e1rm",
+          "best_session_volume",
+          "total_sets"
+        ],
+        "title": "RecordEntryData",
+        "type": "object"
+      },
+      "RecordExerciseRef": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "title": "RecordExerciseRef",
+        "type": "object"
+      },
+      "RecordsResponse": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/RecordEntryData"
+            },
+            "title": "Records",
+            "type": "array"
+          }
+        },
+        "required": [
+          "records"
+        ],
+        "title": "RecordsResponse",
+        "type": "object"
+      },
       "RefreshRequest": {
         "additionalProperties": false,
         "description": "\u00a75.5. The opaque refresh token is the only field -- there is no bearer here.",
@@ -1365,6 +1658,61 @@
           "is_new_user"
         ],
         "title": "SocialSignInResponse",
+        "type": "object"
+      },
+      "StreakData": {
+        "properties": {
+          "current_days": {
+            "title": "Current Days",
+            "type": "integer"
+          },
+          "last_workout_local_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Workout Local Date"
+          },
+          "longest_days": {
+            "title": "Longest Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "current_days",
+          "longest_days",
+          "last_workout_local_date"
+        ],
+        "title": "StreakData",
+        "type": "object"
+      },
+      "ThisWeekData": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "local_week_start": {
+            "format": "date",
+            "title": "Local Week Start",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "completed",
+          "target",
+          "local_week_start"
+        ],
+        "title": "ThisWeekData",
         "type": "object"
       },
       "TokenPairResponse": {
@@ -2504,6 +2852,32 @@
         ]
       }
     },
+    "/api/v1/dashboard": {
+      "get": {
+        "operationId": "get_dashboard_route_api_v1_dashboard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Dashboard Route",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/api/v1/exercises": {
       "get": {
         "operationId": "list_exercises_route_api_v1_exercises_get",
@@ -2920,6 +3294,60 @@
         "summary": "Generate Program Route",
         "tags": [
           "program"
+        ]
+      }
+    },
+    "/api/v1/records": {
+      "get": {
+        "operationId": "get_records_route_api_v1_records_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "exercise_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Exercise Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Records Route",
+        "tags": [
+          "records"
         ]
       }
     },

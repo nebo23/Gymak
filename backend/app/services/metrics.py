@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 
@@ -71,3 +71,103 @@ def session_duration_seconds(started_at: datetime, last_logged_at: datetime | No
     if last_logged_at is None:
         return 0
     return max(0, int((last_logged_at - started_at).total_seconds()))
+
+
+# =========================================================================================
+# §5.12 `streak` (T-21). workout_sessions.local_date (§4.6) is resolved once, at insert,
+# through the profile timezone in effect *then*, and stored -- "so the streak never
+# re-derives a timezone at read time" (that model's own docstring). This function is
+# therefore pure `date` arithmetic over already-frozen local dates plus one externally
+# supplied `today`: it never touches zoneinfo, never subtracts one `datetime` from
+# another, and never assumes what "now" is -- the caller (dashboard_service) is the one
+# place that resolves `today` through the profile's *current* timezone. Walking `date`
+# objects with `timedelta(days=1)` rather than `datetime`/epoch arithmetic is also what
+# makes this immune to a DST transition's missing or repeated wall-clock hour -- there is
+# no wall-clock hour here to miss or repeat.
+# =========================================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class StreakResult:
+    current_days: int
+    longest_days: int
+    last_workout_local_date: date | None
+
+
+def compute_streak(local_dates: Iterable[date], *, today: date) -> StreakResult:
+    """§5.12: "Consecutive calendar days with at least one completed session ... Today
+    not yet trained does not break it; yesterday untrained does." `local_dates` may
+    contain duplicates (more than one completed session on the same calendar day) --
+    deduplicated via `set()` before any run-length arithmetic, since a repeated date
+    must count once, not extend a run twice.
+    """
+    distinct_dates = sorted(set(local_dates))
+    if not distinct_dates:
+        return StreakResult(current_days=0, longest_days=0, last_workout_local_date=None)
+
+    longest_days = 1
+    current_run = 1
+    for previous, current in zip(distinct_dates, distinct_dates[1:], strict=False):
+        if current == previous + timedelta(days=1):
+            current_run += 1
+        else:
+            current_run = 1
+        longest_days = max(longest_days, current_run)
+
+    date_set = set(distinct_dates)
+    last_workout_local_date = distinct_dates[-1]
+
+    if today in date_set:
+        cursor = today
+    elif (today - timedelta(days=1)) in date_set:
+        cursor = today - timedelta(days=1)
+    else:
+        return StreakResult(
+            current_days=0,
+            longest_days=longest_days,
+            last_workout_local_date=last_workout_local_date,
+        )
+
+    current_days = 0
+    while cursor in date_set:
+        current_days += 1
+        cursor -= timedelta(days=1)
+
+    return StreakResult(
+        current_days=current_days,
+        longest_days=longest_days,
+        last_workout_local_date=last_workout_local_date,
+    )
+
+
+# =========================================================================================
+# §5.12 `next_workout.estimated_minutes` (T-21)
+# =========================================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class ProgramDayLoadInput:
+    """The two fields §5.12's formula actually needs from a `program_exercises` row --
+    deliberately not `app.models.program.ProgramExercise` itself, matching
+    `SetMetricInput`'s own precedent of taking plain fields rather than an ORM row so
+    this module keeps its no-`models/`-dependency boundary (see the module docstring).
+    """
+
+    target_sets: int
+    rest_seconds: int
+
+
+def estimated_session_minutes(entries: Iterable[ProgramDayLoadInput]) -> int:
+    """§5.12: "Σ target_sets × (rest_seconds + 40), rounded to five minutes ... It is
+    arithmetic over stored targets -- not a prediction." The sum is in seconds
+    (`rest_seconds` is seconds, `+ 40` is a per-set working-time estimate in seconds);
+    converted to minutes and rounded to the nearest five with the same
+    `ROUND_HALF_UP` convention `estimate_one_rep_max`/body_weight_service's moving
+    average already use, rather than left to `round()`'s banker's-rounding default.
+    """
+    total_seconds = sum(entry.target_sets * (entry.rest_seconds + 40) for entry in entries)
+    total_minutes = Decimal(total_seconds) / Decimal(60)
+    rounded_five_minute_units = (total_minutes / Decimal(5)).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    return int(rounded_five_minute_units) * 5

@@ -18,11 +18,14 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, PlainSerializer
 
 from app.models.body_weight import BodyWeightEntry
+from app.models.exercise import Exercise
+from app.models.workout import WorkoutSession, WorkoutSet
+from app.schemas.workout import WorkoutSessionSummary, build_session_summary
 
 # Same convention as schemas/workout.py's/profile.py's own DecimalAsFloat: Numeric
 # columns parse into Decimal, but §5's wire format is a JSON number.
@@ -93,3 +96,180 @@ class BodyWeightListResponse(BaseModel):
 
 def build_entry_data(entry: BodyWeightEntry) -> BodyWeightEntryData:
     return BodyWeightEntryData.model_validate(entry)
+
+
+def _resolved_name(exercise: Exercise, language: str) -> str:
+    """Same resolution as schemas/exercise.py's own (private) `_resolved_name` --
+    reimplemented here rather than imported, matching schemas/program.py's own
+    `build_program_day_detail` precedent of resolving a caller's-language name inside
+    the schema builder itself, not the service that fetched the row."""
+    return exercise.name_ar if language == "ar" else exercise.name_en
+
+
+# =========================================================================================
+# §5.11 GET /records (T-21), P2-ADR-05
+# =========================================================================================
+
+
+class RecordExerciseRef(BaseModel):
+    id: uuid.UUID
+    slug: str
+    name: str
+
+
+class HeaviestSetData(BaseModel):
+    weight_kg: DecimalAsFloat
+    reps: int
+    session_id: uuid.UUID
+    local_date: date
+
+
+class BestE1rmData(BaseModel):
+    value_kg: DecimalAsFloat
+    weight_kg: DecimalAsFloat
+    reps: int
+    local_date: date
+
+
+class BestSessionVolumeData(BaseModel):
+    volume_kg: DecimalAsFloat
+    session_id: uuid.UUID
+    local_date: date
+
+
+class RecordEntryData(BaseModel):
+    exercise: RecordExerciseRef
+    heaviest_set: HeaviestSetData
+    best_e1rm: BestE1rmData
+    best_session_volume: BestSessionVolumeData
+    total_sets: int
+
+
+class RecordsResponse(BaseModel):
+    records: list[RecordEntryData]
+
+
+def build_record_entry(
+    *,
+    exercise: Exercise,
+    language: str,
+    heaviest_set: WorkoutSet,
+    heaviest_set_local_date: date,
+    best_e1rm_set: WorkoutSet,
+    best_e1rm_value_kg: Decimal,
+    best_e1rm_local_date: date,
+    best_session_volume_kg: Decimal,
+    best_session_volume_session_id: uuid.UUID,
+    best_session_volume_local_date: date,
+    total_sets: int,
+) -> RecordEntryData:
+    return RecordEntryData(
+        exercise=RecordExerciseRef(
+            id=exercise.id, slug=exercise.slug, name=_resolved_name(exercise, language)
+        ),
+        heaviest_set=HeaviestSetData(
+            weight_kg=heaviest_set.weight_kg,
+            reps=heaviest_set.reps,
+            session_id=heaviest_set.session_id,
+            local_date=heaviest_set_local_date,
+        ),
+        best_e1rm=BestE1rmData(
+            value_kg=best_e1rm_value_kg,
+            weight_kg=best_e1rm_set.weight_kg,
+            reps=best_e1rm_set.reps,
+            local_date=best_e1rm_local_date,
+        ),
+        best_session_volume=BestSessionVolumeData(
+            volume_kg=best_session_volume_kg,
+            session_id=best_session_volume_session_id,
+            local_date=best_session_volume_local_date,
+        ),
+        total_sets=total_sets,
+    )
+
+
+# =========================================================================================
+# §5.12 GET /dashboard (T-21), P2-ADR-07
+# =========================================================================================
+
+
+class NextWorkoutData(BaseModel):
+    program_day_id: uuid.UUID
+    day_index: int
+    label_key: str
+    exercise_count: int
+    estimated_minutes: int
+
+
+class StreakData(BaseModel):
+    current_days: int
+    longest_days: int
+    last_workout_local_date: date | None
+
+
+class ThisWeekData(BaseModel):
+    completed: int
+    target: int
+    local_week_start: date
+
+
+class RecentRecordData(BaseModel):
+    exercise_name: str
+    kind: str
+    value: DecimalAsFloat
+    local_date: date
+
+
+class DashboardResponse(BaseModel):
+    greeting_name: str
+    active_session: WorkoutSessionSummary | None
+    next_workout: NextWorkoutData | None
+    streak: StreakData
+    this_week: ThisWeekData
+    # A plain dict, not a fixed model: P2-SAF-002 requires `change_30d_kg` to be
+    # physically absent from the JSON for a minor, not merely null -- a declared
+    # pydantic field always serialises, so ProgramResponse.stale's own "plain dict,
+    # not a nested model" precedent (schemas/program.py) is reused here for the same
+    # reason, one level more consequential (a safety requirement, not a convenience).
+    weight: dict[str, Any]
+    recent_records: list[RecentRecordData]
+    program_stale: dict[str, str] | None
+    disclaimer_key: str
+
+
+def build_recent_record(
+    *, exercise: Exercise, language: str, value_kg: Decimal, local_date: date
+) -> RecentRecordData:
+    return RecentRecordData(
+        exercise_name=_resolved_name(exercise, language),
+        kind="e1rm",
+        value=value_kg,
+        local_date=local_date,
+    )
+
+
+def build_dashboard_response(
+    *,
+    greeting_name: str,
+    active_session: WorkoutSession | None,
+    next_workout: NextWorkoutData | None,
+    streak: StreakData,
+    this_week: ThisWeekData,
+    weight: dict[str, Any],
+    recent_records: list[RecentRecordData],
+    program_stale: dict[str, str] | None,
+    disclaimer_key: str,
+) -> DashboardResponse:
+    return DashboardResponse(
+        greeting_name=greeting_name,
+        active_session=(
+            build_session_summary(active_session) if active_session is not None else None
+        ),
+        next_workout=next_workout,
+        streak=streak,
+        this_week=this_week,
+        weight=weight,
+        recent_records=recent_records,
+        program_stale=program_stale,
+        disclaimer_key=disclaimer_key,
+    )

@@ -72,3 +72,23 @@ def test_session_duration_ignores_a_finish_the_next_morning() -> None:
 def test_session_duration_is_zero_with_no_sets() -> None:
     started_at = datetime(2026, 8, 13, 18, 0, tzinfo=UTC)
     assert metrics.session_duration_seconds(started_at, None) == 0
+
+
+def test_estimated_session_minutes_rounds_to_the_nearest_five() -> None:
+    # 5 sets * (60 + 40) = 500s; 4 sets * (90 + 40) = 520s. Total 1020s = 17.0 minutes,
+    # rounds down to 15.
+    entries = [
+        metrics.ProgramDayLoadInput(target_sets=5, rest_seconds=60),
+        metrics.ProgramDayLoadInput(target_sets=4, rest_seconds=90),
+    ]
+    assert metrics.estimated_session_minutes(entries) == 15
+
+
+def test_estimated_session_minutes_rounds_a_half_five_minute_unit_up() -> None:
+    # 1 set * (110 + 40) = 150s = 2.5 minutes = 0.5 five-minute units -> rounds up to 5.
+    entries = [metrics.ProgramDayLoadInput(target_sets=1, rest_seconds=110)]
+    assert metrics.estimated_session_minutes(entries) == 5
+
+
+def test_estimated_session_minutes_of_no_exercises_is_zero() -> None:
+    assert metrics.estimated_session_minutes([]) == 0
