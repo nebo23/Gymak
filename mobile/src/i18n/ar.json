@@ -4,7 +4,25 @@
     "back": "رجوع",
     "retry": "إعادة المحاولة",
     "dismiss": "إغلاق",
-    "languageToggleLabel": "تبديل اللغة"
+    "languageToggleLabel": "تبديل اللغة",
+    "medicalDisclaimer": "تطبيق Gymak ليس استشارة طبية. توقف إذا شعرت بألم، واستشر طبيبًا قبل بدء أي برنامج تدريبي جديد.",
+    "notEnoughData": "لا توجد بيانات كافية بعد"
+  },
+  "nav": {
+    "home": "الرئيسية",
+    "plan": "الخطة",
+    "progress": "التقدم",
+    "settings": "الإعدادات"
+  },
+  "comingSoon": {
+    "plan": {
+      "title": "خطتك قادمة قريبًا",
+      "body": "هنا ستظهر خطتك التدريبية الأسبوعية."
+    },
+    "progress": {
+      "title": "صفحة تقدمك قادمة قريبًا",
+      "body": "هنا سيظهر سجل وزن جسمك وأرقامك القياسية الشخصية."
+    }
   },
   "auth": {
     "welcome": {
@@ -136,12 +154,53 @@
       "finish": "إنهاء"
     }
   },
-  "home": {
-    "settingsButton": "الإعدادات",
+  "dashboard": {
     "greeting": "مرحبًا، {{name}}",
-    "greetingFallback": "مرحبًا بعودتك",
-    "planPanelTitle": "خطتك التدريبية",
-    "planPanelBody": "خطتك التدريبية تصل في المرحلة القادمة. حاليًا، هذه فقط الصفحة الرئيسية لحسابك — بلا تمارين وبلا رسوم بيانية وبلا أي بيانات وهمية."
+    "resume": {
+      "title": "تمرين قيد التقدم",
+      "subtitle": "بدأ الساعة {{time}}",
+      "action": "استئناف"
+    },
+    "nextWorkout": {
+      "heading": "التمرين القادم",
+      "footer": "{{count}} تمارين · حوالي {{minutes}} دقيقة",
+      "start": "ابدأ"
+    },
+    "noProgram": {
+      "title": "لا توجد خطة بعد",
+      "body": "أنشئ خطة لترى تمرينك القادم هنا.",
+      "action": "إنشاء خطتي"
+    },
+    "streak": {
+      "label": "السلسلة الحالية",
+      "unit": "أيام",
+      "longest": "الأفضل: {{days}} أيام"
+    },
+    "thisWeek": {
+      "label": "هذا الأسبوع",
+      "value": "{{completed}} من {{target}}"
+    },
+    "weight": {
+      "label": "الوزن",
+      "unit": "كجم",
+      "updated": "آخر تحديث {{date}}",
+      "change": "{{value}} كجم خلال 30 يومًا",
+      "emptyTitle": "لا يوجد وزن مسجل بعد",
+      "emptyBody": "سجّل وزن اليوم لتبدأ متابعته.",
+      "emptyAction": "تسجيل وزن اليوم"
+    },
+    "records": {
+      "heading": "أحدث الأرقام القياسية",
+      "e1rmLabel": "أقصى تكرار واحد مقدّر",
+      "emptyTitle": "لا توجد أرقام قياسية بعد",
+      "emptyBody": "ستظهر أرقامك القياسية هنا بمجرد تسجيل بعض المجموعات."
+    },
+    "stale": {
+      "title": "قد تكون خطتك قديمة",
+      "goalChanged": "أصبح هدفك الآن {{value}} — أعد إنشاء خطتك لتتوافق معه.",
+      "experienceChanged": "أصبح مستوى خبرتك الآن {{value}} — أعد إنشاء خطتك لتتوافق معه.",
+      "action": "مراجعة الخطة"
+    }
   },
   "settings": {
     "title": "الإعدادات",
@@ -175,7 +234,9 @@
       "activityLight": "خفيف",
       "activityModerate": "متوسط",
       "activityHigh": "عالٍ",
-      "activityVeryHigh": "عالٍ جدًا"
+      "activityVeryHigh": "عالٍ جدًا",
+      "timezone": "المنطقة الزمنية",
+      "timezoneUseDevice": "استخدام المنطقة الزمنية لهذا الجهاز"
     },
     "units": {
       "metric": "متري (سم / كجم)",
@@ -202,6 +263,12 @@
   },
   "plan": {
     "day": {
+      "fullBody": "الجسم بالكامل",
+      "upper": "الجزء العلوي",
+      "lower": "الجزء السفلي",
+      "push": "دفع",
+      "pull": "سحب",
+      "legs": "الأرجل",
       "armsDelts": "الذراعان والأكتاف"
     }
   },
@@ -258,6 +325,10 @@
     },
     "progressBar": {
       "stepLabel": "الخطوة {{step}} من {{total}}"
+    },
+    "numberField": {
+      "increment": "زيادة",
+      "decrement": "إنقاص"
     }
   },
   "errors": {
@@ -319,7 +390,15 @@
       "selectCard": "GSelectCard",
       "progressBar": "GProgressBar",
       "errorBanner": "GErrorBanner",
-      "logo": "GLogo"
+      "logo": "GLogo",
+      "card": "GCard",
+      "stat": "GStat",
+      "chip": "GChip",
+      "emptyState": "GEmptyState",
+      "skeleton": "GSkeleton",
+      "listRow": "GListRow",
+      "numberField": "GNumberField",
+      "sheet": "GSheet"
     },
     "state": {
       "idle": "الحالة الافتراضية",
@@ -333,7 +412,16 @@
       "dismissible": "قابل للإغلاق",
       "messageOnly": "رسالة فقط (بدون إجراءات)",
       "secure": "سري، مع زر الإظهار",
-      "fullWidth": "عرض كامل"
+      "fullWidth": "عرض كامل",
+      "pressable": "قابل للضغط",
+      "positive": "دلالة إيجابية",
+      "negative": "دلالة سلبية",
+      "neutral": "دلالة محايدة",
+      "withAction": "مع إجراء",
+      "withoutAction": "بدون إجراء",
+      "withSubtitle": "مع عنوان فرعي ومحتوى لاحق",
+      "open": "مفتوح",
+      "closed": "مغلق"
     },
     "sample": {
       "textInputLabel": "البريد الإلكتروني",
@@ -348,7 +436,29 @@
       "buttonPrimary": "متابعة",
       "buttonSecondary": "ثانوي",
       "buttonGhost": "شبح",
-      "buttonSocial": "المتابعة باستخدام Google"
+      "buttonSocial": "المتابعة باستخدام Google",
+      "cardTitle": "دفع أ",
+      "cardSubtitle": "الصدر، الأكتاف، الترايسبس",
+      "cardFooter": "5 تمارين · حوالي 55 دقيقة",
+      "statLabel": "السلسلة الحالية",
+      "statValue": "4",
+      "statUnit": "أيام",
+      "chipChest": "الصدر",
+      "chipBarbell": "بار",
+      "chipLegs": "الأرجل",
+      "emptyStateTitle": "لا توجد تمارين بعد",
+      "emptyStateBody": "ابدأ تمرينك الأول لتراه هنا.",
+      "emptyStateAction": "ابدأ تمرينًا",
+      "skeletonTextLine": "سطر نصي",
+      "skeletonCard": "كتلة بطاقة",
+      "listRowTitle": "سكوات بالبار",
+      "listRowSubtitle": "4 مجموعات · 6–8 تكرارات",
+      "listRowTrailing": "60 كجم",
+      "numberFieldReps": "التكرارات",
+      "numberFieldWeight": "الوزن",
+      "unitKg": "كجم",
+      "sheetBody": "هذا محتوى تجريبي داخل ورقة سفلية.",
+      "openSheet": "فتح الورقة السفلية"
     }
   }
 }

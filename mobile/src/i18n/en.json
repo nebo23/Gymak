@@ -4,7 +4,25 @@
     "back": "Back",
     "retry": "Retry",
     "dismiss": "Dismiss",
-    "languageToggleLabel": "Switch language"
+    "languageToggleLabel": "Switch language",
+    "medicalDisclaimer": "Gymak is not medical advice. Stop if something hurts, and talk to a doctor before starting a new programme.",
+    "notEnoughData": "Not enough data yet"
+  },
+  "nav": {
+    "home": "Home",
+    "plan": "Plan",
+    "progress": "Progress",
+    "settings": "Settings"
+  },
+  "comingSoon": {
+    "plan": {
+      "title": "Your plan is on its way",
+      "body": "This is where your weekly training plan will live."
+    },
+    "progress": {
+      "title": "Your progress is on its way",
+      "body": "This is where your body-weight log and personal records will live."
+    }
   },
   "auth": {
     "welcome": {
@@ -136,12 +154,53 @@
       "finish": "Finish"
     }
   },
-  "home": {
-    "settingsButton": "Settings",
-    "greeting": "Welcome, {{name}}",
-    "greetingFallback": "Welcome back",
-    "planPanelTitle": "Your training plan",
-    "planPanelBody": "Your training plan arrives in the next phase. For now, this is just your account home — no workouts, no charts, nothing made up."
+  "dashboard": {
+    "greeting": "Hi, {{name}}",
+    "resume": {
+      "title": "Workout in progress",
+      "subtitle": "Started at {{time}}",
+      "action": "Resume"
+    },
+    "nextWorkout": {
+      "heading": "Next workout",
+      "footer": "{{count}} exercises · about {{minutes}} min",
+      "start": "Start"
+    },
+    "noProgram": {
+      "title": "No plan yet",
+      "body": "Build a plan to see your next workout here.",
+      "action": "Build my plan"
+    },
+    "streak": {
+      "label": "Current streak",
+      "unit": "days",
+      "longest": "Best: {{days}} days"
+    },
+    "thisWeek": {
+      "label": "This week",
+      "value": "{{completed}} of {{target}}"
+    },
+    "weight": {
+      "label": "Weight",
+      "unit": "kg",
+      "updated": "Updated {{date}}",
+      "change": "{{value}} kg in 30 days",
+      "emptyTitle": "No weight logged yet",
+      "emptyBody": "Log today's weight to start tracking.",
+      "emptyAction": "Log today's weight"
+    },
+    "records": {
+      "heading": "Recent records",
+      "e1rmLabel": "Estimated 1RM",
+      "emptyTitle": "No records yet",
+      "emptyBody": "Your personal records will appear here once you log some sets."
+    },
+    "stale": {
+      "title": "Your plan may be out of date",
+      "goalChanged": "Your goal is now {{value}} — regenerate your plan to match.",
+      "experienceChanged": "Your experience level is now {{value}} — regenerate your plan to match.",
+      "action": "Review plan"
+    }
   },
   "settings": {
     "title": "Settings",
@@ -175,7 +234,9 @@
       "activityLight": "Light",
       "activityModerate": "Moderate",
       "activityHigh": "High",
-      "activityVeryHigh": "Very high"
+      "activityVeryHigh": "Very high",
+      "timezone": "Timezone",
+      "timezoneUseDevice": "Use this device's timezone"
     },
     "units": {
       "metric": "Metric (cm / kg)",
@@ -202,6 +263,12 @@
   },
   "plan": {
     "day": {
+      "fullBody": "Full body",
+      "upper": "Upper",
+      "lower": "Lower",
+      "push": "Push",
+      "pull": "Pull",
+      "legs": "Legs",
       "armsDelts": "Arms & delts"
     }
   },
@@ -258,6 +325,10 @@
     },
     "progressBar": {
       "stepLabel": "Step {{step}} of {{total}}"
+    },
+    "numberField": {
+      "increment": "Increase",
+      "decrement": "Decrease"
     }
   },
   "errors": {
@@ -319,7 +390,15 @@
       "selectCard": "GSelectCard",
       "progressBar": "GProgressBar",
       "errorBanner": "GErrorBanner",
-      "logo": "GLogo"
+      "logo": "GLogo",
+      "card": "GCard",
+      "stat": "GStat",
+      "chip": "GChip",
+      "emptyState": "GEmptyState",
+      "skeleton": "GSkeleton",
+      "listRow": "GListRow",
+      "numberField": "GNumberField",
+      "sheet": "GSheet"
     },
     "state": {
       "idle": "Idle",
@@ -333,7 +412,16 @@
       "dismissible": "Dismissible",
       "messageOnly": "Message only (no actions)",
       "secure": "Secure, with reveal toggle",
-      "fullWidth": "Full width"
+      "fullWidth": "Full width",
+      "pressable": "Pressable",
+      "positive": "Positive tone",
+      "negative": "Negative tone",
+      "neutral": "Neutral tone",
+      "withAction": "With action",
+      "withoutAction": "Without action",
+      "withSubtitle": "With subtitle and trailing content",
+      "open": "Open",
+      "closed": "Closed"
     },
     "sample": {
       "textInputLabel": "Email",
@@ -348,7 +436,29 @@
       "buttonPrimary": "Continue",
       "buttonSecondary": "Secondary",
       "buttonGhost": "Ghost",
-      "buttonSocial": "Continue with Google"
+      "buttonSocial": "Continue with Google",
+      "cardTitle": "Push A",
+      "cardSubtitle": "Chest, shoulders, triceps",
+      "cardFooter": "5 exercises · about 55 min",
+      "statLabel": "Current streak",
+      "statValue": "4",
+      "statUnit": "days",
+      "chipChest": "Chest",
+      "chipBarbell": "Barbell",
+      "chipLegs": "Legs",
+      "emptyStateTitle": "No workouts yet",
+      "emptyStateBody": "Start your first workout to see it here.",
+      "emptyStateAction": "Start a workout",
+      "skeletonTextLine": "Text line",
+      "skeletonCard": "Card block",
+      "listRowTitle": "Barbell back squat",
+      "listRowSubtitle": "4 sets · 6–8 reps",
+      "listRowTrailing": "60 kg",
+      "numberFieldReps": "Reps",
+      "numberFieldWeight": "Weight",
+      "unitKg": "kg",
+      "sheetBody": "This is example content inside a bottom sheet.",
+      "openSheet": "Open sheet"
     }
   }
 }
