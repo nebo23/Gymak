@@ -9,7 +9,13 @@ import structlog
 
 from app.config import settings
 
-# Spec 6.5: fields a careless log statement must never be able to emit.
+# Spec 6.5: fields a careless log statement must never be able to emit. T-22 (spec
+# 10.1's security row) adds "reps" and "notes" -- workout_sets.reps and
+# workout_sessions.notes (session notes, spec 5.8) -- alongside weight_kg: no current
+# call site logs any of the three (see tests/security/test_no_secret_logging.py's
+# module docstring), but the allowlist is what stops a future one from leaking them
+# by accident, the same defence-in-depth reasoning weight_kg/height_cm/birth_date
+# were already added under.
 _REDACTED_KEYS = {
     "password",
     "new_password",
@@ -21,6 +27,8 @@ _REDACTED_KEYS = {
     "weight_kg",
     "height_cm",
     "birth_date",
+    "reps",
+    "notes",
 }
 _REDACTED_VALUE = "[REDACTED]"
 

@@ -58,7 +58,14 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "--cov=app --cov-report=term-missing"
+# --cov-fail-under=80: spec 10.3 item 2 / P2-NFR-04's overall gate (T-22). The two
+# module-specific 95% gates (plan_generator.py, services/metrics.py) have no
+# pytest-cov equivalent -- coverage.py's fail_under is a single global number, not
+# per-file -- so those are checked separately, after this run, by pointing
+# `coverage report --include=... --fail-under=95` at the same .coverage data file
+# this run writes (see backend/README.md's "Code quality gate" section).
+addopts = "--cov=app --cov-report=term-missing --cov-fail-under=80 -m 'not perf'"
+markers = ["perf: seeded-load timing (P2-NFR-01); run with -m perf"]
 
 [tool.coverage.run]
 source = ["app"]

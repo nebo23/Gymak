@@ -53,6 +53,9 @@ from tests.support import ALL_CAPTURED_OUTPUT
 # §6.5's own list, verbatim (app/core/logging.py's _REDACTED_KEYS) -- kept as an
 # independent copy rather than an import, so this test still catches a redactor that
 # was edited to drop one of these keys, instead of silently checking fewer of them.
+# T-22 (spec 10.1's security row: "no weight_kg, no reps, no session notes in any log
+# line the suite produces") adds "reps" and "notes" -- workout_sets.reps and
+# workout_sessions.notes -- matching the two new keys added to the real allowlist.
 _MUST_BE_REDACTED_FIELDS = {
     "password",
     "new_password",
@@ -64,6 +67,8 @@ _MUST_BE_REDACTED_FIELDS = {
     "weight_kg",
     "height_cm",
     "birth_date",
+    "reps",
+    "notes",
 }
 _REDACTED_SENTINEL = "[REDACTED]"
 
