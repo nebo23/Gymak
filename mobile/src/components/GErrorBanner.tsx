@@ -65,7 +65,7 @@ export function GErrorBanner({ code, message, onRetry, onDismiss, testID }: GErr
               style={styles.action}
               hitSlop={actionHitSlop}
             >
-              <Text style={[styles.dismissGlyph, { color: theme.error }]}>✕</Text>
+              <Text style={[textStyle("label", locale), { color: theme.error }]}>✕</Text>
             </Pressable>
           ) : null}
         </View>
@@ -102,13 +102,13 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: space[2],
+    // Carry-over 7 (Phase 2 §11): each action's hit-slop pads 14 dp past its
+    // visual edge to reach the 48 dp floor, so anything under 28 dp of real
+    // gap lets the two touch targets overlap. space[6] (32) clears that with
+    // a small margin.
+    gap: space[6],
   },
   action: {
     paddingVertical: space[1],
-  },
-  dismissGlyph: {
-    fontSize: 16,
-    lineHeight: 20,
   },
 });

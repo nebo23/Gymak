@@ -14,12 +14,20 @@ import { StyleSheet, Text, View } from "react-native";
 
 import {
   GButton,
+  GCard,
+  GChip,
+  GEmptyState,
   GErrorBanner,
+  GListRow,
   GLogo,
+  GNumberField,
   GOtpInput,
   GProgressBar,
   GScreen,
   GSelectCard,
+  GSheet,
+  GSkeleton,
+  GStat,
   GTextInput,
 } from "../../src/components";
 import { useI18n } from "../../src/i18n";
@@ -69,8 +77,13 @@ export default function DevGallery() {
 
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
+  const [chipSelected, setChipSelected] = useState<"chest" | "barbell" | "legs">("chest");
+  const [repsValue, setRepsValue] = useState(8);
+  const [weightValue, setWeightValue] = useState(60);
+  const [sheetOpen, setSheetOpen] = useState(false);
+
   if (!__DEV__) {
-    return <Redirect href="/(app)/home" />;
+    return <Redirect href="/(app)" />;
   }
 
   return (
@@ -227,6 +240,178 @@ export default function DevGallery() {
           <GLogo size={space[8] * 2} />
         </View>
       </Section>
+
+      <Section title={t("devGallery.sections.card")}>
+        <Row label={t("devGallery.state.idle")}>
+          <GCard
+            title={t("devGallery.sample.cardTitle")}
+            subtitle={t("devGallery.sample.cardSubtitle")}
+            footer={
+              <Text style={[textStyle("caption", locale), { color: theme.textMuted }]}>
+                {t("devGallery.sample.cardFooter")}
+              </Text>
+            }
+          />
+        </Row>
+        <Row label={t("devGallery.state.pressable")}>
+          <GCard
+            title={t("devGallery.sample.cardTitle")}
+            subtitle={t("devGallery.sample.cardSubtitle")}
+            onPress={noop}
+            testID="dev-gallery-card-pressable"
+          />
+        </Row>
+      </Section>
+
+      <Section title={t("devGallery.sections.stat")}>
+        <Row label={t("devGallery.state.positive")}>
+          <GStat
+            label={t("devGallery.sample.statLabel")}
+            value={t("devGallery.sample.statValue")}
+            unit={t("devGallery.sample.statUnit")}
+            delta={2}
+            tone="positive"
+          />
+        </Row>
+        <Row label={t("devGallery.state.negative")}>
+          <GStat
+            label={t("devGallery.sample.statLabel")}
+            value={t("devGallery.sample.statValue")}
+            unit={t("devGallery.sample.statUnit")}
+            delta={-1}
+            tone="negative"
+          />
+        </Row>
+        <Row label={t("devGallery.state.neutral")}>
+          <GStat
+            label={t("devGallery.sample.statLabel")}
+            value={t("devGallery.sample.statValue")}
+            unit={t("devGallery.sample.statUnit")}
+            tone="neutral"
+          />
+        </Row>
+      </Section>
+
+      <Section title={t("devGallery.sections.chip")}>
+        <Row label={t("devGallery.state.selected")}>
+          <View style={styles.buttonRow}>
+            <GChip
+              label={t("devGallery.sample.chipChest")}
+              selected={chipSelected === "chest"}
+              onPress={() => setChipSelected("chest")}
+            />
+            <GChip
+              label={t("devGallery.sample.chipBarbell")}
+              selected={chipSelected === "barbell"}
+              onPress={() => setChipSelected("barbell")}
+            />
+          </View>
+        </Row>
+        <Row label={t("devGallery.state.unselected")}>
+          <GChip
+            label={t("devGallery.sample.chipLegs")}
+            selected={chipSelected === "legs"}
+            onPress={() => setChipSelected("legs")}
+          />
+        </Row>
+        <Row label={t("devGallery.state.disabled")}>
+          <GChip label={t("devGallery.sample.chipLegs")} selected={false} onPress={noop} disabled />
+        </Row>
+      </Section>
+
+      <Section title={t("devGallery.sections.emptyState")}>
+        <Row label={t("devGallery.state.withAction")}>
+          <GEmptyState
+            titleKey="devGallery.sample.emptyStateTitle"
+            bodyKey="devGallery.sample.emptyStateBody"
+            actionLabelKey="devGallery.sample.emptyStateAction"
+            onAction={noop}
+          />
+        </Row>
+        <Row label={t("devGallery.state.withoutAction")}>
+          <GEmptyState
+            titleKey="devGallery.sample.emptyStateTitle"
+            bodyKey="devGallery.sample.emptyStateBody"
+          />
+        </Row>
+      </Section>
+
+      <Section title={t("devGallery.sections.skeleton")}>
+        <Row label={t("devGallery.sample.skeletonTextLine")}>
+          <GSkeleton width={160} height={16} />
+        </Row>
+        <Row label={t("devGallery.sample.skeletonCard")}>
+          <GSkeleton width={240} height={96} radius={radius.lg} />
+        </Row>
+      </Section>
+
+      <Section title={t("devGallery.sections.listRow")}>
+        <Row label={t("devGallery.state.withSubtitle")}>
+          <GListRow
+            title={t("devGallery.sample.listRowTitle")}
+            subtitle={t("devGallery.sample.listRowSubtitle")}
+            trailing={
+              <Text style={[textStyle("bodyStrong", locale), { color: theme.textPrimary }]}>
+                {t("devGallery.sample.listRowTrailing")}
+              </Text>
+            }
+          />
+        </Row>
+        <Row label={t("devGallery.state.pressable")}>
+          <GListRow title={t("devGallery.sample.listRowTitle")} onPress={noop} />
+        </Row>
+      </Section>
+
+      <Section title={t("devGallery.sections.numberField")}>
+        <Row label={t("devGallery.sample.numberFieldReps")}>
+          <GNumberField
+            label={t("devGallery.sample.numberFieldReps")}
+            value={repsValue}
+            onChange={setRepsValue}
+            step={1}
+            min={0}
+            max={50}
+            unit=""
+            precision={0}
+            testID="dev-gallery-number-field-reps"
+          />
+        </Row>
+        <Row label={t("devGallery.sample.numberFieldWeight")}>
+          <GNumberField
+            label={t("devGallery.sample.numberFieldWeight")}
+            value={weightValue}
+            onChange={setWeightValue}
+            step={2.5}
+            min={0}
+            max={300}
+            unit={t("devGallery.sample.unitKg")}
+            precision={1}
+            testID="dev-gallery-number-field-weight"
+          />
+        </Row>
+      </Section>
+
+      <Section title={t("devGallery.sections.sheet")}>
+        <Row label={sheetOpen ? t("devGallery.state.open") : t("devGallery.state.closed")}>
+          <GButton
+            label={t("devGallery.sample.openSheet")}
+            variant="secondary"
+            onPress={() => setSheetOpen(true)}
+            testID="dev-gallery-sheet-open"
+          />
+        </Row>
+      </Section>
+      <GSheet visible={sheetOpen} onClose={() => setSheetOpen(false)} testID="dev-gallery-sheet">
+        <Text style={[textStyle("body", locale), { color: theme.textPrimary }]}>
+          {t("devGallery.sample.sheetBody")}
+        </Text>
+        <GButton
+          label={t("common.dismiss")}
+          variant="ghost"
+          onPress={() => setSheetOpen(false)}
+          testID="dev-gallery-sheet-close"
+        />
+      </GSheet>
     </GScreen>
   );
 }

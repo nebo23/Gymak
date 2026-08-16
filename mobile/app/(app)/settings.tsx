@@ -14,6 +14,7 @@ import { Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { getCalendars } from "expo-localization";
 
 import { deleteAccount, logout, logoutAll } from "../../src/api/auth";
 import { parseApiError, resolveErrorCode, type ResolvedErrorCode } from "../../src/api/errors";
@@ -70,6 +71,7 @@ interface FormState {
   experienceLevel: ExperienceLevel;
   activityLevel: ActivityLevel | null;
   language: Language;
+  timezone: string;
 }
 
 function toFormState(profile: ProfileData): FormState {
@@ -84,6 +86,7 @@ function toFormState(profile: ProfileData): FormState {
     experienceLevel: profile.experience_level,
     activityLevel: profile.activity_level,
     language: profile.language,
+    timezone: profile.timezone,
   };
 }
 
@@ -101,6 +104,7 @@ function buildDiff(original: ProfileData, form: FormState): ProfileUpdateInput {
   }
   if (form.unitSystem !== original.unit_system) diff.unit_system = form.unitSystem;
   if (form.language !== original.language) diff.language = form.language;
+  if (form.timezone !== original.timezone) diff.timezone = form.timezone;
   return diff;
 }
 
@@ -554,6 +558,22 @@ export default function Settings() {
             />
           </View>
         </View>
+
+        <GTextInput
+          label={t("settings.fields.timezone")}
+          value={form.timezone}
+          onChangeText={(timezone) => setForm({ ...form, timezone })}
+          testID="settings-timezone"
+        />
+        <GButton
+          variant="ghost"
+          label={t("settings.fields.timezoneUseDevice")}
+          onPress={() => {
+            const deviceTimezone = getCalendars()[0]?.timeZone;
+            if (deviceTimezone) setForm({ ...form, timezone: deviceTimezone });
+          }}
+          testID="settings-timezone-use-device"
+        />
       </View>
 
       <GButton

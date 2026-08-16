@@ -15,7 +15,7 @@ export default function Index() {
     return <Redirect href="/(onboarding)/step-1" />;
   }
   if (status === "active") {
-    return <Redirect href="/(app)/home" />;
+    return <Redirect href="/(app)" />;
   }
   return <Redirect href="/(auth)/welcome" />;
 }

@@ -24,6 +24,9 @@ export interface ProfileData {
   activity_level: ActivityLevel | null;
   unit_system: UnitSystem;
   language: Language;
+  /** IANA name (Phase 2 §4.2). Defaults server-side to "Africa/Cairo" until
+   * a client writes a real one. */
+  timezone: string;
   onboarding_completed: boolean;
   created_at: string;
   updated_at: string;
@@ -61,6 +64,7 @@ export type ProfileUpdateInput = Partial<
     | "activity_level"
     | "unit_system"
     | "language"
+    | "timezone"
   >
 >;
 
