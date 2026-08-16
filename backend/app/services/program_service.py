@@ -11,6 +11,7 @@ pure function) and to turn its `PlanGenerationError` into the API's own
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -21,7 +22,9 @@ from app.models.exercise import Exercise
 from app.models.profile import Profile
 from app.models.program import Program, ProgramDay, ProgramExercise
 from app.models.user import User
+from app.models.workout import WorkoutSession, WorkoutSet
 from app.repositories import audit_repo, program_repo
+from app.services import metrics
 from app.services.plan_generator import (
     PlanGenerationError,
     PlanInput,
@@ -95,6 +98,7 @@ class GeneratedProgramResult:
     program: Program
     days: list[ProgramDay]
     exercise_counts: dict[uuid.UUID, int]
+    day_estimated_minutes: dict[uuid.UUID, int]
     notes_keys: list[str]
 
 
@@ -174,6 +178,20 @@ async def generate_program(
         day.id: len(generated_day.exercises)
         for day, generated_day in zip(days, plan.days, strict=True)
     }
+    # §5.3/§5.4/§5.12: computed straight from the just-generated plan already in
+    # memory -- no query needed, since `generated_day.exercises` already carries the
+    # `target_sets`/`rest_seconds` `metrics.estimated_session_minutes` wants. Do not
+    # reimplement that arithmetic here; this only shapes its inputs.
+    day_estimated_minutes: dict[uuid.UUID, int] = {
+        day.id: metrics.estimated_session_minutes(
+            metrics.ProgramDayLoadInput(
+                target_sets=generated_exercise.target_sets,
+                rest_seconds=generated_exercise.rest_seconds,
+            )
+            for generated_exercise in generated_day.exercises
+        )
+        for day, generated_day in zip(days, plan.days, strict=True)
+    }
 
     # §5.3: "program.generated, with days_per_week, split_type, and generator_version
     # in the metadata. Never the exercise list."
@@ -195,6 +213,7 @@ async def generate_program(
         program=program,
         days=days,
         exercise_counts=exercise_counts,
+        day_estimated_minutes=day_estimated_minutes,
         notes_keys=list(plan.notes_keys),
     )
 
@@ -204,6 +223,7 @@ class CurrentProgramResult:
     program: Program
     days: list[ProgramDay]
     exercise_counts: dict[uuid.UUID, int]
+    day_estimated_minutes: dict[uuid.UUID, int]
     stale: dict[str, str] | None
 
 
@@ -235,26 +255,99 @@ async def get_current_program(
         raise ProgramNotFoundError(detail="Generate a plan first.")
 
     days = await program_repo.list_program_days(session, program.id)
-    exercise_counts = await program_repo.count_exercises_by_day(session, [day.id for day in days])
+    day_ids = [day.id for day in days]
+    exercise_counts = await program_repo.count_exercises_by_day(session, day_ids)
+    # §5.4/§5.12: one grouped query for the whole program (program_repo.
+    # list_exercise_load_by_day's own "never one query per day" precedent), then
+    # `metrics.estimated_session_minutes` -- the same formula/function §5.12's
+    # `next_workout.estimated_minutes` already uses -- over each day's own rows.
+    load_by_day = await program_repo.list_exercise_load_by_day(session, day_ids)
+    day_estimated_minutes: dict[uuid.UUID, int] = {
+        day.id: metrics.estimated_session_minutes(
+            metrics.ProgramDayLoadInput(target_sets=target_sets, rest_seconds=rest_seconds)
+            for target_sets, rest_seconds in load_by_day.get(day.id, [])
+        )
+        for day in days
+    }
 
     return CurrentProgramResult(
         program=program,
         days=days,
         exercise_counts=exercise_counts,
+        day_estimated_minutes=day_estimated_minutes,
         stale=_stale_reason(program, profile),
     )
 
 
+def _resolve_last_performance(
+    candidates: Sequence[tuple[WorkoutSet, WorkoutSession]],
+) -> dict[uuid.UUID, tuple[WorkoutSession, WorkoutSet]]:
+    """§5.5 `last_performance`. `candidates` arrives ordered by (session local_date,
+    session started_at) descending -- most recent completed session first
+    (program_repo.list_last_performance_candidates's own docstring) -- so a single pass
+    resolves, per exercise, "the most recent completed session containing it": the
+    first session seen for an `exercise_id` is kept, and a row from any older session
+    for that same exercise is skipped.
+
+    Within the kept session, `best_set` is the non-warm-up set with the highest e1RM
+    (P2-ADR-04, `metrics.estimate_one_rep_max`), tie-broken on heavier `weight_kg`, then
+    on earliest `logged_at` -- 5.5 shows the field but does not define "best"; this is
+    the decision, made once, here.
+    """
+    kept_session_by_exercise: dict[uuid.UUID, WorkoutSession] = {}
+    kept_sets_by_exercise: dict[uuid.UUID, list[WorkoutSet]] = {}
+    for workout_set, workout_session in candidates:
+        exercise_id = workout_set.exercise_id
+        kept_session = kept_session_by_exercise.get(exercise_id)
+        if kept_session is None:
+            kept_session_by_exercise[exercise_id] = workout_session
+            kept_sets_by_exercise[exercise_id] = [workout_set]
+        elif kept_session.id == workout_session.id:
+            kept_sets_by_exercise[exercise_id].append(workout_set)
+        # else: a row from an older session for this exercise -- already resolved, skip.
+
+    result: dict[uuid.UUID, tuple[WorkoutSession, WorkoutSet]] = {}
+    for exercise_id, sets in kept_sets_by_exercise.items():
+        best_set = sets[0]
+        best_e1rm = metrics.estimate_one_rep_max(best_set.weight_kg, best_set.reps)
+        for candidate_set in sets[1:]:
+            candidate_e1rm = metrics.estimate_one_rep_max(
+                candidate_set.weight_kg, candidate_set.reps
+            )
+            is_better = candidate_e1rm > best_e1rm
+            is_tied = candidate_e1rm == best_e1rm
+            if is_better or (is_tied and candidate_set.weight_kg > best_set.weight_kg):
+                best_set, best_e1rm = candidate_set, candidate_e1rm
+            elif (
+                is_tied
+                and candidate_set.weight_kg == best_set.weight_kg
+                and candidate_set.logged_at < best_set.logged_at
+            ):
+                best_set, best_e1rm = candidate_set, candidate_e1rm
+        result[exercise_id] = (kept_session_by_exercise[exercise_id], best_set)
+    return result
+
+
 async def get_program_day_detail(
-    session: AsyncSession, day_id: uuid.UUID
-) -> tuple[ProgramDay, list[tuple[ProgramExercise, Exercise]]]:
+    session: AsyncSession, day_id: uuid.UUID, user_id: uuid.UUID
+) -> tuple[
+    ProgramDay,
+    list[tuple[ProgramExercise, Exercise]],
+    dict[uuid.UUID, tuple[WorkoutSession, WorkoutSet]],
+]:
     """§5.5. Ownership is enforced by RLS on `program_days`/`program_exercises`
     (P2-ADR-09) -- a day belonging to another user's program resolves to `None` here
     exactly as an unknown id would, so both cases share the same generic 404 (Phase 1
-    §6.5), matching the precedent §5.2 sets for GET /exercises/{id}.
+    §6.5), matching the precedent §5.2 sets for GET /exercises/{id}. `user_id` is used
+    only for `last_performance`'s own explicit ownership filter (defence in depth on
+    top of RLS, program_repo.list_last_performance_candidates's own docstring) -- the
+    day/exercise rows above are already RLS-scoped without it.
     """
     day = await program_repo.get_program_day(session, day_id)
     if day is None:
         raise NotFoundError(detail="Unknown program day.")
     rows = await program_repo.list_day_exercises_with_exercise(session, day.id)
-    return day, rows
+    exercise_ids = [exercise.id for _, exercise in rows]
+    candidates = await program_repo.list_last_performance_candidates(session, user_id, exercise_ids)
+    last_performance = _resolve_last_performance(candidates)
+    return day, rows, last_performance

@@ -59,7 +59,9 @@ async def generate_program_route(
     profile = await _profile_for(session, user)
     result = await program_service.generate_program(session, user, profile, body.days_per_week)
     return ProgramGenerateResponse(
-        program=build_program_summary(result.program, result.days, result.exercise_counts),
+        program=build_program_summary(
+            result.program, result.days, result.exercise_counts, result.day_estimated_minutes
+        ),
         notes_key=result.notes_keys,
     )
 
@@ -72,7 +74,9 @@ async def get_current_program_route(
     profile = await _profile_for(session, user)
     result = await program_service.get_current_program(session, user, profile)
     return ProgramResponse(
-        program=build_program_summary(result.program, result.days, result.exercise_counts),
+        program=build_program_summary(
+            result.program, result.days, result.exercise_counts, result.day_estimated_minutes
+        ),
         stale=result.stale,
     )
 
@@ -91,7 +95,11 @@ async def get_program_day_route(
         raise NotFoundError() from None
 
     profile = await _profile_for(session, user)
-    day, exercise_rows = await program_service.get_program_day_detail(session, parsed_day_id)
+    day, exercise_rows, last_performance = await program_service.get_program_day_detail(
+        session, parsed_day_id, user.id
+    )
     return ProgramDayDetailResponse(
-        day=build_program_day_detail(day, exercise_rows, language=profile.language)
+        day=build_program_day_detail(
+            day, exercise_rows, language=profile.language, last_performance=last_performance
+        )
     )

@@ -12,6 +12,16 @@ The 135-combination sweep over experience/goal/activity/days_per_week already li
 tests/unit/test_plan_generator.py against the pure function directly; this file is
 deliberately not a second copy of that matrix against HTTP -- it proves the wiring
 (service, repository, router) around the generator, not the generator's own rules again.
+
+T-24b adds `estimated_minutes` (every day, both POST /program/generate and GET /program) and
+`last_performance` (GET /program/days/{day_id} only). The estimated_minutes tests below prove
+both code paths independently -- POST /program/generate computes it from the just-generated
+plan in memory, GET /program recomputes it from program_repo.list_exercise_load_by_day -- and
+are deliberately not another sweep over services.metrics.estimated_session_minutes itself,
+which tests/unit/test_metrics.py already owns. The last_performance tests use the real
+POST /workouts + .../sets + .../finish endpoints (matching test_dashboard.py's own precedent)
+rather than seeding rows directly, since "most recent" here depends on session ordering that
+those endpoints alone produce.
 """
 
 from __future__ import annotations
@@ -19,6 +29,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient, Response
@@ -30,6 +41,7 @@ from app.database import set_rls_user
 from app.models.audit import AuditLog
 from app.models.program import Program, ProgramDay
 from app.models.workout import WorkoutSession
+from app.services import metrics
 from tests.support import JSONDict, json_body
 
 pytestmark = pytest.mark.asyncio
@@ -38,6 +50,7 @@ _REGISTER = "/api/v1/auth/register"
 _PROFILE = "/api/v1/profile"
 _GENERATE = "/api/v1/program/generate"
 _PROGRAM = "/api/v1/program"
+_WORKOUTS = "/api/v1/workouts"
 _PASSWORD = "correct horse battery"
 
 
@@ -105,6 +118,51 @@ async def _get_day(client: AsyncClient, access_token: str, day_id: str) -> Respo
     return await client.get(f"{_PROGRAM}/days/{day_id}", headers=_auth_headers(access_token))
 
 
+async def _start(client: AsyncClient, access_token: str, **body: object) -> Response:
+    return await client.post(_WORKOUTS, json=body, headers=_auth_headers(access_token))
+
+
+async def _create_set(
+    client: AsyncClient, access_token: str, session_id: str, **body: object
+) -> Response:
+    return await client.post(
+        f"{_WORKOUTS}/{session_id}/sets", json=body, headers=_auth_headers(access_token)
+    )
+
+
+async def _finish(client: AsyncClient, access_token: str, session_id: str) -> Response:
+    return await client.post(
+        f"{_WORKOUTS}/{session_id}/finish", json={}, headers=_auth_headers(access_token)
+    )
+
+
+async def _abandon(client: AsyncClient, access_token: str, session_id: str) -> Response:
+    return await client.post(
+        f"{_WORKOUTS}/{session_id}/abandon", headers=_auth_headers(access_token)
+    )
+
+
+async def _log_and_finish_session(
+    client: AsyncClient, access_token: str, *, exercise_id: str, reps: int, weight_kg: object
+) -> str:
+    """One completed session, one non-warm-up set. Returns the session id."""
+    started = await _start(client, access_token)
+    assert started.status_code == 201
+    session_id: str = json_body(started)["session"]["id"]
+    assert (
+        await _create_set(
+            client,
+            access_token,
+            session_id,
+            exercise_id=exercise_id,
+            reps=reps,
+            weight_kg=weight_kg,
+        )
+    ).status_code == 201
+    assert (await _finish(client, access_token, session_id)).status_code == 200
+    return session_id
+
+
 # --- 409 PROFILE_REQUIRED (spec §5.1) ------------------------------------------------------
 
 
@@ -146,8 +204,16 @@ async def test_generate_happy_path_shape(client: AsyncClient) -> None:
     assert program["generator_version"] == 2
     assert len(program["days"]) == 4
     for day in program["days"]:
-        assert set(day) == {"id", "day_index", "label_key", "focus_muscles", "exercise_count"}
+        assert set(day) == {
+            "id",
+            "day_index",
+            "label_key",
+            "focus_muscles",
+            "exercise_count",
+            "estimated_minutes",
+        }
         assert day["exercise_count"] > 0
+        assert day["estimated_minutes"] > 0
     assert body["notes_key"] == []
 
 
@@ -286,6 +352,53 @@ async def test_get_program_reports_stale_when_goal_diverges(client: AsyncClient)
     }
 
 
+async def test_get_program_estimated_minutes_matches_the_generate_response(
+    client: AsyncClient,
+) -> None:
+    """T-24b: GET /program recomputes `estimated_minutes` via a different code path
+    (program_repo.list_exercise_load_by_day, against the persisted rows) than POST
+    /program/generate does (straight from the just-generated plan in memory) -- this
+    proves the two agree, not just that each is individually non-zero."""
+    registered = await _register_and_onboard(client, experience_level="intermediate", goal="gain")
+    generated = await _generate(client, registered["access_token"], days_per_week=4)
+    generated_days = json_body(generated)["program"]["days"]
+
+    response = await _get_program(client, registered["access_token"])
+    assert response.status_code == 200
+    fetched_days = json_body(response)["program"]["days"]
+
+    generated_by_id = {day["id"]: day for day in generated_days}
+    for fetched_day in fetched_days:
+        assert (
+            fetched_day["estimated_minutes"]
+            == generated_by_id[fetched_day["id"]]["estimated_minutes"]
+        )
+
+
+async def test_estimated_minutes_matches_the_formula_over_each_days_own_rows(
+    client: AsyncClient,
+) -> None:
+    """Every day of a generated program: `estimated_minutes` equals
+    services.metrics.estimated_session_minutes fed with that same day's own
+    target_sets/rest_seconds -- proven independently for every day, not just the first."""
+    registered = await _register_and_onboard(client, experience_level="advanced", goal="gain")
+    generated = await _generate(client, registered["access_token"], days_per_week=6)
+    days = json_body(generated)["program"]["days"]
+    assert len(days) == 6
+
+    for day in days:
+        day_detail = await _get_day(client, registered["access_token"], day["id"])
+        assert day_detail.status_code == 200
+        exercises = json_body(day_detail)["day"]["exercises"]
+        expected_minutes = metrics.estimated_session_minutes(
+            metrics.ProgramDayLoadInput(
+                target_sets=exercise["target_sets"], rest_seconds=exercise["rest_seconds"]
+            )
+            for exercise in exercises
+        )
+        assert day["estimated_minutes"] == expected_minutes
+
+
 # --- GET /program/days/{day_id} ---------------------------------------------------------------
 
 
@@ -357,6 +470,163 @@ async def test_get_program_day_belonging_to_another_user_returns_404(client: Asy
     response = await _get_day(client, intruder["access_token"], owners_day_id)
     assert response.status_code == 404
     assert json_body(response)["code"] == "NOT_FOUND"
+
+
+# --- last_performance (§5.5) --------------------------------------------------------------
+
+
+async def test_last_performance_reflects_the_most_recent_completed_session(
+    client: AsyncClient,
+) -> None:
+    registered = await _register_and_onboard(client)
+    access_token = registered["access_token"]
+    generated = await _generate(client, access_token, days_per_week=4)
+    day_id = json_body(generated)["program"]["days"][0]["id"]
+    day_detail = await _get_day(client, access_token, day_id)
+    exercise_id = json_body(day_detail)["day"]["exercises"][0]["exercise"]["id"]
+
+    older_session_id = await _log_and_finish_session(
+        client, access_token, exercise_id=exercise_id, reps=8, weight_kg=60
+    )
+    newer_session_id = await _log_and_finish_session(
+        client, access_token, exercise_id=exercise_id, reps=5, weight_kg=65
+    )
+    assert older_session_id != newer_session_id
+
+    response = await _get_day(client, access_token, day_id)
+    assert response.status_code == 200
+    exercise = json_body(response)["day"]["exercises"][0]
+    assert exercise["last_performance"]["session_id"] == newer_session_id
+    assert exercise["last_performance"]["best_set"] == {"reps": 5, "weight_kg": 65}
+
+
+async def test_last_performance_ignores_abandoned_and_in_progress_sessions(
+    client: AsyncClient,
+) -> None:
+    registered = await _register_and_onboard(client)
+    access_token = registered["access_token"]
+    generated = await _generate(client, access_token, days_per_week=4)
+    day_id = json_body(generated)["program"]["days"][0]["id"]
+    day_detail = await _get_day(client, access_token, day_id)
+    exercise_id = json_body(day_detail)["day"]["exercises"][0]["exercise"]["id"]
+
+    completed_session_id = await _log_and_finish_session(
+        client, access_token, exercise_id=exercise_id, reps=8, weight_kg=60
+    )
+
+    # A more recent abandoned session, with a heavier set -- must never outrank it.
+    abandoned = await _start(client, access_token)
+    abandoned_id = json_body(abandoned)["session"]["id"]
+    assert (
+        await _create_set(
+            client, access_token, abandoned_id, exercise_id=exercise_id, reps=1, weight_kg=200
+        )
+    ).status_code == 201
+    assert (await _abandon(client, access_token, abandoned_id)).status_code == 200
+
+    response = await _get_day(client, access_token, day_id)
+    exercise = json_body(response)["day"]["exercises"][0]
+    assert exercise["last_performance"]["session_id"] == completed_session_id
+
+    # An even more recent in-progress session, also with a heavier set -- same rule.
+    in_progress = await _start(client, access_token)
+    in_progress_id = json_body(in_progress)["session"]["id"]
+    assert (
+        await _create_set(
+            client, access_token, in_progress_id, exercise_id=exercise_id, reps=1, weight_kg=200
+        )
+    ).status_code == 201
+
+    response = await _get_day(client, access_token, day_id)
+    exercise = json_body(response)["day"]["exercises"][0]
+    assert exercise["last_performance"]["session_id"] == completed_session_id
+
+
+async def test_last_performance_best_set_is_never_a_warmup_set(client: AsyncClient) -> None:
+    registered = await _register_and_onboard(client)
+    access_token = registered["access_token"]
+    generated = await _generate(client, access_token, days_per_week=4)
+    day_id = json_body(generated)["program"]["days"][0]["id"]
+    day_detail = await _get_day(client, access_token, day_id)
+    exercise_id = json_body(day_detail)["day"]["exercises"][0]["exercise"]["id"]
+
+    started = await _start(client, access_token)
+    session_id = json_body(started)["session"]["id"]
+    # The warm-up is heavier than the real set -- if is_warmup were not excluded, it
+    # would win on both raw weight and e1RM.
+    assert (
+        await _create_set(
+            client,
+            access_token,
+            session_id,
+            exercise_id=exercise_id,
+            reps=5,
+            weight_kg=100,
+            is_warmup=True,
+        )
+    ).status_code == 201
+    assert (
+        await _create_set(
+            client, access_token, session_id, exercise_id=exercise_id, reps=8, weight_kg=60
+        )
+    ).status_code == 201
+    assert (await _finish(client, access_token, session_id)).status_code == 200
+
+    response = await _get_day(client, access_token, day_id)
+    exercise = json_body(response)["day"]["exercises"][0]
+    assert exercise["last_performance"]["best_set"] == {"reps": 8, "weight_kg": 60}
+
+
+async def test_last_performance_best_set_picks_the_highest_e1rm_not_the_heaviest_set(
+    client: AsyncClient,
+) -> None:
+    registered = await _register_and_onboard(client)
+    access_token = registered["access_token"]
+    generated = await _generate(client, access_token, days_per_week=4)
+    day_id = json_body(generated)["program"]["days"][0]["id"]
+    day_detail = await _get_day(client, access_token, day_id)
+    exercise_id = json_body(day_detail)["day"]["exercises"][0]["exercise"]["id"]
+
+    started = await _start(client, access_token)
+    session_id = json_body(started)["session"]["id"]
+    # Heaviest single set (90kg x 1) vs. highest e1RM (50kg x 30) -- different rows.
+    heaviest_e1rm = metrics.estimate_one_rep_max(Decimal("90"), 1)
+    highest_e1rm = metrics.estimate_one_rep_max(Decimal("50"), 30)
+    assert highest_e1rm > heaviest_e1rm, "the test's own data must make the lighter set win"
+    assert (
+        await _create_set(
+            client, access_token, session_id, exercise_id=exercise_id, reps=1, weight_kg=90
+        )
+    ).status_code == 201
+    assert (
+        await _create_set(
+            client, access_token, session_id, exercise_id=exercise_id, reps=30, weight_kg=50
+        )
+    ).status_code == 201
+    assert (await _finish(client, access_token, session_id)).status_code == 200
+
+    response = await _get_day(client, access_token, day_id)
+    exercise = json_body(response)["day"]["exercises"][0]
+    assert exercise["last_performance"]["best_set"] == {"reps": 30, "weight_kg": 50}
+
+
+async def test_last_performance_never_reflects_another_users_session(client: AsyncClient) -> None:
+    intruder = await _register_and_onboard(client)
+    intruder_generated = await _generate(client, intruder["access_token"], days_per_week=4)
+    intruder_day_id = json_body(intruder_generated)["program"]["days"][0]["id"]
+    intruder_day_detail = await _get_day(client, intruder["access_token"], intruder_day_id)
+    shared_exercise_id = json_body(intruder_day_detail)["day"]["exercises"][0]["exercise"]["id"]
+
+    owner = await _register_and_onboard(client)
+    await _log_and_finish_session(
+        client, owner["access_token"], exercise_id=shared_exercise_id, reps=8, weight_kg=60
+    )
+
+    response = await _get_day(client, intruder["access_token"], intruder_day_id)
+    assert response.status_code == 200
+    exercise = json_body(response)["day"]["exercises"][0]
+    assert exercise["exercise"]["id"] == shared_exercise_id
+    assert exercise["last_performance"] is None
 
 
 # --- regeneration: supersede, not replace (§4.3), and the active-session block (§5.3) ---------

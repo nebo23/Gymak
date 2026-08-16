@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.exercise import Exercise
 from app.models.program import Program, ProgramDay, ProgramExercise
-from app.models.workout import WorkoutSession
+from app.models.workout import WorkoutSession, WorkoutSet
 from app.services.plan_generator import GeneratedDay
 
 
@@ -145,6 +145,68 @@ async def count_exercises_by_day(
         .group_by(ProgramExercise.program_day_id)
     )
     return {program_day_id: count for program_day_id, count in result.all()}
+
+
+async def list_exercise_load_by_day(
+    session: AsyncSession, program_day_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[tuple[int, int]]]:
+    """§5.4/§5.12's `estimated_minutes` formula (services.metrics.estimated_session_minutes)
+    needs each day's `(target_sets, rest_seconds)` pairs. One query for the whole
+    program, grouped in Python, matching `count_exercises_by_day`'s own "never one
+    query per day" precedent -- these two functions read the same rows for different
+    columns and could share a query, but `count_exercises_by_day` already ships and is
+    outside this task's file list, so it is left alone rather than refactored into this
+    one for a marginal round-trip saving."""
+    if not program_day_ids:
+        return {}
+    result = await session.execute(
+        select(
+            ProgramExercise.program_day_id,
+            ProgramExercise.target_sets,
+            ProgramExercise.rest_seconds,
+        ).where(ProgramExercise.program_day_id.in_(program_day_ids))
+    )
+    grouped: dict[uuid.UUID, list[tuple[int, int]]] = {}
+    for program_day_id, target_sets, rest_seconds in result.all():
+        grouped.setdefault(program_day_id, []).append((target_sets, rest_seconds))
+    return grouped
+
+
+async def list_last_performance_candidates(
+    session: AsyncSession, user_id: uuid.UUID, exercise_ids: Sequence[uuid.UUID]
+) -> list[tuple[WorkoutSet, WorkoutSession]]:
+    """§5.5 `last_performance`, for the whole day's exercise list in one query --
+    matching `count_exercises_by_day`'s own "never one query per day" precedent.
+
+    Ordered by (session local_date, session started_at) DESCENDING -- most recent
+    completed session first -- so `program_service._resolve_last_performance` can
+    resolve "the most recent completed session containing this exercise" in a single
+    pass: the first row seen for a given `exercise_id` names that exercise's session,
+    and every later row for the same `exercise_id` is kept only while it shares that
+    same `session_id`; a row from an older session is simply skipped.
+
+    Only `status = 'completed'` sessions (P2-ADR-04 -- abandoned and in-progress
+    sessions are excluded, the same rule `metrics_repo`'s records queries already
+    follow) and only non-warm-up sets (a warm-up-only session therefore contributes no
+    row at all, which is exactly "the most recent session with at least one non-warm-up
+    set of that exercise" from the spec's own wording). Explicit `user_id` filter,
+    defence in depth on top of RLS -- the same pattern every other query in this module
+    and in `metrics_repo.py` follows.
+    """
+    if not exercise_ids:
+        return []
+    result = await session.execute(
+        select(WorkoutSet, WorkoutSession)
+        .join(WorkoutSession, WorkoutSession.id == WorkoutSet.session_id)
+        .where(
+            WorkoutSession.user_id == user_id,
+            WorkoutSession.status == "completed",
+            WorkoutSet.exercise_id.in_(exercise_ids),
+            WorkoutSet.is_warmup.is_(False),
+        )
+        .order_by(WorkoutSession.local_date.desc(), WorkoutSession.started_at.desc())
+    )
+    return [(workout_set, workout_session) for workout_set, workout_session in result.all()]
 
 
 async def get_program_day(session: AsyncSession, day_id: uuid.UUID) -> ProgramDay | None:

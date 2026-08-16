@@ -1156,6 +1156,25 @@
         "title": "ProgramDayDetailResponse",
         "type": "object"
       },
+      "ProgramDayExerciseBestSet": {
+        "description": "\u00a75.5's `last_performance.best_set` -- reps and weight only, matching the spec's\nown worked example exactly.",
+        "properties": {
+          "reps": {
+            "title": "Reps",
+            "type": "integer"
+          },
+          "weight_kg": {
+            "title": "Weight Kg",
+            "type": "number"
+          }
+        },
+        "required": [
+          "reps",
+          "weight_kg"
+        ],
+        "title": "ProgramDayExerciseBestSet",
+        "type": "object"
+      },
       "ProgramDayExerciseDetail": {
         "properties": {
           "exercise": {
@@ -1167,8 +1186,14 @@
             "type": "string"
           },
           "last_performance": {
-            "title": "Last Performance",
-            "type": "null"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgramDayExerciseLastPerformance"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "position": {
             "title": "Position",
@@ -1202,6 +1227,31 @@
           "last_performance"
         ],
         "title": "ProgramDayExerciseDetail",
+        "type": "object"
+      },
+      "ProgramDayExerciseLastPerformance": {
+        "description": "\u00a75.5's `last_performance` -- the most recent COMPLETED session (P2-ADR-04)\ncontaining at least one non-warm-up set of this exercise. \"Best\" is not defined by\nthe spec's own wording beyond showing the field; `program_service.\n_resolve_last_performance` is where that decision is made (highest e1RM, tie-broken\non heavier weight_kg, then on earliest logged_at) -- this schema only carries the\nresult of it.",
+        "properties": {
+          "best_set": {
+            "$ref": "#/components/schemas/ProgramDayExerciseBestSet"
+          },
+          "local_date": {
+            "format": "date",
+            "title": "Local Date",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "local_date",
+          "best_set"
+        ],
+        "title": "ProgramDayExerciseLastPerformance",
         "type": "object"
       },
       "ProgramDayExerciseRef": {
@@ -1246,6 +1296,10 @@
             "title": "Day Index",
             "type": "integer"
           },
+          "estimated_minutes": {
+            "title": "Estimated Minutes",
+            "type": "integer"
+          },
           "exercise_count": {
             "title": "Exercise Count",
             "type": "integer"
@@ -1272,7 +1326,8 @@
           "day_index",
           "label_key",
           "focus_muscles",
-          "exercise_count"
+          "exercise_count",
+          "estimated_minutes"
         ],
         "title": "ProgramDaySummary",
         "type": "object"

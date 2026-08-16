@@ -12,16 +12,24 @@ generated plan's transient notes) into the response model.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from typing import TYPE_CHECKING
+from datetime import date, datetime
+from decimal import Decimal
+from typing import TYPE_CHECKING, Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PlainSerializer
 
 from app.models.exercise import Exercise
 from app.models.program import Program, ProgramDay, ProgramExercise
+from app.models.workout import WorkoutSession, WorkoutSet
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+# Same convention as schemas/workout.py's/schemas/metrics.py's own DecimalAsFloat:
+# Numeric columns parse into Decimal, but §5's wire format is a JSON number.
+DecimalAsFloat = Annotated[
+    Decimal, PlainSerializer(lambda value: float(value), return_type=float, when_used="json")
+]
 
 
 class ProgramGenerateRequest(BaseModel):
@@ -42,6 +50,10 @@ class ProgramDaySummary(BaseModel):
     label_key: str
     focus_muscles: list[str]
     exercise_count: int
+    # §5.12's own formula (services.metrics.estimated_session_minutes), computed over
+    # this day's `target_sets`/`rest_seconds` -- T-24b (§5.4/§5.5): populated on every
+    # day of both POST /program/generate and GET /program.
+    estimated_minutes: int
 
 
 class ProgramSummary(BaseModel):
@@ -80,6 +92,27 @@ class ProgramDayExerciseRef(BaseModel):
     primary_muscle: str
 
 
+class ProgramDayExerciseBestSet(BaseModel):
+    """§5.5's `last_performance.best_set` -- reps and weight only, matching the spec's
+    own worked example exactly."""
+
+    reps: int
+    weight_kg: DecimalAsFloat
+
+
+class ProgramDayExerciseLastPerformance(BaseModel):
+    """§5.5's `last_performance` -- the most recent COMPLETED session (P2-ADR-04)
+    containing at least one non-warm-up set of this exercise. "Best" is not defined by
+    the spec's own wording beyond showing the field; `program_service.
+    _resolve_last_performance` is where that decision is made (highest e1RM, tie-broken
+    on heavier weight_kg, then on earliest logged_at) -- this schema only carries the
+    result of it."""
+
+    session_id: uuid.UUID
+    local_date: date
+    best_set: ProgramDayExerciseBestSet
+
+
 class ProgramDayExerciseDetail(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -90,9 +123,7 @@ class ProgramDayExerciseDetail(BaseModel):
     target_reps_min: int
     target_reps_max: int
     rest_seconds: int
-    # §5.5: history-backed, and history does not exist until T-18/T-19. Always null for
-    # now -- see this task's report.
-    last_performance: None
+    last_performance: ProgramDayExerciseLastPerformance | None
 
 
 class ProgramDayDetail(BaseModel):
@@ -121,6 +152,7 @@ def build_program_summary(
     program: Program,
     days: Sequence[ProgramDay],
     exercise_counts: dict[uuid.UUID, int],
+    day_estimated_minutes: dict[uuid.UUID, int],
 ) -> ProgramSummary:
     return ProgramSummary(
         id=program.id,
@@ -137,9 +169,23 @@ def build_program_summary(
                 label_key=day.label_key,
                 focus_muscles=list(day.focus_muscles),
                 exercise_count=exercise_counts.get(day.id, 0),
+                estimated_minutes=day_estimated_minutes.get(day.id, 0),
             )
             for day in days
         ],
+    )
+
+
+def _build_last_performance(
+    entry: tuple[WorkoutSession, WorkoutSet] | None,
+) -> ProgramDayExerciseLastPerformance | None:
+    if entry is None:
+        return None
+    workout_session, best_set = entry
+    return ProgramDayExerciseLastPerformance(
+        session_id=workout_session.id,
+        local_date=workout_session.local_date,
+        best_set=ProgramDayExerciseBestSet(reps=best_set.reps, weight_kg=best_set.weight_kg),
     )
 
 
@@ -148,6 +194,7 @@ def build_program_day_detail(
     exercise_rows: Sequence[tuple[ProgramExercise, Exercise]],
     *,
     language: str,
+    last_performance: dict[uuid.UUID, tuple[WorkoutSession, WorkoutSet]],
 ) -> ProgramDayDetail:
     return ProgramDayDetail(
         id=day.id,
@@ -168,7 +215,7 @@ def build_program_day_detail(
                 target_reps_min=program_exercise.target_reps_min,
                 target_reps_max=program_exercise.target_reps_max,
                 rest_seconds=program_exercise.rest_seconds,
-                last_performance=None,
+                last_performance=_build_last_performance(last_performance.get(exercise.id)),
             )
             for program_exercise, exercise in exercise_rows
         ],
