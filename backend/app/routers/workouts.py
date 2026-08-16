@@ -6,9 +6,10 @@ the service, shape the response. No query is built here.
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, require_completed_profile
@@ -18,24 +19,35 @@ from app.models.profile import Profile
 from app.models.user import User
 from app.repositories import profile_repo
 from app.schemas.workout import (
+    SessionDetailExerciseGroup,
     SessionTotalsData,
     SetRecordData,
     WorkoutAbandonResponse,
+    WorkoutDetailResponse,
     WorkoutFinishRequest,
     WorkoutFinishResponse,
+    WorkoutHistoryResponse,
     WorkoutSetActionResponse,
     WorkoutSetCreateRequest,
     WorkoutSetPatchRequest,
     WorkoutStartRequest,
     WorkoutStartResponse,
+    build_detail_exercise_ref,
     build_finished_summary,
+    build_history_item,
     build_session_summary,
     build_set_data,
+    build_workout_detail,
 )
 from app.services import workout_service
 from app.services.workout_service import SessionNotFoundError, SetActionResult, SetNotFoundError
 
 router = APIRouter(prefix="/workouts", tags=["workouts"])
+
+# §5.9's page size. Same shape as routers/exercises.py's own pair, tuned smaller:
+# a history row is heavier than a library row and T-27 scrolls it infinitely.
+_DEFAULT_HISTORY_LIMIT = 20
+_MAX_HISTORY_LIMIT = 100
 
 
 async def _profile_for(session: AsyncSession, user: User) -> Profile:
@@ -135,6 +147,79 @@ async def get_active_workout_route(
     if workout_session is None:
         return Response(status_code=204)
     return WorkoutStartResponse(session=build_session_summary(workout_session))
+
+
+@router.get("", response_model=WorkoutHistoryResponse)
+async def list_workouts_route(
+    user: Annotated[User, Depends(require_completed_profile)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+    status: str | None = Query(default=None),
+    limit: int = Query(default=_DEFAULT_HISTORY_LIMIT, ge=1, le=_MAX_HISTORY_LIMIT),
+    cursor: str | None = Query(default=None),
+) -> WorkoutHistoryResponse:
+    """§5.9 history. No rate limit: §7.3's table names `/workouts (POST)` and
+    `/workouts/*/sets`, neither of which is this route -- the same "enforce only what
+    §7.3 actually names" rule `_rate_limited_for_start`'s docstring states.
+
+    `from`/`to` are aliased exactly as routers/body_weight.py aliases its own, since
+    `from` is a Python keyword and cannot be a parameter name.
+    """
+    page = await workout_service.list_history(
+        session,
+        user,
+        date_from=date_from,
+        date_to=date_to,
+        status=status,
+        limit=limit,
+        cursor=cursor,
+    )
+    return WorkoutHistoryResponse(
+        items=[
+            build_history_item(item.session, label_key=item.label_key, set_count=item.set_count)
+            for item in page.items
+        ],
+        next_cursor=page.next_cursor,
+    )
+
+
+@router.get("/{session_id}", response_model=WorkoutDetailResponse)
+async def get_workout_route(
+    session_id: str,
+    user: Annotated[User, Depends(require_completed_profile)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> WorkoutDetailResponse:
+    """§5.9 detail. Declared after `/active` above, so FastAPI matches the literal
+    path first -- a `{session_id}` route declared earlier would swallow `/active` and
+    turn it into a 404 SESSION_NOT_FOUND for a malformed uuid.
+    """
+    parsed_id = _parse_session_id(session_id)
+    detail = await workout_service.get_session_detail(session, user, parsed_id)
+    language = (await _profile_for(session, user)).language
+
+    return WorkoutDetailResponse(
+        session=build_workout_detail(
+            detail.session,
+            label_key=detail.label_key,
+            set_count=detail.set_count,
+            exercise_count=detail.exercise_count,
+            exercises=[
+                SessionDetailExerciseGroup(
+                    exercise=build_detail_exercise_ref(group.exercise, language=language),
+                    sets=[
+                        build_set_data(
+                            item.workout_set,
+                            volume_kg=item.derived.volume_kg,
+                            e1rm_kg=item.derived.e1rm_kg,
+                        )
+                        for item in group.sets
+                    ],
+                )
+                for group in detail.exercises
+            ],
+        )
+    )
 
 
 @router.post("/{session_id}/finish", response_model=WorkoutFinishResponse)

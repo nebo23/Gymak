@@ -187,13 +187,15 @@ def test_route_enumeration_finds_the_documented_catalogue() -> None:
     POST /workouts/{id}/abandon, for 24; T-19 (§5.7) adds POST, PATCH and DELETE
     /workouts/{id}/sets[/{set_id}], for 27; T-20 (§5.10) adds PUT, GET and DELETE
     /body-weight[/{measured_on}], for 30; T-21 adds GET /records and GET /dashboard,
-    for 32. If a future FastAPI version changes how
+    for 32; §5.9's GET /workouts and GET /workouts/{id} -- the P2-FR-008 pair §12's
+    task pack never assigned to any task -- bring the catalogue to its full 34. If a
+    future FastAPI version changes how
     `include_router` wires routes again, this fails immediately instead of the matrix
     below silently running zero cases.
     """
     routes = _enumerate_api_routes()
     found = sorted(_route_key(r) for r in routes)
-    assert len(routes) == 32, f"expected 32 routes per spec §5.1, found {len(routes)}: {found}"
+    assert len(routes) == 34, f"expected 34 routes per spec §5.1, found {len(routes)}: {found}"
 
 
 def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() -> None:
@@ -285,6 +287,22 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
         # the same way in that file's test_dashboard_never_reflects_another_users_data.
         ("GET", "/records"): frozenset(),
         ("GET", "/dashboard"): frozenset(),
+        # §5.9 (P2-FR-008): GET /workouts takes only query parameters (from, to,
+        # status, limit, cursor) and no body -- `cursor` is an opaque value this
+        # endpoint itself issued, and decoding one another user's page produced still
+        # yields nothing, because the query underneath it is filtered by the bearer's
+        # own user_id (and by workout_sessions' RLS policy beneath that). GET
+        # /workouts/{session_id} takes a path parameter this scanner cannot see -- the
+        # same body-only blind spot as GET /program/days/{day_id} and the workout-sets
+        # routes above -- proven directly instead in
+        # tests/integration/test_workout_history.py
+        # (test_detail_of_another_users_session_returns_404, plus
+        # test_detail_never_leaks_another_users_notes, which is §11.1's "no endpoint
+        # returns another user's notes" row: this is the only Phase 2 endpoint that
+        # returns a session's notes at all). The history list's own isolation is proven
+        # there too, by direct comparison (test_history_never_shows_another_users_sessions).
+        ("GET", "/workouts"): frozenset(),
+        ("GET", "/workouts/{session_id}"): frozenset(),
     }
 
     assert set(user_scoped) == set(expected_reference_fields), (
@@ -300,18 +318,18 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
             "this file's cross-tenant case for it."
         )
 
-    # Of 32 enumerated routes, 8 are unauthenticated by design (register, login, social
+    # Of 34 enumerated routes, 8 are unauthenticated by design (register, login, social
     # sign-in, refresh, the three password-reset calls, and health) and are scoped, if
     # at all, by a submitted email/token under their own §7.3 error contract rather than
-    # by a bearer identity -- not this matrix's concern. The remaining 24 are user-scoped;
-    # of those, 22 accept no field that could name another user's resource at all (the
+    # by a bearer identity -- not this matrix's concern. The remaining 26 are user-scoped;
+    # of those, 24 accept no field that could name another user's resource at all (the
     # only "identifier" is the bearer token itself, a reviewed own-content field, or --
-    # for the T-16/T-17/T-18/T-19/T-20/T-21 GET-and-path-id routes -- a path id), and are
-    # instead each proven isolated by their own test below; 2 (POST /auth/logout's
+    # for the T-16/T-17/T-18/T-19/T-20/T-21/§5.9 GET-and-path-id routes -- a path id),
+    # and are instead each proven isolated by their own test below; 2 (POST /auth/logout's
     # refresh_token and POST /workouts's program_day_id) do name another row and are the
     # live identifier-substitution cases.
-    assert len(routes) == 32
-    assert len(user_scoped) == 24
+    assert len(routes) == 34
+    assert len(user_scoped) == 26
 
 
 def _reference_field_cases() -> list[tuple[str, str, str]]:

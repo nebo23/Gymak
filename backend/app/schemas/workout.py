@@ -21,6 +21,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, PlainSerializer
 
+from app.models.exercise import Exercise
 from app.models.workout import WorkoutSession, WorkoutSet
 
 # Same convention as schemas/profile.py's DecimalAsFloat: Numeric columns parse into
@@ -211,4 +212,136 @@ def build_set_data(
         is_warmup=workout_set.is_warmup,
         logged_at=workout_set.logged_at,
         derived=SetDerived(volume_kg=volume_kg, e1rm_kg=e1rm_kg),
+    )
+
+
+# =========================================================================================
+# §5.9 GET /workouts (history) and GET /workouts/{id} (one session in full), P2-FR-008
+# =========================================================================================
+
+
+class WorkoutHistoryItem(BaseModel):
+    """§5.9: "summaries only -- id, `local_date`, status, duration, volume, set count,
+    and the program day's `label_key`." Exactly those seven fields and no more: the
+    sets themselves are what `GET /workouts/{id}` is for, and a history row that
+    carried them would make the list's payload grow with the user's training volume.
+
+    `label_key` is null for a session started without a plan (§4.6's nullable
+    `program_day_id`), never a translated string -- the server never sends display
+    text (Phase 1 §9.6).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    local_date: date
+    status: str
+    duration_seconds: int | None
+    total_volume_kg: DecimalAsFloat | None
+    set_count: int
+    label_key: str | None
+
+
+class WorkoutHistoryResponse(BaseModel):
+    items: list[WorkoutHistoryItem]
+    # Same opaque-cursor contract as ExerciseListResponse's own `next_cursor`: null on
+    # the last page, and only ever a value this endpoint itself issued.
+    next_cursor: str | None
+
+
+class SessionDetailExerciseRef(BaseModel):
+    """The exercise a detail group names. Same narrow shape as schemas/program.py's
+    `ProgramDayExerciseRef`, minus `equipment` -- a past session's read-only view needs
+    to name the movement, not describe how to set it up."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    slug: str
+    name: str
+    primary_muscle: str
+
+
+class SessionDetailExerciseGroup(BaseModel):
+    """§5.9: sets "grouped by exercise in `position` order for a plan-backed session
+    and in first-logged order for an empty one."""
+
+    exercise: SessionDetailExerciseRef
+    sets: list[WorkoutSetData]
+
+
+class WorkoutDetailData(BaseModel):
+    """§5.9: "the session with every set." `notes` is the caller's own note on their
+    own session -- §11.1's security test asserts no endpoint returns *another* user's,
+    which the route's ownership scoping is what guarantees."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    status: str
+    started_at: datetime
+    ended_at: datetime | None
+    local_date: date
+    duration_seconds: int | None
+    total_volume_kg: DecimalAsFloat | None
+    notes: str | None
+    program_day_id: uuid.UUID | None
+    label_key: str | None
+    set_count: int
+    exercise_count: int
+    exercises: list[SessionDetailExerciseGroup]
+
+
+class WorkoutDetailResponse(BaseModel):
+    session: WorkoutDetailData
+
+
+def build_history_item(
+    workout_session: WorkoutSession, *, label_key: str | None, set_count: int
+) -> WorkoutHistoryItem:
+    return WorkoutHistoryItem(
+        id=workout_session.id,
+        local_date=workout_session.local_date,
+        status=workout_session.status,
+        duration_seconds=workout_session.duration_seconds,
+        total_volume_kg=workout_session.total_volume_kg,
+        set_count=set_count,
+        label_key=label_key,
+    )
+
+
+def build_detail_exercise_ref(exercise: Exercise, *, language: str) -> SessionDetailExerciseRef:
+    """Same server-side name resolution schemas/exercise.py and schemas/program.py both
+    already do -- §5.2's one deliberate exception to "the server never sends display
+    text", applied consistently wherever an exercise is named."""
+    return SessionDetailExerciseRef(
+        id=exercise.id,
+        slug=exercise.slug,
+        name=exercise.name_ar if language == "ar" else exercise.name_en,
+        primary_muscle=exercise.primary_muscle,
+    )
+
+
+def build_workout_detail(
+    workout_session: WorkoutSession,
+    *,
+    label_key: str | None,
+    set_count: int,
+    exercise_count: int,
+    exercises: list[SessionDetailExerciseGroup],
+) -> WorkoutDetailData:
+    return WorkoutDetailData(
+        id=workout_session.id,
+        status=workout_session.status,
+        started_at=workout_session.started_at,
+        ended_at=workout_session.ended_at,
+        local_date=workout_session.local_date,
+        duration_seconds=workout_session.duration_seconds,
+        total_volume_kg=workout_session.total_volume_kg,
+        notes=workout_session.notes,
+        program_day_id=workout_session.program_day_id,
+        label_key=label_key,
+        set_count=set_count,
+        exercise_count=exercise_count,
+        exercises=exercises,
     )

@@ -9,13 +9,14 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError, ExerciseNotFoundError, NotFoundError, ValidationError
+from app.models.exercise import Exercise
 from app.models.profile import Profile
 from app.models.user import User
 from app.models.workout import WorkoutSession, WorkoutSet
@@ -437,3 +438,179 @@ async def delete_set(
 
     await workout_repo.delete_set(session, target)
     await session.commit()
+
+
+# =========================================================================================
+# §5.9 GET /workouts (history) and GET /workouts/{id} (one session in full), P2-FR-008
+# =========================================================================================
+
+_SESSION_STATUSES = ("in_progress", "completed", "abandoned")
+
+
+def validate_status_filter(value: str) -> str:
+    """§5.9's "status filter". §7.1 names no row for it, so this follows
+    `exercise_repo.decode_cursor`'s own precedent for the other §5-level filter the
+    spec describes without a dedicated code: VALIDATION_ERROR with `<field>:INVALID`.
+    Rejecting an unknown status rather than returning an empty page is deliberate --
+    a typo'd filter that silently yields "no workouts" reads to the caller exactly
+    like a user who has never trained.
+    """
+    if value not in _SESSION_STATUSES:
+        raise _field_error(
+            "status",
+            "INVALID",
+            "status must be one of: " + ", ".join(_SESSION_STATUSES) + ".",
+        )
+    return value
+
+
+@dataclass(frozen=True)
+class HistoryItem:
+    """One row of §5.9's history page -- a summary, never the sets themselves."""
+
+    session: WorkoutSession
+    label_key: str | None
+    set_count: int
+
+
+@dataclass(frozen=True)
+class HistoryPage:
+    items: list[HistoryItem]
+    next_cursor: str | None
+
+
+async def list_history(
+    session: AsyncSession,
+    user: User,
+    *,
+    date_from: date | None,
+    date_to: date | None,
+    status: str | None,
+    limit: int,
+    cursor: str | None,
+) -> HistoryPage:
+    """§5.9: "History is cursor-paginated, newest first, and returns summaries only."
+
+    Every status is included by default, `in_progress` among them: the history is the
+    log of what the user did, and an abandoned or still-open session is part of that
+    record even though P2-ADR-04 keeps both out of records and the streak. Narrowing
+    is what the `status` filter is for.
+    """
+    validated_status = validate_status_filter(status) if status is not None else None
+
+    rows, next_cursor = await workout_repo.list_sessions(
+        session,
+        user.id,
+        date_from=date_from,
+        date_to=date_to,
+        status=validated_status,
+        limit=limit,
+        cursor=cursor,
+    )
+    set_counts = await workout_repo.count_sets_by_session(
+        session, [workout_session.id for workout_session, _ in rows]
+    )
+    return HistoryPage(
+        items=[
+            HistoryItem(
+                session=workout_session,
+                label_key=day.label_key if day is not None else None,
+                set_count=set_counts.get(workout_session.id, 0),
+            )
+            for workout_session, day in rows
+        ],
+        next_cursor=next_cursor,
+    )
+
+
+@dataclass(frozen=True)
+class SessionDetailSet:
+    workout_set: WorkoutSet
+    derived: SetDerivedValues
+
+
+@dataclass(frozen=True)
+class SessionDetailExercise:
+    exercise: Exercise
+    sets: list[SessionDetailSet]
+
+
+@dataclass(frozen=True)
+class SessionDetail:
+    session: WorkoutSession
+    label_key: str | None
+    exercises: list[SessionDetailExercise]
+    set_count: int
+    exercise_count: int
+
+
+async def get_session_detail(
+    session: AsyncSession, user: User, session_id: uuid.UUID
+) -> SessionDetail:
+    """§5.9: "returns the session with every set, grouped by exercise in `position`
+    order for a plan-backed session and in first-logged order for an empty one, each
+    set carrying its `derived` block."
+
+    "Empty one" is read as "a session with no program day behind it" -- a session with
+    no *sets* has no exercises to order at all, so the sentence only says something
+    about the plan-backed/ad-hoc distinction. An exercise the user swapped in, absent
+    from the plan's own day, has no `position` and sorts after every exercise that has
+    one, keeping first-logged order among themselves.
+
+    `derived` is recomputed here, never read from storage (P2-ADR-04): the same
+    `metrics` functions the live logging path uses, so a set reads back with exactly
+    the numbers it was logged with.
+    """
+    row = await workout_repo.get_session_with_day(session, session_id, user.id)
+    if row is None:
+        raise SessionNotFoundError(detail="Unknown session.")
+    workout_session, day = row
+
+    positions: dict[uuid.UUID, int] = {}
+    if workout_session.program_day_id is not None:
+        positions = await workout_repo.list_day_exercise_positions(
+            session, workout_session.program_day_id
+        )
+
+    rows = await workout_repo.list_sets_with_exercise(session, workout_session.id)
+
+    # Grouped in first-logged order: `rows` is already ordered by logged_at, so the
+    # first time an exercise appears fixes its place, and a plan `position` (when there
+    # is one) reorders the groups afterwards.
+    grouped: dict[uuid.UUID, list[SessionDetailSet]] = {}
+    exercises_by_id: dict[uuid.UUID, Exercise] = {}
+    for workout_set, exercise in rows:
+        exercises_by_id.setdefault(exercise.id, exercise)
+        grouped.setdefault(exercise.id, []).append(
+            SessionDetailSet(
+                workout_set=workout_set,
+                derived=SetDerivedValues(
+                    volume_kg=metrics.set_volume_kg(workout_set.weight_kg, workout_set.reps),
+                    e1rm_kg=metrics.estimate_one_rep_max(workout_set.weight_kg, workout_set.reps),
+                ),
+            )
+        )
+
+    first_logged_order = list(grouped)
+    ordered_exercise_ids = sorted(
+        first_logged_order,
+        # An exercise with no plan position sorts after every one that has a position
+        # (len(positions) is strictly greater than any real position index within this
+        # day), and ties -- including every exercise in an ad-hoc session, where the
+        # dict is empty -- fall back to first-logged order.
+        key=lambda exercise_id: (
+            positions.get(exercise_id, len(positions) + first_logged_order.index(exercise_id) + 1),
+            first_logged_order.index(exercise_id),
+        ),
+    )
+
+    return SessionDetail(
+        session=workout_session,
+        label_key=day.label_key if day is not None else None,
+        exercises=[
+            SessionDetailExercise(exercise=exercises_by_id[exercise_id], sets=grouped[exercise_id])
+            for exercise_id in ordered_exercise_ids
+        ],
+        set_count=len(rows),
+        exercise_count=len(grouped),
+    )
