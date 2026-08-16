@@ -6,7 +6,8 @@
     "dismiss": "إغلاق",
     "languageToggleLabel": "تبديل اللغة",
     "medicalDisclaimer": "تطبيق Gymak ليس استشارة طبية. توقف إذا شعرت بألم، واستشر طبيبًا قبل بدء أي برنامج تدريبي جديد.",
-    "notEnoughData": "لا توجد بيانات كافية بعد"
+    "notEnoughData": "لا توجد بيانات كافية بعد",
+    "cancel": "إلغاء"
   },
   "nav": {
     "home": "الرئيسية",
@@ -15,10 +16,6 @@
     "settings": "الإعدادات"
   },
   "comingSoon": {
-    "plan": {
-      "title": "خطتك قادمة قريبًا",
-      "body": "هنا ستظهر خطتك التدريبية الأسبوعية."
-    },
     "progress": {
       "title": "صفحة تقدمك قادمة قريبًا",
       "body": "هنا سيظهر سجل وزن جسمك وأرقامك القياسية الشخصية."
@@ -270,7 +267,50 @@
       "pull": "سحب",
       "legs": "الأرجل",
       "armsDelts": "الذراعان والأكتاف"
+    },
+    "overview": {
+      "regenerate": "إعادة الإنشاء",
+      "regenerateConfirmTitle": "إعادة إنشاء خطتك؟",
+      "regenerateConfirmBody": "سيستبدل هذا خطتك الحالية بخطة جديدة مكوّنة من {{days}} أيام. سجل تدريباتك السابقة يبقى كما هو تمامًا.",
+      "regenerateConfirmAction": "إعادة الإنشاء",
+      "footer": "{{count}} تمارين · حوالي {{minutes}} دقيقة"
+    },
+    "empty": {
+      "title": "أنشئ خطتك",
+      "body": "اختر عدد أيام التدريب في الأسبوع، وسننشئ لك الباقي.",
+      "daysPerWeekLabel": "أيام التدريب أسبوعيًا",
+      "daysPerWeekOption": "{{days}} أيام في الأسبوع",
+      "generate": "إنشاء خطتي"
+    },
+    "notes": {
+      "beginnerCappedDays": "المبتدئون مقيّدون بأربعة أيام أسبوعيًا كحد أقصى — أنشأنا لك خطة مكوّنة من 4 أيام بدلاً من ذلك."
+    },
+    "dayDetail": {
+      "target": "{{sets}} × {{min}}–{{max}} تكرار · راحة {{seconds}} ث",
+      "lastPerformanceLabel": "آخر مرة",
+      "lastPerformanceValue": "{{reps}} × {{weight}} كجم",
+      "start": "ابدأ هذا التمرين",
+      "startComingSoon": "بدء التمرين يصل في تحديث لاحق."
     }
+  },
+  "muscles": {
+    "abs": "البطن",
+    "back": "الظهر",
+    "biceps": "البايسبس",
+    "calves": "السمانة",
+    "chest": "الصدر",
+    "forearms": "الساعد",
+    "front_delts": "الكتف الأمامي",
+    "glutes": "الأرداف",
+    "hamstrings": "الفخذ الخلفي",
+    "lats": "الظهر العريض",
+    "lower_back": "أسفل الظهر",
+    "obliques": "الخصر",
+    "quads": "الفخذ الأمامي",
+    "rear_delts": "الكتف الخلفي",
+    "side_delts": "الكتف الجانبي",
+    "traps": "الترابيس",
+    "triceps": "الترايسبس"
   },
   "fieldErrors": {
     "email": {

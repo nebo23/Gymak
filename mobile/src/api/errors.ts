@@ -7,7 +7,7 @@
  */
 import axios from "axios";
 
-// §7.3 in table order — the client must handle every one of these.
+// Phase 1 §7.3, in table order — the client must handle every one of these.
 export const API_ERROR_CODES = [
   "MALFORMED_BODY",
   "PROVIDER_NOT_SUPPORTED",
@@ -32,6 +32,20 @@ export const API_ERROR_CODES = [
   "RESET_CODE_ATTEMPTS_EXCEEDED",
   "INTERNAL_ERROR",
   "UPSTREAM_UNAVAILABLE",
+  // Phase 2 §7.2, in table order -- already translated in ar.json/en.json (each
+  // backend task added its own errors.<CODE> key under the standing i18n exception
+  // as it shipped, per §7.2's own "every code gets an entry in the same task that
+  // introduces it"), but never added here until T-25 became the first mobile task
+  // to actually reach one of these over the wire. Without an entry here,
+  // parseApiError falls through to GENERIC for a real, already-translated code --
+  // T-25's own SESSION_ACTIVE_BLOCKS_REGENERATION requirement is what surfaced it.
+  "PROGRAM_NOT_FOUND",
+  "SESSION_NOT_FOUND",
+  "SESSION_ALREADY_ACTIVE",
+  "SESSION_NOT_ACTIVE",
+  "SESSION_ACTIVE_BLOCKS_REGENERATION",
+  "EMPTY_SESSION",
+  "PLAN_GENERATION_FAILED",
 ] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];

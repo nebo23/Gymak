@@ -6,7 +6,8 @@
     "dismiss": "Dismiss",
     "languageToggleLabel": "Switch language",
     "medicalDisclaimer": "Gymak is not medical advice. Stop if something hurts, and talk to a doctor before starting a new programme.",
-    "notEnoughData": "Not enough data yet"
+    "notEnoughData": "Not enough data yet",
+    "cancel": "Cancel"
   },
   "nav": {
     "home": "Home",
@@ -15,10 +16,6 @@
     "settings": "Settings"
   },
   "comingSoon": {
-    "plan": {
-      "title": "Your plan is on its way",
-      "body": "This is where your weekly training plan will live."
-    },
     "progress": {
       "title": "Your progress is on its way",
       "body": "This is where your body-weight log and personal records will live."
@@ -270,7 +267,50 @@
       "pull": "Pull",
       "legs": "Legs",
       "armsDelts": "Arms & delts"
+    },
+    "overview": {
+      "regenerate": "Regenerate",
+      "regenerateConfirmTitle": "Regenerate your plan?",
+      "regenerateConfirmBody": "This replaces your current plan with a new {{days}}-day plan. Your training history stays exactly as it is.",
+      "regenerateConfirmAction": "Regenerate",
+      "footer": "{{count}} exercises · about {{minutes}} min"
+    },
+    "empty": {
+      "title": "Build your plan",
+      "body": "Choose how many days a week you want to train, and we'll build the rest.",
+      "daysPerWeekLabel": "Days per week",
+      "daysPerWeekOption": "{{days}} days a week",
+      "generate": "Build my plan"
+    },
+    "notes": {
+      "beginnerCappedDays": "Beginners are capped at 4 days a week — we've built a 4-day plan instead."
+    },
+    "dayDetail": {
+      "target": "{{sets}} × {{min}}–{{max}} reps · Rest {{seconds}}s",
+      "lastPerformanceLabel": "Last",
+      "lastPerformanceValue": "{{reps}} × {{weight}} kg",
+      "start": "Start this workout",
+      "startComingSoon": "Starting a workout arrives in a later update."
     }
+  },
+  "muscles": {
+    "abs": "Abs",
+    "back": "Back",
+    "biceps": "Biceps",
+    "calves": "Calves",
+    "chest": "Chest",
+    "forearms": "Forearms",
+    "front_delts": "Front delts",
+    "glutes": "Glutes",
+    "hamstrings": "Hamstrings",
+    "lats": "Lats",
+    "lower_back": "Lower back",
+    "obliques": "Obliques",
+    "quads": "Quads",
+    "rear_delts": "Rear delts",
+    "side_delts": "Side delts",
+    "traps": "Traps",
+    "triceps": "Triceps"
   },
   "fieldErrors": {
     "email": {
