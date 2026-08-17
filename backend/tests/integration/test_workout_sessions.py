@@ -451,6 +451,156 @@ async def test_finish_computes_volume_over_non_warmup_sets_only(
     assert json_body(response)["records_set"] == []
 
 
+# --- T-26b: POST /workouts/{id}/finish's records_set ---------------------------------------
+
+
+async def test_finish_reports_a_new_e1rm_record_over_a_prior_completed_session(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # §5.8's own worked example shape: { exercise_id, kind: "e1rm", value }. The first
+    # session has no history to beat, so it sets nothing; the second beats it and
+    # announces exactly its own best e1RM.
+    registered = await _register_and_onboard(client)
+    user_id = uuid.UUID(registered["user"]["id"])
+    exercise_id = await _first_exercise_id(db_session)
+
+    first = await _start(client, registered["access_token"])
+    first_id = uuid.UUID(json_body(first)["session"]["id"])
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=first_id,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=8,
+        weight_kg="60",
+        logged_at=datetime.now(UTC),
+    )
+    first_finish = await _finish(client, registered["access_token"], str(first_id))
+    assert first_finish.status_code == 200
+    assert json_body(first_finish)["records_set"] == []
+
+    second = await _start(client, registered["access_token"])
+    second_id = uuid.UUID(json_body(second)["session"]["id"])
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=second_id,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=5,
+        weight_kg="90",
+        logged_at=datetime.now(UTC),
+    )
+    second_finish = await _finish(client, registered["access_token"], str(second_id))
+    assert second_finish.status_code == 200
+    # 90kg x 5 -> e1RM 105, beating the first session's 60kg x 8 (e1RM 76).
+    assert json_body(second_finish)["records_set"] == [
+        {"exercise_id": str(exercise_id), "kind": "e1rm", "value": 105}
+    ]
+
+
+async def test_finish_never_reports_a_record_for_a_warmup_set(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # P2-ADR-04: "warm-up sets ... can never set a record." The warmup below (200kg x
+    # 5, e1RM ~233) is far heavier than the 76 baseline it would otherwise smash; the
+    # session's one working set (50kg x 8, e1RM ~63) does not beat that baseline
+    # either -- isolating "warm-ups never count" from "this didn't beat the baseline".
+    registered = await _register_and_onboard(client)
+    user_id = uuid.UUID(registered["user"]["id"])
+    exercise_id = await _first_exercise_id(db_session)
+
+    baseline = await _start(client, registered["access_token"])
+    baseline_id = uuid.UUID(json_body(baseline)["session"]["id"])
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=baseline_id,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=8,
+        weight_kg="60",
+        logged_at=datetime.now(UTC),
+    )
+    assert (await _finish(client, registered["access_token"], str(baseline_id))).status_code == 200
+
+    session = await _start(client, registered["access_token"])
+    session_id = uuid.UUID(json_body(session)["session"]["id"])
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=session_id,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=5,
+        weight_kg="200",
+        is_warmup=True,
+        logged_at=datetime.now(UTC),
+    )
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=session_id,
+        exercise_id=exercise_id,
+        set_index=2,
+        reps=8,
+        weight_kg="50",
+        logged_at=datetime.now(UTC),
+    )
+
+    response = await _finish(client, registered["access_token"], str(session_id))
+    assert response.status_code == 200
+    assert json_body(response)["records_set"] == []
+
+
+async def test_finish_reports_only_the_sessions_own_best_once_for_multiple_qualifying_sets(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # A ramp-up of three progressively heavier sets, every one past the baseline: the
+    # session's own best (the heaviest) is announced once, not once per set that
+    # happened to clear the bar.
+    registered = await _register_and_onboard(client)
+    user_id = uuid.UUID(registered["user"]["id"])
+    exercise_id = await _first_exercise_id(db_session)
+
+    baseline = await _start(client, registered["access_token"])
+    baseline_id = uuid.UUID(json_body(baseline)["session"]["id"])
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=baseline_id,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=8,
+        weight_kg="60",
+        logged_at=datetime.now(UTC),
+    )
+    assert (await _finish(client, registered["access_token"], str(baseline_id))).status_code == 200
+
+    session = await _start(client, registered["access_token"])
+    session_id = uuid.UUID(json_body(session)["session"]["id"])
+    for index, (reps, weight_kg) in enumerate(((8, "70"), (8, "80"), (5, "90")), start=1):
+        await _seed_set(
+            db_session,
+            user_id=user_id,
+            session_id=session_id,
+            exercise_id=exercise_id,
+            set_index=index,
+            reps=reps,
+            weight_kg=weight_kg,
+            logged_at=datetime.now(UTC),
+        )
+
+    response = await _finish(client, registered["access_token"], str(session_id))
+    assert response.status_code == 200
+    # 90kg x 5 -> e1RM 105, the heaviest of the three -- not 70kg x 8 (e1RM 88.67),
+    # the first set that happened to clear the 76 baseline, and not three entries.
+    assert json_body(response)["records_set"] == [
+        {"exercise_id": str(exercise_id), "kind": "e1rm", "value": 105}
+    ]
+
+
 async def test_finish_on_unknown_session_returns_404(client: AsyncClient) -> None:
     registered = await _register_and_onboard(client)
     response = await _finish(client, registered["access_token"], str(uuid.uuid4()))

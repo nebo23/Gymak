@@ -82,14 +82,21 @@ class WorkoutFinishedSummary(BaseModel):
     exercise_count: int
 
 
+class RecordSetItem(BaseModel):
+    """§5.8's `records_set` array element -- computed at read time over
+    `workout_sets` (P2-ADR-05), never stored. `kind` is always `"e1rm"`, the same
+    single kind T-19's in-session `is_record` (`SetRecordData` below) already uses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    exercise_id: uuid.UUID
+    kind: str
+    value: DecimalAsFloat
+
+
 class WorkoutFinishResponse(BaseModel):
     session: WorkoutFinishedSummary
-    # §5.8's example shows a `records_set` array. Computing it needs a read-time
-    # aggregation over history (P2-ADR-05), which lives in metrics_repo.py --
-    # not one of this task's files (T-21 owns metrics_repo.py and GET /records).
-    # Always empty here, the same deliberate placeholder schemas/program.py's
-    # `last_performance: None` is for T-18/T-19's own history gap.
-    records_set: list[object] = []
+    records_set: list[RecordSetItem]
 
 
 class WorkoutAbandonResponse(BaseModel):
@@ -289,6 +296,7 @@ class WorkoutDetailData(BaseModel):
     label_key: str | None
     set_count: int
     exercise_count: int
+    records_set: list[RecordSetItem]
     exercises: list[SessionDetailExerciseGroup]
 
 
@@ -328,6 +336,7 @@ def build_workout_detail(
     label_key: str | None,
     set_count: int,
     exercise_count: int,
+    records_set: list[RecordSetItem],
     exercises: list[SessionDetailExerciseGroup],
 ) -> WorkoutDetailData:
     return WorkoutDetailData(
@@ -343,5 +352,6 @@ def build_workout_detail(
         label_key=label_key,
         set_count=set_count,
         exercise_count=exercise_count,
+        records_set=records_set,
         exercises=exercises,
     )

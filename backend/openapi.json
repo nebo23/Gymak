@@ -1528,6 +1528,31 @@
         "title": "RecordExerciseRef",
         "type": "object"
       },
+      "RecordSetItem": {
+        "description": "\u00a75.8's `records_set` array element -- computed at read time over\n`workout_sets` (P2-ADR-05), never stored. `kind` is always `\"e1rm\"`, the same\nsingle kind T-19's in-session `is_record` (`SetRecordData` below) already uses.",
+        "properties": {
+          "exercise_id": {
+            "format": "uuid",
+            "title": "Exercise Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "exercise_id",
+          "kind",
+          "value"
+        ],
+        "title": "RecordSetItem",
+        "type": "object"
+      },
       "RecordsResponse": {
         "properties": {
           "records": {
@@ -2055,6 +2080,13 @@
             ],
             "title": "Program Day Id"
           },
+          "records_set": {
+            "items": {
+              "$ref": "#/components/schemas/RecordSetItem"
+            },
+            "title": "Records Set",
+            "type": "array"
+          },
           "set_count": {
             "title": "Set Count",
             "type": "integer"
@@ -2093,6 +2125,7 @@
           "label_key",
           "set_count",
           "exercise_count",
+          "records_set",
           "exercises"
         ],
         "title": "WorkoutDetailData",
@@ -2131,8 +2164,9 @@
       "WorkoutFinishResponse": {
         "properties": {
           "records_set": {
-            "default": [],
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/RecordSetItem"
+            },
             "title": "Records Set",
             "type": "array"
           },
@@ -2141,7 +2175,8 @@
           }
         },
         "required": [
-          "session"
+          "session",
+          "records_set"
         ],
         "title": "WorkoutFinishResponse",
         "type": "object"

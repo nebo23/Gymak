@@ -7,7 +7,7 @@ dataclass/model back, matching program_service.py's convention.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -152,6 +152,25 @@ class ClosedSessionResult:
     exercise_count: int
 
 
+@dataclass(frozen=True)
+class RecordSetEntry:
+    """§5.8's `records_set` array element. `kind` is always `"e1rm"` -- the same single
+    kind T-19's in-session `is_record` already uses (see `SetRecord` above); nothing
+    else in this codebase computes a different kind of record."""
+
+    exercise_id: uuid.UUID
+    kind: str
+    value: Decimal
+
+
+@dataclass(frozen=True)
+class FinishSessionResult:
+    session: WorkoutSession
+    set_count: int
+    exercise_count: int
+    records_set: list[RecordSetEntry]
+
+
 async def _get_owned_session(
     session: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID
 ) -> WorkoutSession:
@@ -173,7 +192,7 @@ def _assert_in_progress(workout_session: WorkoutSession) -> None:
 
 async def finish_session(
     session: AsyncSession, user: User, session_id: uuid.UUID, notes: str | None
-) -> ClosedSessionResult:
+) -> FinishSessionResult:
     """§5.8. `422 EMPTY_SESSION` on zero sets, before any computation -- "recording a
     completed workout with nothing in it corrupts the streak." Duration and volume
     are computed from the sets already in the database (T-18's own note: sets are
@@ -205,8 +224,83 @@ async def finish_session(
         total_volume_kg=total_volume_kg,
         notes=notes,
     )
+    records_set = await _records_set_for_session(session, updated, sets)
     await session.commit()
-    return ClosedSessionResult(session=updated, set_count=len(sets), exercise_count=exercise_count)
+    return FinishSessionResult(
+        session=updated,
+        set_count=len(sets),
+        exercise_count=exercise_count,
+        records_set=records_set,
+    )
+
+
+# =========================================================================================
+# T-26b: `records_set`, shared by `finish_session` above and `get_session_detail` below
+# (§5.8/5.9, P2-ADR-04/05). See metrics_repo.list_completed_non_warmup_sets_before's own
+# docstring for why this must compare against completed sessions strictly *before* the
+# target session, never "all other completed sessions" -- the latter is only safe at the
+# instant a session finishes (P2-ADR-03: nothing later can have completed yet), and silently
+# wrong for a GET /workouts/{id} read back after later sessions exist.
+# =========================================================================================
+
+
+def _best_e1rm_by_exercise(sets: Iterable[WorkoutSet]) -> dict[uuid.UUID, Decimal]:
+    """Warm-up sets never contribute (P2-ADR-04) -- true whether `sets` is a session's
+    own sets or a baseline history query that already filtered them out in SQL; the
+    check here makes this safe to reuse on either without relying on the caller having
+    done it. Iteration order is preserved in the returned dict's key order, so calling
+    this on a session's own sets in logged order gives deterministic first-appearance
+    ordering for free, with no separate sort.
+    """
+    best: dict[uuid.UUID, Decimal] = {}
+    for workout_set in sets:
+        if workout_set.is_warmup:
+            continue
+        value = _e1rm_for(workout_set)
+        current = best.get(workout_set.exercise_id)
+        if current is None or value > current:
+            best[workout_set.exercise_id] = value
+    return best
+
+
+async def _records_set_for_session(
+    session: AsyncSession, workout_session: WorkoutSession, session_sets: Sequence[WorkoutSet]
+) -> list[RecordSetEntry]:
+    """At most one entry per exercise: the target session's own best e1RM for it, when
+    that beats the user's best from completed sessions strictly before this one.
+    Mirrors `_new_set_record`'s qualification rule (warm-ups never qualify, and no
+    prior baseline means no record -- an exercise's first-ever outing cannot announce
+    one here either) but aggregates per exercise across the whole session rather than
+    per set, so a ramp-up of progressively heavier sets reports the session's single
+    best once, not once per set that happened to beat the baseline.
+
+    Gated on `status == "completed"`: an abandoned or still-`in_progress` session was
+    never officially finished, matching the asymmetry the schema already draws between
+    `WorkoutFinishResponse` (carries `records_set`) and `WorkoutAbandonResponse` (does
+    not) -- a session you walked away from should not tell you it set a record.
+    """
+    if workout_session.status != "completed":
+        return []
+
+    session_best = _best_e1rm_by_exercise(session_sets)
+    if not session_best:
+        return []
+
+    history = await metrics_repo.list_completed_non_warmup_sets_before(
+        session,
+        workout_session.user_id,
+        list(session_best),
+        local_date=workout_session.local_date,
+        started_at=workout_session.started_at,
+    )
+    baseline_by_exercise = _best_e1rm_by_exercise(history)
+
+    records: list[RecordSetEntry] = []
+    for exercise_id, value in session_best.items():
+        baseline = baseline_by_exercise.get(exercise_id)
+        if baseline is not None and value > baseline:
+            records.append(RecordSetEntry(exercise_id=exercise_id, kind="e1rm", value=value))
+    return records
 
 
 async def abandon_session(
@@ -542,6 +636,7 @@ class SessionDetail:
     exercises: list[SessionDetailExercise]
     set_count: int
     exercise_count: int
+    records_set: list[RecordSetEntry]
 
 
 async def get_session_detail(
@@ -604,6 +699,10 @@ async def get_session_detail(
         ),
     )
 
+    records_set = await _records_set_for_session(
+        session, workout_session, [workout_set for workout_set, _ in rows]
+    )
+
     return SessionDetail(
         session=workout_session,
         label_key=day.label_key if day is not None else None,
@@ -613,4 +712,5 @@ async def get_session_detail(
         ],
         set_count=len(rows),
         exercise_count=len(grouped),
+        records_set=records_set,
     )

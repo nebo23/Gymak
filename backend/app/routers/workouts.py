@@ -6,6 +6,7 @@ the service, shape the response. No query is built here.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import date
 from typing import Annotated
 
@@ -19,6 +20,7 @@ from app.models.profile import Profile
 from app.models.user import User
 from app.repositories import profile_repo
 from app.schemas.workout import (
+    RecordSetItem,
     SessionDetailExerciseGroup,
     SessionTotalsData,
     SetRecordData,
@@ -40,7 +42,12 @@ from app.schemas.workout import (
     build_workout_detail,
 )
 from app.services import workout_service
-from app.services.workout_service import SessionNotFoundError, SetActionResult, SetNotFoundError
+from app.services.workout_service import (
+    RecordSetEntry,
+    SessionNotFoundError,
+    SetActionResult,
+    SetNotFoundError,
+)
 
 router = APIRouter(prefix="/workouts", tags=["workouts"])
 
@@ -95,6 +102,13 @@ def _rate_limited_for_sets(user: Annotated[User, Depends(require_completed_profi
     ahead of the route body."""
     enforce(scope="workouts.sets", key=key_for_user(user.id), limit=300, window_seconds=3600)
     return user
+
+
+def _build_record_set_items(records: Sequence[RecordSetEntry]) -> list[RecordSetItem]:
+    return [
+        RecordSetItem(exercise_id=record.exercise_id, kind=record.kind, value=record.value)
+        for record in records
+    ]
 
 
 def _build_set_action_response(result: SetActionResult) -> WorkoutSetActionResponse:
@@ -204,6 +218,7 @@ async def get_workout_route(
             label_key=detail.label_key,
             set_count=detail.set_count,
             exercise_count=detail.exercise_count,
+            records_set=_build_record_set_items(detail.records_set),
             exercises=[
                 SessionDetailExerciseGroup(
                     exercise=build_detail_exercise_ref(group.exercise, language=language),
@@ -234,7 +249,8 @@ async def finish_workout_route(
     return WorkoutFinishResponse(
         session=build_finished_summary(
             result.session, set_count=result.set_count, exercise_count=result.exercise_count
-        )
+        ),
+        records_set=_build_record_set_items(result.records_set),
     )
 
 

@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.exercise import Exercise
@@ -149,3 +149,53 @@ async def get_most_recent_completed_session_for_days(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+# =========================================================================================
+# T-26b: `records_set` for POST .../finish and GET /workouts/{id} (§5.8/5.9, P2-ADR-04/05).
+# =========================================================================================
+
+
+async def list_completed_non_warmup_sets_before(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    exercise_ids: Sequence[uuid.UUID],
+    *,
+    local_date: date,
+    started_at: datetime,
+) -> list[WorkoutSet]:
+    """§5.8's `records_set`: "a record is a set in THIS session whose e1RM beats the
+    user's best from completed sessions that came BEFORE this one. Not 'before now'."
+    Ordered by (`local_date`, `started_at`) via a row-wise `tuple_` comparison, so a
+    same-day tie still resolves correctly. This is deliberately a different query from
+    `completed_non_warmup_sets_for_exercise` above: that one excludes only the caller's
+    own session and is correct for T-19's live `is_record`, where "this session" is
+    necessarily the most recent completed one there can be (P2-ADR-03 allows only one
+    `in_progress` session at a time, so nothing later can have finished yet). Once a
+    session is read back after later sessions exist -- which is exactly what
+    GET /workouts/{id} does -- "all other completed sessions" and "completed sessions
+    before this one" stop agreeing: the former would let a later, heavier session erase
+    a record this session actually set at the time. Both POST .../finish and
+    GET /workouts/{id} call this same query for that reason, so they can never disagree
+    about what a given session's own `records_set` was.
+
+    `exercise_ids` narrows the join to only the exercises the target session itself
+    logged -- the only ones a caller ever needs a baseline for -- rather than every
+    exercise the user has ever performed. An empty sequence short-circuits to no query,
+    matching `get_most_recent_completed_session_for_days`'s own precedent for an
+    always-empty `IN ()`.
+    """
+    if not exercise_ids:
+        return []
+    result = await session.execute(
+        select(WorkoutSet)
+        .join(WorkoutSession, WorkoutSession.id == WorkoutSet.session_id)
+        .where(
+            WorkoutSession.user_id == user_id,
+            WorkoutSession.status == "completed",
+            WorkoutSet.exercise_id.in_(exercise_ids),
+            WorkoutSet.is_warmup.is_(False),
+            tuple_(WorkoutSession.local_date, WorkoutSession.started_at) < (local_date, started_at),
+        )
+    )
+    return list(result.scalars().all())

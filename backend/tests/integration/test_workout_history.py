@@ -774,6 +774,124 @@ async def test_detail_resolves_the_exercise_name_in_the_callers_language(
     assert json_body(response)["session"]["exercises"][0]["exercise"]["name"] == exercise.name_en
 
 
+# --- T-26b: GET /workouts/{id}'s records_set ------------------------------------------------
+
+
+async def test_detail_of_an_old_session_still_shows_its_records_after_a_later_heavier_one(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # §5.8's critical rule: a record compares against completed sessions strictly
+    # BEFORE the one being read, never "before now". Three sessions, each heavier than
+    # the last on the same exercise -- reading the middle one back *after* the third
+    # (heavier) session exists must still show the record it set at the time, not an
+    # empty list produced by comparing against all history, including sessions that
+    # happened later.
+    registered = await _register_and_onboard(client)
+    user_id = uuid.UUID(registered["user"]["id"])
+    exercise_id = await _first_exercise_id(db_session)
+
+    session_1 = await _seed_session(db_session, user_id=user_id, local_date=date(2026, 8, 1))
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=session_1,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=8,
+        weight_kg="60",  # e1RM 76 -- no prior history, so no record.
+        logged_at=datetime(2026, 8, 1, 18, 0, tzinfo=UTC),
+    )
+
+    session_2 = await _seed_session(db_session, user_id=user_id, local_date=date(2026, 8, 8))
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=session_2,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=5,
+        weight_kg="90",  # e1RM 105 -- beats session_1's 76.
+        logged_at=datetime(2026, 8, 8, 18, 0, tzinfo=UTC),
+    )
+
+    session_3 = await _seed_session(db_session, user_id=user_id, local_date=date(2026, 8, 15))
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=session_3,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=3,
+        weight_kg="120",  # e1RM 132 -- beats session_2's 105.
+        logged_at=datetime(2026, 8, 15, 18, 0, tzinfo=UTC),
+    )
+
+    detail_1 = await _detail(client, registered["access_token"], str(session_1))
+    assert json_body(detail_1)["session"]["records_set"] == []
+
+    detail_2 = await _detail(client, registered["access_token"], str(session_2))
+    assert json_body(detail_2)["session"]["records_set"] == [
+        {"exercise_id": str(exercise_id), "kind": "e1rm", "value": 105}
+    ]
+
+    detail_3 = await _detail(client, registered["access_token"], str(session_3))
+    assert json_body(detail_3)["session"]["records_set"] == [
+        {"exercise_id": str(exercise_id), "kind": "e1rm", "value": 132}
+    ]
+
+    # The critical case: re-read session_2 now that session_3 (heavier, later) exists.
+    # A comparison against "all other completed sessions" would see session_3's 132 as
+    # part of session_2's own baseline and wrongly report no record; the correct
+    # comparison is against sessions before session_2 only (session_1's 76), unaffected
+    # by anything that happened afterward.
+    replay = await _detail(client, registered["access_token"], str(session_2))
+    assert json_body(replay)["session"]["records_set"] == [
+        {"exercise_id": str(exercise_id), "kind": "e1rm", "value": 105}
+    ]
+
+
+async def test_detail_of_an_abandoned_session_never_shows_records_set(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # A session that was abandoned, not finished, never announces a record even when
+    # one of its sets would otherwise have beaten the baseline -- the same "abandon
+    # computes nothing" asymmetry §5.8 draws between WorkoutFinishResponse and
+    # WorkoutAbandonResponse, applied here to a later read of the same session.
+    registered = await _register_and_onboard(client)
+    user_id = uuid.UUID(registered["user"]["id"])
+    exercise_id = await _first_exercise_id(db_session)
+
+    baseline = await _seed_session(db_session, user_id=user_id, local_date=date(2026, 8, 1))
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=baseline,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=8,
+        weight_kg="60",
+        logged_at=datetime(2026, 8, 1, 18, 0, tzinfo=UTC),
+    )
+
+    abandoned = await _seed_session(
+        db_session, user_id=user_id, local_date=date(2026, 8, 8), status="abandoned"
+    )
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=abandoned,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=5,
+        weight_kg="90",  # e1RM 105 -- would beat the baseline, had this session finished.
+        logged_at=datetime(2026, 8, 8, 18, 0, tzinfo=UTC),
+    )
+
+    response = await _detail(client, registered["access_token"], str(abandoned))
+    assert response.status_code == 200
+    assert json_body(response)["session"]["records_set"] == []
+
+
 async def test_a_finished_session_reads_back_through_history_and_detail(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
