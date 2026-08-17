@@ -23,6 +23,7 @@ import {
   GNumberField,
   GOtpInput,
   GProgressBar,
+  GRestTimer,
   GScreen,
   GSelectCard,
   GSheet,
@@ -387,6 +388,27 @@ export default function DevGallery() {
             unit={t("devGallery.sample.unitKg")}
             precision={1}
             testID="dev-gallery-number-field-weight"
+          />
+        </Row>
+      </Section>
+
+      <Section title={t("devGallery.sections.restTimer")}>
+        <Row label={t("devGallery.state.running")}>
+          <GRestTimer
+            seconds={90}
+            paused={false}
+            onComplete={noop}
+            onSkip={noop}
+            testID="dev-gallery-rest-timer-running"
+          />
+        </Row>
+        <Row label={t("devGallery.state.paused")}>
+          <GRestTimer
+            seconds={45}
+            paused
+            onComplete={noop}
+            onSkip={noop}
+            testID="dev-gallery-rest-timer-paused"
           />
         </Row>
       </Section>

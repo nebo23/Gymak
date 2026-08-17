@@ -12,3 +12,11 @@ backend/.coverage
 
 *.jks
 *.keystore
+
+# Local device-verification scratch output (screenshots, uiautomator dumps, run logs)
+scratch-*.png
+scratch-*.xml
+emulator.log
+emulator-err.log
+expo-run.log
+uvicorn.log

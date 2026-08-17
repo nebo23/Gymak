@@ -168,6 +168,24 @@ export default function AppTabsLayout() {
           tabBarIcon: ({ color }) => <TabIcon name="settings" color={color} />,
         }}
       />
+      {/* T-26: §8.1 presents the active session "outside the tabs" -- not a
+          tab button (`href: null`, same as _dev-gallery below) and, per
+          device check 4, with the tab bar itself hidden while it's focused.
+          `tabBarStyle` is read from the *focused* screen's own options, so
+          setting it here -- rather than in the shared `screenOptions` above
+          -- only hides the bar on this one screen, not every tab. */}
+      <Tabs.Screen
+        name="workout/active"
+        options={{ href: null, tabBarStyle: { display: "none" } }}
+      />
+      {/* T-26 found this live: plan/[dayId] is a sibling route under plan/,
+          not nested behind its own _layout.tsx, so Tabs auto-adds it as a
+          fifth bar item labelled with the raw route name unless excluded
+          here -- exactly like workout/active above. Latent since T-25 (which
+          had no device/emulator available to catch it); fixed here because
+          this task already touches this file and a stray untranslated tab
+          on every single screen would fail device check 4 on its own. */}
+      <Tabs.Screen name="plan/[dayId]" options={{ href: null }} />
       <Tabs.Screen name="_dev-gallery" options={{ href: null }} />
     </Tabs>
   );

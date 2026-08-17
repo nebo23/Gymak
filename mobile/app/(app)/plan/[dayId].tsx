@@ -5,20 +5,22 @@
  * (compounds first, per the generator's own slot ordering, §6.3) -- nothing
  * to re-sort client-side.
  *
- * The Start button is present and labelled per spec, but starting a session
- * for real is T-26's active-workout screen, which does not exist yet and is
- * explicitly out of this task's scope. Tapping it says so, rather than doing
- * nothing or -- worse -- calling the real `POST /workouts` with no screen
- * able to finish or abandon what it started (which would also block plan
- * regeneration with 409 SESSION_ACTIVE_BLOCKS_REGENERATION until the user
- * found some other way to close it).
+ * The Start button used to say "coming soon" -- T-26's active-workout screen
+ * did not exist yet when this file was first written. It exists now, so
+ * this is the one file T-26 touches outside its own list: leaving a
+ * now-inaccurate "arrives in a later update" alert on the button for the
+ * exact screen that just shipped would be actively wrong, not merely
+ * conservative. `startWorkout` follows §5.6 exactly, including its 409
+ * SESSION_ALREADY_ACTIVE / Resume / Discard-and-start-new contract.
  */
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { Alert, StyleSheet, Text, View } from "react-native";
 
 import { getProgramDay } from "../../../src/api/program";
-import { resolveErrorCode } from "../../../src/api/errors";
+import { parseApiError, resolveErrorCode, type ResolvedErrorCode } from "../../../src/api/errors";
+import { abandonWorkout, startWorkout } from "../../../src/api/workouts";
 import { useSession } from "../../../src/auth/useSession";
 import { GButton, GErrorBanner, GListRow, GScreen, GSkeleton } from "../../../src/components";
 import { useI18n } from "../../../src/i18n";
@@ -32,14 +34,56 @@ export default function PlanDayDetail() {
   const { t, locale } = useI18n();
   const theme = useTheme();
 
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<ResolvedErrorCode | null>(null);
+
   const dayQuery = useQuery({
     queryKey: ["program", "day", dayId],
     queryFn: () => getProgramDay(dayId),
     enabled: user !== null && dayId !== undefined,
   });
 
+  const beginSession = async (programDayId: string) => {
+    setStarting(true);
+    setStartError(null);
+    try {
+      await startWorkout(programDayId);
+      router.push("/(app)/workout/active");
+    } catch (err) {
+      const problem = parseApiError(err);
+      if (problem.code === "SESSION_ALREADY_ACTIVE") {
+        Alert.alert(t("plan.dayDetail.activeSessionTitle"), t("plan.dayDetail.activeSessionBody"), [
+          { text: t("common.cancel"), style: "cancel" },
+          { text: t("plan.dayDetail.resume"), onPress: () => router.push("/(app)/workout/active") },
+          {
+            text: t("plan.dayDetail.discardAndStartNew"),
+            style: "destructive",
+            onPress: () => void discardAndStartNew(problem.detail, programDayId),
+          },
+        ]);
+      } else {
+        setStartError(problem.code);
+      }
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const discardAndStartNew = async (activeSessionId: string | undefined, programDayId: string) => {
+    if (activeSessionId) {
+      try {
+        await abandonWorkout(activeSessionId);
+      } catch (err) {
+        setStartError(resolveErrorCode(err));
+        return;
+      }
+    }
+    await beginSession(programDayId);
+  };
+
   const handleStart = () => {
-    Alert.alert(t("plan.dayDetail.start"), t("plan.dayDetail.startComingSoon"));
+    if (!dayId) return;
+    void beginSession(dayId);
   };
 
   return (
@@ -53,6 +97,8 @@ export default function PlanDayDetail() {
           <GButton
             label={t("plan.dayDetail.start")}
             onPress={handleStart}
+            loading={starting}
+            disabled={starting}
             fullWidth
             testID="plan-day-start"
           />
@@ -64,6 +110,14 @@ export default function PlanDayDetail() {
           testID="plan-day-error"
           code={resolveErrorCode(dayQuery.error)}
           onRetry={() => dayQuery.refetch()}
+        />
+      ) : null}
+
+      {startError ? (
+        <GErrorBanner
+          testID="plan-day-start-error"
+          code={startError}
+          onDismiss={() => setStartError(null)}
         />
       ) : null}
 
