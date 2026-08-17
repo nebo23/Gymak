@@ -347,6 +347,25 @@
       "noActiveSession": "لا يوجد تمرين قيد التقدم.",
       "backToPlan": "العودة إلى الخطة",
       "emptyExercises": "لا توجد تمارين في هذه الجلسة بعد."
+    },
+    "untitledSession": "تمرين",
+    "status": {
+      "abandoned": "متروكة",
+      "inProgress": "قيد التقدم"
+    },
+    "detail": {
+      "notesHeading": "ملاحظات",
+      "e1rmLabel": "e1RM {{value}} كجم"
+    }
+  },
+  "history": {
+    "title": "سجل التمارين",
+    "rowSubtitle": "{{date}} · {{count}} مجموعة",
+    "loadingMore": "جارٍ تحميل المزيد…",
+    "empty": {
+      "title": "لا توجد تمارين بعد",
+      "body": "ابدأ أول تمرين لك من خطتك.",
+      "action": "الذهاب إلى الخطة"
     }
   },
   "muscles": {

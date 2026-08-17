@@ -347,6 +347,25 @@
       "noActiveSession": "No workout is in progress.",
       "backToPlan": "Back to plan",
       "emptyExercises": "No exercises in this session yet."
+    },
+    "untitledSession": "Workout",
+    "status": {
+      "abandoned": "Abandoned",
+      "inProgress": "In progress"
+    },
+    "detail": {
+      "notesHeading": "Notes",
+      "e1rmLabel": "e1RM {{value}} kg"
+    }
+  },
+  "history": {
+    "title": "Workout history",
+    "rowSubtitle": "{{date}} · {{count}} sets",
+    "loadingMore": "Loading more…",
+    "empty": {
+      "title": "No workouts yet",
+      "body": "Start your first workout from your plan.",
+      "action": "Go to plan"
     }
   },
   "muscles": {

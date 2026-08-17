@@ -1,10 +1,9 @@
 /**
  * §5.6 (POST /workouts, GET /workouts/active), §5.7 (POST .../sets), §5.8
- * (POST .../finish, .../abandon), §5.9 (GET /workouts/{id}) -- P2-FR-005/006/007.
- * See backend/app/schemas/workout.py for the authoritative shapes. Only the
- * endpoints T-26's active-workout screen actually calls are wrapped here;
- * PATCH/DELETE on a set and the history list (§5.9's other half) are T-27's
- * own additions to this same file when it needs them.
+ * (POST .../finish, .../abandon), §5.9 (GET /workouts, GET /workouts/{id}) --
+ * P2-FR-005/006/007/008. See backend/app/schemas/workout.py for the
+ * authoritative shapes. PATCH/DELETE on a set are still unwrapped -- no
+ * screen calls them yet.
  */
 import { client } from "./client";
 
@@ -115,11 +114,31 @@ export interface WorkoutDetailData {
   label_key: string | null;
   set_count: number;
   exercise_count: number;
+  records_set: RecordSetItem[];
   exercises: SessionDetailExerciseGroup[];
 }
 
 export interface WorkoutDetailResponse {
   session: WorkoutDetailData;
+}
+
+/** §5.9's seven summary fields -- no `sets`, no `notes`; `GET /workouts/{id}`
+ * is what carries those. */
+export interface WorkoutHistoryItem {
+  id: string;
+  local_date: string;
+  status: string;
+  duration_seconds: number | null;
+  total_volume_kg: number | null;
+  set_count: number;
+  label_key: string | null;
+}
+
+export interface WorkoutHistoryResponse {
+  items: WorkoutHistoryItem[];
+  /** Opaque; pass back verbatim as `cursor` for the next page. Null on the
+   * last page. */
+  next_cursor: string | null;
 }
 
 /** §5.6. Omit `programDayId` entirely for an empty session. Throws (axios) with
@@ -146,6 +165,17 @@ export async function getActiveWorkout(): Promise<WorkoutStartResponse | null> {
 /** §5.9. The session with every set, grouped by exercise. */
 export async function getWorkout(sessionId: string): Promise<WorkoutDetailResponse> {
   const response = await client.get<WorkoutDetailResponse>(`/workouts/${sessionId}`);
+  return response.data;
+}
+
+/** §5.9 history, cursor-paginated newest first. `cursor` must be a page's own
+ * `next_cursor` passed back verbatim, never constructed client-side.
+ * `from`/`to`/`status` exist on the endpoint but no screen offers filter UI,
+ * so they are not wrapped here. */
+export async function listWorkouts(cursor?: string): Promise<WorkoutHistoryResponse> {
+  const response = await client.get<WorkoutHistoryResponse>("/workouts", {
+    params: cursor ? { cursor } : undefined,
+  });
   return response.data;
 }
 

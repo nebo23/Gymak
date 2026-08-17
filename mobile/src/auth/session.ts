@@ -6,7 +6,7 @@
  *
  * `status` directly encodes §9.2's three-way navigation gate, so app/index.tsx
  * never has to re-derive it: "signedOut" → (auth)/welcome, "onboarding" →
- * (onboarding)/step-1, "active" → (app)/home. "booting" is the splash state.
+ * (onboarding)/step-1, "active" → (app)/index. "booting" is the splash state.
  */
 import { create } from "zustand";
 

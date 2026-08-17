@@ -186,6 +186,14 @@ export default function AppTabsLayout() {
           this task already touches this file and a stray untranslated tab
           on every single screen would fail device check 4 on its own. */}
       <Tabs.Screen name="plan/[dayId]" options={{ href: null }} />
+      {/* T-27: same reason as plan/[dayId] above -- history.tsx is a sibling
+          route directly under (app)/, so Tabs auto-adds it as a fifth bar
+          item unless excluded. §8.1 names exactly four tabs, so it is
+          excluded here; §8.2 never names where history is reached from, so
+          this is deliberately *only* a tab-bar exclusion, not a claim that
+          any screen links here yet -- see T-27's own report. */}
+      <Tabs.Screen name="history" options={{ href: null }} />
+      <Tabs.Screen name="workout/[id]" options={{ href: null }} />
       <Tabs.Screen name="_dev-gallery" options={{ href: null }} />
     </Tabs>
   );
