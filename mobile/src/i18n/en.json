@@ -368,6 +368,42 @@
       "action": "Go to plan"
     }
   },
+  "exercises": {
+    "title": "Exercise library",
+    "searchLabel": "Search exercises",
+    "searchPlaceholder": "Search by name",
+    "filters": {
+      "muscleLabel": "Muscle",
+      "equipmentLabel": "Equipment",
+      "allMuscles": "All muscles",
+      "allEquipment": "All equipment"
+    },
+    "row": {
+      "subtitle": "{{muscle}} · {{equipment}}"
+    },
+    "empty": {
+      "title": "No exercises found",
+      "body": "Try a different search or clear your filters.",
+      "action": "Clear filters"
+    },
+    "picker": {
+      "title": "Pick an exercise",
+      "close": "Close"
+    },
+    "detail": {
+      "primaryMuscleLabel": "Primary muscle",
+      "secondaryMusclesLabel": "Secondary muscles",
+      "equipmentLabel": "Equipment",
+      "instructionsTitle": "Instructions",
+      "recordTitle": "Your record",
+      "noRecordTitle": "No record yet",
+      "noRecordBody": "Log a set for this exercise to start your record.",
+      "heaviestSetLabel": "Heaviest set",
+      "bestE1rmLabel": "Best e1RM",
+      "bestVolumeLabel": "Best session volume",
+      "totalSetsLabel": "Total sets logged"
+    }
+  },
   "muscles": {
     "abs": "Abs",
     "back": "Back",
@@ -386,6 +422,15 @@
     "side_delts": "Side delts",
     "traps": "Traps",
     "triceps": "Triceps"
+  },
+  "equipment": {
+    "barbell": "Barbell",
+    "dumbbell": "Dumbbell",
+    "machine": "Machine",
+    "cable": "Cable",
+    "bodyweight": "Bodyweight",
+    "kettlebell": "Kettlebell",
+    "band": "Band"
   },
   "fieldErrors": {
     "email": {
@@ -479,7 +524,8 @@
     "SESSION_NOT_FOUND": "We couldn't find that workout session.",
     "SESSION_ALREADY_ACTIVE": "You already have a workout in progress.",
     "SESSION_NOT_ACTIVE": "This workout has already been finished or abandoned.",
-    "EMPTY_SESSION": "Log at least one set before finishing your workout."
+    "EMPTY_SESSION": "Log at least one set before finishing your workout.",
+    "EXERCISE_NOT_FOUND": "We couldn't find that exercise."
   },
   "placeholder": {
     "auth": {

@@ -46,6 +46,14 @@ export const API_ERROR_CODES = [
   "SESSION_ACTIVE_BLOCKS_REGENERATION",
   "EMPTY_SESSION",
   "PLAN_GENERATION_FAILED",
+  // Same story as the block above's own comment, one task later: §7.2 already
+  // documented EXERCISE_NOT_FOUND (routers/exercises.py's GET /exercises/{id},
+  // T-16's own backend precedent), but no mobile screen called that route until
+  // T-29's exercise detail screen -- so T-29 is what adds both this entry and the
+  // errors.EXERCISE_NOT_FOUND string in ar.json/en.json, per §7.2's "every code
+  // gets an entry in the same task that introduces it" (introduces it *to the
+  // client*, here, since the backend and the spec table already had it).
+  "EXERCISE_NOT_FOUND",
 ] as const;
 
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];

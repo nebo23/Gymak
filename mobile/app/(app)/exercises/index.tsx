@@ -1,0 +1,346 @@
+/**
+ * §5.2/§8.2 screen 23 -- the exercise library list, and (per this task's own brief)
+ * "the same list, in a GSheet, is the exercise picker for an empty session". One
+ * route serves both: `?picker=1` switches the wrapping chrome from a full GScreen to
+ * a GSheet and swaps the row-press action from "open detail" to "hand back a
+ * selection" (see `handlePick` below for why that hand-back currently goes nowhere
+ * -- this task's own report has the full account).
+ *
+ * §8.1 registers this route directly in `(app)/_layout.tsx`'s <Tabs> (`href: null`,
+ * same treatment as workout/active, plan/[dayId] and history -- see that file for
+ * why), not nested in its own stack, so -- like those -- this screen's component
+ * instance persists across visits instead of unmounting when the user leaves; a
+ * plain `useState` for the search text and filters is enough, unlike
+ * workout/active.tsx's `ensureFresh`, because there is no server-owned session state
+ * to resync here.
+ */
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { router, useLocalSearchParams } from "expo-router";
+import { FlatList, ScrollView, StyleSheet, Text, View } from "react-native";
+
+import { resolveErrorCode } from "../../../src/api/errors";
+import { listExercises, type ExerciseListItem } from "../../../src/api/exercises";
+import { useSession } from "../../../src/auth/useSession";
+import {
+  GButton,
+  GChip,
+  GEmptyState,
+  GErrorBanner,
+  GListRow,
+  GScreen,
+  GSheet,
+  GSkeleton,
+  GTextInput,
+} from "../../../src/components";
+import { useI18n } from "../../../src/i18n";
+import { useTheme } from "../../../src/theme/useTheme";
+import { textStyle } from "../../../src/theme/typography";
+import { space } from "../../../src/theme/tokens";
+
+// §4.1a's closed 17-value muscle vocabulary and §4.1's 7-value equipment vocabulary
+// -- the filter chips enumerate these two fixed sets exhaustively, never derived
+// from whatever page of results happens to be loaded (which would shrink the chip
+// list itself as filters narrow the results down). Mirrors the `muscles`/`equipment`
+// i18n namespaces key-for-key.
+const MUSCLE_FILTER_VALUES = [
+  "chest", "back", "lats", "traps", "front_delts", "side_delts", "rear_delts",
+  "biceps", "triceps", "forearms", "quads", "hamstrings", "glutes", "calves",
+  "abs", "obliques", "lower_back",
+] as const;
+
+const EQUIPMENT_FILTER_VALUES = [
+  "barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "band",
+] as const;
+
+// §5.2/§7.3: "Debounce the query field properly -- an undebounced search box burns
+// that budget [120/hour] in under a minute of typing." 400ms is short enough that a
+// pause between words still reads as responsive, but long enough that a normal
+// typing cadence collapses a whole word into one request instead of one per
+// keystroke -- a full search (a few words, a correction or two) costs single-digit
+// requests, nowhere near the budget even shared with pagination and the picker.
+const SEARCH_DEBOUNCE_MS = 400;
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timeout);
+  }, [value, delayMs]);
+  return debounced;
+}
+
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+function ExerciseRow({
+  item,
+  onPress,
+  t,
+}: {
+  item: ExerciseListItem;
+  onPress: () => void;
+  t: Translate;
+}) {
+  return (
+    <GListRow
+      title={item.name}
+      subtitle={t("exercises.row.subtitle", {
+        muscle: t(`muscles.${item.primary_muscle}`),
+        equipment: t(`equipment.${item.equipment}`),
+      })}
+      onPress={onPress}
+      testID={`exercise-row-${item.id}`}
+    />
+  );
+}
+
+function ListSkeleton() {
+  return (
+    <View style={styles.skeletonSection} testID="exercises-list-skeleton">
+      <GSkeleton width="100%" height={56} />
+      <GSkeleton width="100%" height={56} />
+      <GSkeleton width="100%" height={56} />
+      <GSkeleton width="100%" height={56} />
+      <GSkeleton width="100%" height={56} />
+    </View>
+  );
+}
+
+function ExerciseLibraryBody({
+  onPressExercise,
+}: {
+  onPressExercise: (item: ExerciseListItem) => void;
+}) {
+  const theme = useTheme();
+  const { t, locale } = useI18n();
+  const { user } = useSession();
+
+  const [queryText, setQueryText] = useState("");
+  const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
+  const [selectedEquipment, setSelectedEquipment] = useState<string | null>(null);
+  const debouncedQuery = useDebouncedValue(queryText, SEARCH_DEBOUNCE_MS);
+
+  const listQuery = useInfiniteQuery({
+    queryKey: ["exercises", "list", debouncedQuery, selectedMuscle, selectedEquipment],
+    queryFn: ({ pageParam }) =>
+      listExercises({
+        // The user's raw text, untouched -- T-16b's Arabic-aware normalisation runs
+        // server-side only; normalising or stripping anything here would
+        // double-normalise and break matches the server would otherwise find.
+        q: debouncedQuery.length > 0 ? debouncedQuery : undefined,
+        muscle: selectedMuscle ?? undefined,
+        equipment: selectedEquipment ?? undefined,
+        cursor: pageParam,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    enabled: user !== null,
+  });
+
+  const items = useMemo(
+    () => listQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [listQuery.data],
+  );
+
+  const handleEndReached = useCallback(() => {
+    if (listQuery.hasNextPage && !listQuery.isFetchingNextPage) {
+      void listQuery.fetchNextPage();
+    }
+  }, [listQuery]);
+
+  const handleClearFilters = useCallback(() => {
+    setQueryText("");
+    setSelectedMuscle(null);
+    setSelectedEquipment(null);
+  }, []);
+
+  const isEmpty = !listQuery.isLoading && !listQuery.isError && items.length === 0;
+
+  return (
+    <View style={styles.body}>
+      <View style={styles.controls}>
+        <GTextInput
+          label={t("exercises.searchLabel")}
+          value={queryText}
+          onChangeText={setQueryText}
+          placeholder={t("exercises.searchPlaceholder")}
+          testID="exercises-search-input"
+        />
+
+        <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
+          {t("exercises.filters.muscleLabel")}
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsRow}
+        >
+          <GChip
+            label={t("exercises.filters.allMuscles")}
+            selected={selectedMuscle === null}
+            onPress={() => setSelectedMuscle(null)}
+            testID="exercises-filter-muscle-all"
+          />
+          {MUSCLE_FILTER_VALUES.map((muscle) => (
+            <GChip
+              key={muscle}
+              label={t(`muscles.${muscle}`)}
+              selected={selectedMuscle === muscle}
+              onPress={() => setSelectedMuscle(muscle === selectedMuscle ? null : muscle)}
+              testID={`exercises-filter-muscle-${muscle}`}
+            />
+          ))}
+        </ScrollView>
+
+        <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
+          {t("exercises.filters.equipmentLabel")}
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsRow}
+        >
+          <GChip
+            label={t("exercises.filters.allEquipment")}
+            selected={selectedEquipment === null}
+            onPress={() => setSelectedEquipment(null)}
+            testID="exercises-filter-equipment-all"
+          />
+          {EQUIPMENT_FILTER_VALUES.map((equipment) => (
+            <GChip
+              key={equipment}
+              label={t(`equipment.${equipment}`)}
+              selected={selectedEquipment === equipment}
+              onPress={() =>
+                setSelectedEquipment(equipment === selectedEquipment ? null : equipment)
+              }
+              testID={`exercises-filter-equipment-${equipment}`}
+            />
+          ))}
+        </ScrollView>
+      </View>
+
+      {listQuery.isLoading ? (
+        <ListSkeleton />
+      ) : listQuery.isError ? (
+        <GErrorBanner
+          testID="exercises-list-error"
+          code={resolveErrorCode(listQuery.error)}
+          onRetry={() => void listQuery.refetch()}
+        />
+      ) : isEmpty ? (
+        <GEmptyState
+          testID="exercises-list-empty"
+          titleKey="exercises.empty.title"
+          bodyKey="exercises.empty.body"
+          actionLabelKey="exercises.empty.action"
+          onAction={handleClearFilters}
+        />
+      ) : (
+        <FlatList
+          testID="exercises-list"
+          style={styles.list}
+          data={items}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <ExerciseRow item={item} onPress={() => onPressExercise(item)} t={t} />
+          )}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          keyboardShouldPersistTaps="handled"
+          ListFooterComponent={
+            listQuery.isFetchingNextPage ? (
+              <View style={styles.footerLoading} testID="exercises-loading-more">
+                <GSkeleton width="100%" height={56} />
+              </View>
+            ) : null
+          }
+        />
+      )}
+    </View>
+  );
+}
+
+export default function ExerciseLibrary() {
+  const theme = useTheme();
+  const { t, locale } = useI18n();
+  const params = useLocalSearchParams<{ picker?: string }>();
+  const isPicker = params.picker === "1";
+
+  const handleClose = useCallback(() => router.back(), []);
+
+  const handleBrowsePress = useCallback((item: ExerciseListItem) => {
+    router.push(`/(app)/exercises/${item.id}`);
+  }, []);
+
+  // Picker mode's own row-press: closes the sheet, but cannot hand the pick to
+  // anywhere yet -- activeSession.ts exposes no action to add/select an ad-hoc
+  // exercise mid-session, and workout/active.tsx has no entry point that opens this
+  // sheet in the first place; both are T-26's files, outside this task's own list
+  // (see this task's report). Closing on selection is still correct sheet behaviour
+  // on its own, and leaves nothing half-built to trip over once that entry point
+  // exists.
+  const handlePick = useCallback((_item: ExerciseListItem) => {
+    router.back();
+  }, []);
+
+  if (isPicker) {
+    return (
+      <GSheet visible onClose={handleClose} testID="exercise-picker-sheet">
+        <View style={styles.pickerHeader}>
+          <Text style={[textStyle("h3", locale), { color: theme.textPrimary }]}>
+            {t("exercises.picker.title")}
+          </Text>
+          <GButton
+            variant="ghost"
+            label={t("exercises.picker.close")}
+            onPress={handleClose}
+            testID="exercise-picker-close"
+          />
+        </View>
+        <ExerciseLibraryBody onPressExercise={handlePick} />
+      </GSheet>
+    );
+  }
+
+  return (
+    <GScreen
+      scroll={false}
+      header={{ title: t("exercises.title"), onBack: () => router.back() }}
+      testID="exercises-list-screen"
+    >
+      <ExerciseLibraryBody onPressExercise={handleBrowsePress} />
+    </GScreen>
+  );
+}
+
+const styles = StyleSheet.create({
+  body: {
+    flex: 1,
+    gap: space[3],
+  },
+  controls: {
+    gap: space[2],
+  },
+  chipsRow: {
+    flexDirection: "row",
+    gap: space[2],
+    paddingVertical: space[1],
+  },
+  list: {
+    flex: 1,
+  },
+  skeletonSection: {
+    gap: space[2],
+    paddingTop: space[2],
+  },
+  footerLoading: {
+    paddingVertical: space[2],
+  },
+  pickerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: space[2],
+  },
+});

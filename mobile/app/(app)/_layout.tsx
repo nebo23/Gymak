@@ -194,6 +194,18 @@ export default function AppTabsLayout() {
           any screen links here yet -- see T-27's own report. */}
       <Tabs.Screen name="history" options={{ href: null }} />
       <Tabs.Screen name="workout/[id]" options={{ href: null }} />
+      {/* T-29: same reason as plan/[dayId] and history above -- exercises/index.tsx
+          and exercises/[id].tsx are sibling routes directly under (app)/exercises/,
+          so Tabs auto-adds each as its own fifth/sixth bar item (labelled from the
+          raw route name) unless excluded here. §8.1 lists the library as a
+          full-screen route reached "from plan and from the active session", not a
+          tab, so both are excluded the same way workout/active is. `index.tsx`
+          collapses to its directory's own name for route-registration purposes --
+          matching this file's own "plan" entry above, which is plan/index.tsx, not
+          "plan/index" -- so the list screen is named "exercises" here, not
+          "exercises/index". */}
+      <Tabs.Screen name="exercises" options={{ href: null }} />
+      <Tabs.Screen name="exercises/[id]" options={{ href: null }} />
       <Tabs.Screen name="_dev-gallery" options={{ href: null }} />
     </Tabs>
   );

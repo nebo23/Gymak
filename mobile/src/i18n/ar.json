@@ -368,6 +368,42 @@
       "action": "الذهاب إلى الخطة"
     }
   },
+  "exercises": {
+    "title": "مكتبة التمارين",
+    "searchLabel": "البحث عن التمارين",
+    "searchPlaceholder": "ابحث بالاسم",
+    "filters": {
+      "muscleLabel": "العضلة",
+      "equipmentLabel": "المعدات",
+      "allMuscles": "كل العضلات",
+      "allEquipment": "كل المعدات"
+    },
+    "row": {
+      "subtitle": "{{muscle}} · {{equipment}}"
+    },
+    "empty": {
+      "title": "لم يتم العثور على تمارين",
+      "body": "جرّب بحثًا مختلفًا أو امسح عوامل التصفية.",
+      "action": "مسح عوامل التصفية"
+    },
+    "picker": {
+      "title": "اختر تمرينًا",
+      "close": "إغلاق"
+    },
+    "detail": {
+      "primaryMuscleLabel": "العضلة الأساسية",
+      "secondaryMusclesLabel": "العضلات الثانوية",
+      "equipmentLabel": "المعدات",
+      "instructionsTitle": "التعليمات",
+      "recordTitle": "رقمك القياسي",
+      "noRecordTitle": "لا يوجد رقم قياسي بعد",
+      "noRecordBody": "سجّل مجموعة لهذا التمرين لتبدأ رقمك القياسي.",
+      "heaviestSetLabel": "أثقل مجموعة",
+      "bestE1rmLabel": "أفضل e1RM",
+      "bestVolumeLabel": "أفضل حجم في جلسة",
+      "totalSetsLabel": "إجمالي المجموعات المسجَّلة"
+    }
+  },
   "muscles": {
     "abs": "البطن",
     "back": "الظهر",
@@ -386,6 +422,15 @@
     "side_delts": "الكتف الجانبي",
     "traps": "الترابيس",
     "triceps": "الترايسبس"
+  },
+  "equipment": {
+    "barbell": "بار",
+    "dumbbell": "دمبل",
+    "machine": "جهاز",
+    "cable": "كابل",
+    "bodyweight": "وزن الجسم",
+    "kettlebell": "كيتلبل",
+    "band": "شريط مقاومة"
   },
   "fieldErrors": {
     "email": {
@@ -479,7 +524,8 @@
     "SESSION_NOT_FOUND": "تعذّر العثور على جلسة التمرين هذه.",
     "SESSION_ALREADY_ACTIVE": "لديك تمرين قيد التقدم بالفعل.",
     "SESSION_NOT_ACTIVE": "تم إنهاء هذا التمرين أو إلغاؤه بالفعل.",
-    "EMPTY_SESSION": "سجّل مجموعة واحدة على الأقل قبل إنهاء تمرينك."
+    "EMPTY_SESSION": "سجّل مجموعة واحدة على الأقل قبل إنهاء تمرينك.",
+    "EXERCISE_NOT_FOUND": "تعذّر العثور على هذا التمرين."
   },
   "placeholder": {
     "auth": {
