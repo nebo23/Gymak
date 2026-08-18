@@ -13,6 +13,7 @@ this task's own file list).
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -74,63 +75,66 @@ class ExerciseRecord:
     total_sets: int
 
 
-def _build_exercise_records(
-    rows: list[tuple[WorkoutSet, WorkoutSession, Exercise]],
+async def _fetch_exercise_records(
+    session: AsyncSession, user_id: uuid.UUID, *, exercise_ids: Sequence[uuid.UUID] | None
 ) -> list[ExerciseRecord]:
-    """§5.11's three per-exercise records, grouped from the single read-time query
-    (P2-ADR-05). `rows` arrives ordered by (session local_date, set logged_at)
-    ascending (metrics_repo.list_completed_non_warmup_sets's own docstring), so every
-    `max()` below breaks a tie in favour of the earliest instance, deterministically.
+    """§5.11's three per-exercise records (P2-ADR-05), now three SQL-side aggregates
+    (P2-NFR-01, metrics_repo.py's own T-22c header note) instead of a full row-per-set
+    scan grouped in Python: each of the three repository calls below returns at most
+    one row per exercise the user has ever performed non-warmup work on in a
+    completed session, so this only zips three small result sets together by
+    `exercise_id` -- it never loops over an individual set. Exercises never performed
+    are simply absent from `best_weight_set_per_exercise`'s rows, so they never
+    produce an entry -- §5.11: "omitted entirely rather than returned with nulls."
+
+    `best_e1rm_value_kg` is recomputed here via `metrics.estimate_one_rep_max` on the
+    single winning row `best_e1rm_set_per_exercise` already identified, rather than
+    trusting any rounding done in SQL for ranking purposes -- the displayed value is
+    byte-identical to what the pre-T-22c per-set Python loop produced, because it is
+    the same pure function applied to the same winning (weight_kg, reps) pair.
     """
-    grouped: dict[uuid.UUID, list[tuple[WorkoutSet, WorkoutSession]]] = {}
-    exercises_by_id: dict[uuid.UUID, Exercise] = {}
-    for workout_set, workout_session, exercise in rows:
-        grouped.setdefault(exercise.id, []).append((workout_set, workout_session))
-        exercises_by_id[exercise.id] = exercise
+    weight_rows = await metrics_repo.best_weight_set_per_exercise(
+        session, user_id, exercise_ids=exercise_ids
+    )
+    if not weight_rows:
+        return []
+
+    e1rm_rows = await metrics_repo.best_e1rm_set_per_exercise(
+        session, user_id, exercise_ids=exercise_ids
+    )
+    volume_rows = await metrics_repo.best_session_volume_per_exercise(
+        session, user_id, exercise_ids=exercise_ids
+    )
+
+    e1rm_by_exercise: dict[uuid.UUID, tuple[WorkoutSet, date]] = {
+        exercise_id: (workout_set, local_date) for exercise_id, workout_set, local_date in e1rm_rows
+    }
+    volume_by_exercise: dict[uuid.UUID, tuple[Decimal, uuid.UUID, date]] = {}
+    total_sets_by_exercise: dict[uuid.UUID, int] = {}
+    for exercise_id, volume_kg, volume_session_id, volume_local_date, total_sets in volume_rows:
+        volume_by_exercise[exercise_id] = (volume_kg, volume_session_id, volume_local_date)
+        total_sets_by_exercise[exercise_id] = total_sets
 
     records: list[ExerciseRecord] = []
-    for exercise_id, pairs in grouped.items():
-        exercise = exercises_by_id[exercise_id]
-
-        heaviest_set, heaviest_session = max(pairs, key=lambda pair: pair[0].weight_kg)
-
-        best_e1rm_value: Decimal | None = None
-        best_e1rm_set: WorkoutSet | None = None
-        best_e1rm_session: WorkoutSession | None = None
-        for workout_set, workout_session in pairs:
-            value = metrics.estimate_one_rep_max(workout_set.weight_kg, workout_set.reps)
-            if best_e1rm_value is None or value > best_e1rm_value:
-                best_e1rm_value = value
-                best_e1rm_set = workout_set
-                best_e1rm_session = workout_session
-        assert best_e1rm_value is not None
-        assert best_e1rm_set is not None
-        assert best_e1rm_session is not None
-
-        volume_by_session_id: dict[uuid.UUID, Decimal] = {}
-        session_by_id: dict[uuid.UUID, WorkoutSession] = {}
-        for workout_set, workout_session in pairs:
-            volume_by_session_id[workout_session.id] = volume_by_session_id.get(
-                workout_session.id, Decimal("0")
-            ) + metrics.set_volume_kg(workout_set.weight_kg, workout_set.reps)
-            session_by_id[workout_session.id] = workout_session
-        best_volume_session_id = max(
-            volume_by_session_id, key=lambda session_id: volume_by_session_id[session_id]
-        )
-        best_volume_session = session_by_id[best_volume_session_id]
-
+    for exercise, heaviest_set, heaviest_local_date in weight_rows:
+        best_e1rm_set, best_e1rm_local_date = e1rm_by_exercise[exercise.id]
+        best_volume_kg, best_volume_session_id, best_volume_local_date = volume_by_exercise[
+            exercise.id
+        ]
         records.append(
             ExerciseRecord(
                 exercise=exercise,
                 heaviest_set=heaviest_set,
-                heaviest_set_local_date=heaviest_session.local_date,
+                heaviest_set_local_date=heaviest_local_date,
                 best_e1rm_set=best_e1rm_set,
-                best_e1rm_value_kg=best_e1rm_value,
-                best_e1rm_local_date=best_e1rm_session.local_date,
-                best_session_volume_kg=volume_by_session_id[best_volume_session_id],
+                best_e1rm_value_kg=metrics.estimate_one_rep_max(
+                    best_e1rm_set.weight_kg, best_e1rm_set.reps
+                ),
+                best_e1rm_local_date=best_e1rm_local_date,
+                best_session_volume_kg=best_volume_kg,
                 best_session_volume_session_id=best_volume_session_id,
-                best_session_volume_local_date=best_volume_session.local_date,
-                total_sets=len(pairs),
+                best_session_volume_local_date=best_volume_local_date,
+                total_sets=total_sets_by_exercise[exercise.id],
             )
         )
 
@@ -141,12 +145,12 @@ def _build_exercise_records(
 async def get_records(
     session: AsyncSession, user: User, *, exercise_id: uuid.UUID | None
 ) -> list[ExerciseRecord]:
-    """§5.11. Exercises never performed are simply absent from `rows`, so they never
-    produce a group -- "omitted entirely rather than returned with nulls."""
-    rows = await metrics_repo.list_completed_non_warmup_sets(
-        session, user.id, exercise_id=exercise_id
-    )
-    return _build_exercise_records(rows)
+    """§5.11. `exercise_id=None` reaches `_fetch_exercise_records` as `exercise_ids=
+    None` -- every exercise, unfiltered -- exactly like the dashboard's own call
+    below; a given id narrows to that one exercise only.
+    """
+    exercise_ids = [exercise_id] if exercise_id is not None else None
+    return await _fetch_exercise_records(session, user.id, exercise_ids=exercise_ids)
 
 
 # =========================================================================================
@@ -320,8 +324,7 @@ async def get_dashboard(session: AsyncSession, user: User, profile: Profile) -> 
     )
     weight = _build_weight_block(weight_entries, include_change_key=not is_minor)
 
-    records_rows = await metrics_repo.list_completed_non_warmup_sets(session, user.id)
-    exercise_records = _build_exercise_records(records_rows)
+    exercise_records = await _fetch_exercise_records(session, user.id, exercise_ids=None)
     recent_records = sorted(
         exercise_records, key=lambda record: record.best_e1rm_local_date, reverse=True
     )[:_RECENT_RECORDS_LIMIT]

@@ -245,12 +245,13 @@ async def finish_session(
 
 
 def _best_e1rm_by_exercise(sets: Iterable[WorkoutSet]) -> dict[uuid.UUID, Decimal]:
-    """Warm-up sets never contribute (P2-ADR-04) -- true whether `sets` is a session's
-    own sets or a baseline history query that already filtered them out in SQL; the
-    check here makes this safe to reuse on either without relying on the caller having
-    done it. Iteration order is preserved in the returned dict's key order, so calling
-    this on a session's own sets in logged order gives deterministic first-appearance
-    ordering for free, with no separate sort.
+    """The target session's own best e1RM per exercise, from its in-memory
+    `session_sets` (§4.7/P2-ADR-04: warm-ups never contribute). Iteration order is
+    preserved in the returned dict's key order, so calling this on a session's own
+    sets in logged order gives deterministic first-appearance ordering for free, with
+    no separate sort. The history/baseline side of this same comparison is no longer
+    built by calling this a second time (T-22c, P2-NFR-01) -- see
+    `metrics_repo.max_e1rm_by_exercise`, a SQL-side aggregate over history instead.
     """
     best: dict[uuid.UUID, Decimal] = {}
     for workout_set in sets:
@@ -286,14 +287,13 @@ async def _records_set_for_session(
     if not session_best:
         return []
 
-    history = await metrics_repo.list_completed_non_warmup_sets_before(
+    baseline_by_exercise = await metrics_repo.max_e1rm_by_exercise(
         session,
         workout_session.user_id,
         list(session_best),
         local_date=workout_session.local_date,
         started_at=workout_session.started_at,
     )
-    baseline_by_exercise = _best_e1rm_by_exercise(history)
 
     records: list[RecordSetEntry] = []
     for exercise_id, value in session_best.items():

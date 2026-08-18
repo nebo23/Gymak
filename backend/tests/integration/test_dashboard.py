@@ -640,6 +640,56 @@ async def test_records_aggregates_heaviest_e1rm_and_best_session_volume(
     assert record["total_sets"] == 2, "the warm-up set in session B must not be counted"
 
 
+async def test_records_ties_in_weight_e1rm_and_volume_resolve_to_the_earliest_session(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # P2-NFR-01/metrics_repo.py's own SQL-side aggregation: a dead tie -- identical
+    # weight, e1RM, and per-exercise session volume across two sessions -- must
+    # resolve to the earliest session deterministically (metrics_repo.py's header
+    # note on tie-breaking), not to whichever row PostgreSQL's DISTINCT ON happens
+    # to keep without an explicit tie-break. One (weight, reps) pair reused on two
+    # different calendar days ties all three records at once.
+    registered = await _register_and_onboard(client)
+    user_id = uuid.UUID(registered["user"]["id"])
+    access_token = registered["access_token"]
+    [exercise_id] = await _exercise_ids(client, access_token, count=1)
+
+    earlier_session = await _seed_completed_session(
+        db_session, user_id=user_id, local_date=date(2026, 1, 1)
+    )
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=earlier_session,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=5,
+        weight_kg="80",
+    )
+
+    later_session = await _seed_completed_session(
+        db_session, user_id=user_id, local_date=date(2026, 1, 8)
+    )
+    await _seed_set(
+        db_session,
+        user_id=user_id,
+        session_id=later_session,
+        exercise_id=exercise_id,
+        set_index=1,
+        reps=5,
+        weight_kg="80",
+    )
+
+    response = await _get_records(client, access_token)
+    record = json_body(response)["records"][0]
+
+    assert record["heaviest_set"]["session_id"] == str(earlier_session)
+    assert record["heaviest_set"]["local_date"] == "2026-01-01"
+    assert record["best_e1rm"]["local_date"] == "2026-01-01"
+    assert record["best_session_volume"]["session_id"] == str(earlier_session)
+    assert record["best_session_volume"]["local_date"] == "2026-01-01"
+
+
 async def test_records_filtered_by_exercise_id_and_omits_unperformed_exercises(
     client: AsyncClient,
 ) -> None:
