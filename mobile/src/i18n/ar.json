@@ -15,12 +15,6 @@
     "progress": "التقدم",
     "settings": "الإعدادات"
   },
-  "comingSoon": {
-    "progress": {
-      "title": "صفحة تقدمك قادمة قريبًا",
-      "body": "هنا سيظهر سجل وزن جسمك وأرقامك القياسية الشخصية."
-    }
-  },
   "auth": {
     "welcome": {
       "tagline": "ابدأ رحلتك نحو لياقة أفضل.",
@@ -368,6 +362,36 @@
       "action": "الذهاب إلى الخطة"
     }
   },
+  "progress": {
+    "title": "التقدم",
+    "range": {
+      "option": "{{days}} يومًا"
+    },
+    "chart": {
+      "accessibilityLabel": "الوزن، {{count}} إدخالات، من {{first}} إلى {{last}} كيلوغرام خلال {{days}} يومًا",
+      "emptyBody": "سجّل وزنك في يومين مختلفين على الأقل لرؤية الرسم البياني."
+    },
+    "logSheet": {
+      "title": "تسجيل الوزن ليوم {{date}}",
+      "save": "حفظ"
+    },
+    "entries": {
+      "heading": "سجل الوزن",
+      "rowAccessibilityLabel": "إدخال وزن ليوم {{date}}: {{weight}} كيلوغرام",
+      "deleteLabel": "حذف إدخال يوم {{date}}",
+      "deleteConfirmTitle": "حذف هذا الإدخال؟",
+      "deleteConfirmBody": "سيؤدي هذا إلى إزالة إدخال وزنك ليوم {{date}}.",
+      "deleteConfirmAction": "حذف"
+    },
+    "summary": {
+      "first": "الأول",
+      "latest": "الأحدث",
+      "change": "التغيّر"
+    },
+    "records": {
+      "heading": "الأرقام القياسية الشخصية"
+    }
+  },
   "exercises": {
     "title": "مكتبة التمارين",
     "searchLabel": "البحث عن التمارين",
@@ -560,7 +584,8 @@
       "listRow": "GListRow",
       "numberField": "GNumberField",
       "sheet": "GSheet",
-      "restTimer": "GRestTimer"
+      "restTimer": "GRestTimer",
+      "lineChart": "GLineChart"
     },
     "state": {
       "idle": "الحالة الافتراضية",
@@ -622,7 +647,8 @@
       "numberFieldWeight": "الوزن",
       "unitKg": "كجم",
       "sheetBody": "هذا محتوى تجريبي داخل ورقة سفلية.",
-      "openSheet": "فتح الورقة السفلية"
+      "openSheet": "فتح الورقة السفلية",
+      "lineChartAccessibilityLabel": "الوزن، 7 إدخالات، من 82 إلى 80.2 كيلوغرام خلال 10 أيام"
     }
   }
 }

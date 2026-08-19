@@ -18,6 +18,7 @@ import {
   GChip,
   GEmptyState,
   GErrorBanner,
+  GLineChart,
   GListRow,
   GLogo,
   GNumberField,
@@ -39,6 +40,24 @@ import { radius, space } from "../../src/theme/tokens";
 function noop() {
   // Gallery buttons demonstrate visual state only; nothing to do on press.
 }
+
+// A deliberate 3-day gap (Jan 4-6) so the gallery's own chart proves the
+// same "gaps are gaps" rule (§9.3) real data gets on the progress screen.
+const CHART_SAMPLE_RAW = [
+  { measured_on: "2026-01-01", weight_kg: 82.0 },
+  { measured_on: "2026-01-02", weight_kg: 81.6 },
+  { measured_on: "2026-01-03", weight_kg: 81.8 },
+  { measured_on: "2026-01-07", weight_kg: 80.9 },
+  { measured_on: "2026-01-08", weight_kg: 80.5 },
+  { measured_on: "2026-01-09", weight_kg: 80.7 },
+  { measured_on: "2026-01-10", weight_kg: 80.2 },
+];
+const CHART_SAMPLE_AVERAGE = [
+  { measured_on: "2026-01-03", weight_kg: 81.8 },
+  { measured_on: "2026-01-08", weight_kg: 80.7 },
+  { measured_on: "2026-01-09", weight_kg: 80.6 },
+  { measured_on: "2026-01-10", weight_kg: 80.5 },
+];
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   const theme = useTheme();
@@ -434,6 +453,20 @@ export default function DevGallery() {
           testID="dev-gallery-sheet-close"
         />
       </GSheet>
+
+      <Section title={t("devGallery.sections.lineChart")}>
+        <GLineChart
+          series={[
+            { data: CHART_SAMPLE_AVERAGE, color: theme.chart1, strokeWidth: 3 },
+            { data: CHART_SAMPLE_RAW, color: theme.chart3, strokeWidth: 2, showDots: true },
+          ]}
+          xAccessor={(point) => point.measured_on}
+          yAccessor={(point) => point.weight_kg}
+          range={{ start: "2026-01-01", end: "2026-01-10" }}
+          accessibilityLabel={t("devGallery.sample.lineChartAccessibilityLabel")}
+          testID="dev-gallery-line-chart"
+        />
+      </Section>
     </GScreen>
   );
 }

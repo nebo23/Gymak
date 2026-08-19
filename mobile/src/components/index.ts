@@ -23,3 +23,9 @@ export { GListRow, type GListRowProps } from "./GListRow";
 export { GNumberField, type GNumberFieldProps } from "./GNumberField";
 export { GSheet, type GSheetProps } from "./GSheet";
 export { GRestTimer, type GRestTimerProps } from "./GRestTimer";
+export {
+  GLineChart,
+  type GLineChartProps,
+  type GLineChartRange,
+  type GLineChartSeries,
+} from "./GLineChart";

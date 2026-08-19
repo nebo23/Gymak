@@ -15,12 +15,6 @@
     "progress": "Progress",
     "settings": "Settings"
   },
-  "comingSoon": {
-    "progress": {
-      "title": "Your progress is on its way",
-      "body": "This is where your body-weight log and personal records will live."
-    }
-  },
   "auth": {
     "welcome": {
       "tagline": "Build strength, one honest rep at a time.",
@@ -368,6 +362,36 @@
       "action": "Go to plan"
     }
   },
+  "progress": {
+    "title": "Progress",
+    "range": {
+      "option": "{{days}} days"
+    },
+    "chart": {
+      "accessibilityLabel": "Weight, {{count}} entries, from {{first}} to {{last}} kilograms over {{days}} days",
+      "emptyBody": "Log your weight on at least two different days to see a chart."
+    },
+    "logSheet": {
+      "title": "Log weight for {{date}}",
+      "save": "Save"
+    },
+    "entries": {
+      "heading": "Weight log",
+      "rowAccessibilityLabel": "Weight entry for {{date}}: {{weight}} kilograms",
+      "deleteLabel": "Delete entry for {{date}}",
+      "deleteConfirmTitle": "Delete this entry?",
+      "deleteConfirmBody": "This removes your weight entry for {{date}}.",
+      "deleteConfirmAction": "Delete"
+    },
+    "summary": {
+      "first": "First",
+      "latest": "Latest",
+      "change": "Change"
+    },
+    "records": {
+      "heading": "Personal records"
+    }
+  },
   "exercises": {
     "title": "Exercise library",
     "searchLabel": "Search exercises",
@@ -560,7 +584,8 @@
       "listRow": "GListRow",
       "numberField": "GNumberField",
       "sheet": "GSheet",
-      "restTimer": "GRestTimer"
+      "restTimer": "GRestTimer",
+      "lineChart": "GLineChart"
     },
     "state": {
       "idle": "Idle",
@@ -622,7 +647,8 @@
       "numberFieldWeight": "Weight",
       "unitKg": "kg",
       "sheetBody": "This is example content inside a bottom sheet.",
-      "openSheet": "Open sheet"
+      "openSheet": "Open sheet",
+      "lineChartAccessibilityLabel": "Weight, 7 entries, from 82 to 80.2 kilograms over 10 days"
     }
   }
 }
