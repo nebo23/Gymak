@@ -199,6 +199,7 @@
     "title": "Settings",
     "sections": {
       "profile": "Profile",
+      "training": "Training",
       "preferences": "Preferences",
       "account": "Account"
     },
@@ -229,11 +230,15 @@
       "activityHigh": "High",
       "activityVeryHigh": "Very high",
       "timezone": "Timezone",
-      "timezoneUseDevice": "Use this device's timezone"
+      "timezoneUseDevice": "Use this device's timezone",
+      "notSet": "Not set"
     },
     "units": {
+      "label": "Units",
       "metric": "Metric (cm / kg)",
-      "imperial": "Imperial (ft / lb)"
+      "imperial": "Imperial (ft / lb)",
+      "metricShort": "Metric",
+      "imperialShort": "Imperial"
     },
     "theme": {
       "label": "Theme",
@@ -242,6 +247,7 @@
       "dark": "Dark"
     },
     "language": {
+      "label": "Language",
       "arabic": "العربية",
       "english": "English"
     },

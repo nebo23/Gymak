@@ -8,9 +8,26 @@
  * approach as onboarding step-3/step-2 (live SI conversion, native picker) —
  * duplicated locally rather than extracted into a ninth shared component,
  * per "use only T-11 primitives, no new component."
+ *
+ * LAYOUT — REBUILT IN THE UI PASS
+ * This screen used to render roughly seventeen `GSelectCard`s at once: gender
+ * (2), goal (3), experience (3), activity (5), units (2), language (2) and
+ * theme (3), every one the same size and weight and the same distance from
+ * its neighbours. It is now a GROUPED LIST OF ROWS, each showing its label and
+ * its CURRENT VALUE, with the choices living in a `GSheet` that only exists
+ * while it is open — Material's "show the setting's status instead of
+ * describing the setting".
+ *
+ * What deliberately did NOT move behind a disclosure: name, height, weight and
+ * timezone. A free-text or numeric field has no "current value vs. choices"
+ * split to collapse — the field already IS its current value — so hiding it
+ * behind a tap would cost a tap and buy nothing.
+ *
+ * NOTHING about what this screen sends changed: `buildDiff` and the PATCH are
+ * untouched, and the theme preference stays device-local and out of the diff.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useFocusEffect } from "expo-router";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
@@ -36,15 +53,18 @@ import {
   GButton,
   GDialog,
   GErrorBanner,
+  GOptionSheet,
   GScreen,
-  GSelectCard,
+  GSectionHeader,
+  GSettingRow,
   GTextInput,
+  type GOptionSheetOption,
 } from "../../src/components";
 import { useI18n } from "../../src/i18n";
 import { useTheme, useThemePreference } from "../../src/theme/useTheme";
 import { THEME_PREFERENCES, type ThemePreference } from "../../src/theme/themePreference";
 import { textStyle } from "../../src/theme/typography";
-import { controlHeight, radius, space } from "../../src/theme/tokens";
+import { layout, radius, space } from "../../src/theme/tokens";
 import {
   cmToFeetInches,
   feetInchesToCm,
@@ -122,6 +142,52 @@ const THEME_KEY: Record<ThemePreference, string> = {
   dark: "settings.theme.dark",
 };
 
+/**
+ * Every row shows its CURRENT VALUE, so each setting needs a value -> i18n key
+ * lookup. These are the same keys the old cards used as their titles; nothing
+ * new is being said, it is just being said once per setting instead of once
+ * per option.
+ */
+const GENDER_KEY: Record<Gender, string> = {
+  male: "settings.fields.male",
+  female: "settings.fields.female",
+};
+
+const GOAL_KEY: Record<Goal, string> = {
+  lose: "settings.fields.goalLose",
+  gain: "settings.fields.goalGain",
+  maintain: "settings.fields.goalMaintain",
+};
+
+const EXPERIENCE_KEY: Record<ExperienceLevel, string> = {
+  beginner: "settings.fields.experienceBeginner",
+  intermediate: "settings.fields.experienceIntermediate",
+  advanced: "settings.fields.experienceAdvanced",
+};
+
+// The row shows the SHORT form ("Metric"); the sheet shows the long one
+// ("Metric (cm / kg)"), where there is room to say what the choice means.
+const UNIT_KEY: Record<UnitSystem, string> = {
+  metric: "settings.units.metricShort",
+  imperial: "settings.units.imperialShort",
+};
+
+const UNIT_LONG_KEY: Record<UnitSystem, string> = {
+  metric: "settings.units.metric",
+  imperial: "settings.units.imperial",
+};
+
+const LANGUAGE_KEY: Record<Language, string> = {
+  ar: "settings.language.arabic",
+  en: "settings.language.english",
+};
+
+const GENDERS: Gender[] = ["male", "female"];
+const GOALS: Goal[] = ["lose", "gain", "maintain"];
+const EXPERIENCE_LEVELS: ExperienceLevel[] = ["beginner", "intermediate", "advanced"];
+const UNIT_SYSTEMS: UnitSystem[] = ["metric", "imperial"];
+const LANGUAGES: Language[] = ["ar", "en"];
+
 const ACTIVITY_LEVELS: ActivityLevel[] = ["sedentary", "light", "moderate", "high", "very_high"];
 const ACTIVITY_KEY: Record<ActivityLevel, string> = {
   sedentary: "settings.fields.activitySedentary",
@@ -151,6 +217,13 @@ export default function Settings() {
   const [inchesText, setInchesText] = useState("");
   const [weightLbText, setWeightLbText] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // Which setting's choices are open, if any. One value rather than seven
+  // booleans: only one sheet can be open at a time, and encoding that in the
+  // type means it cannot be violated by a missed setState.
+  const [openSheet, setOpenSheet] = useState<
+    "gender" | "goal" | "experience" | "activity" | "unit" | "language" | "theme" | null
+  >(null);
 
   const [nameError, setNameError] = useState<string | undefined>(undefined);
   const [heightError, setHeightError] = useState<string | undefined>(undefined);
@@ -387,6 +460,39 @@ export default function Settings() {
     deleteConfirmText.trim().toUpperCase() === t("settings.account.deleteConfirmWord") &&
     (!hasPassword || deletePassword.length > 0);
 
+  // Built here rather than at module scope: every label is translated, and the
+  // "lose" option's disabled state depends on the account's birth date.
+  const genderOptions: GOptionSheetOption<Gender>[] = GENDERS.map((value) => ({
+    value,
+    label: t(GENDER_KEY[value]),
+  }));
+  const goalOptions: GOptionSheetOption<Goal>[] = GOALS.map((value) => ({
+    value,
+    label: t(GOAL_KEY[value]),
+    disabled: value === "lose" && loseDisabled,
+    disabledReason:
+      value === "lose" && loseDisabled ? t("settings.fields.goalLoseDisabledReason") : undefined,
+  }));
+  const experienceOptions: GOptionSheetOption<ExperienceLevel>[] = EXPERIENCE_LEVELS.map(
+    (value) => ({ value, label: t(EXPERIENCE_KEY[value]) }),
+  );
+  const activityOptions: GOptionSheetOption<ActivityLevel>[] = ACTIVITY_LEVELS.map((value) => ({
+    value,
+    label: t(ACTIVITY_KEY[value]),
+  }));
+  const unitOptions: GOptionSheetOption<UnitSystem>[] = UNIT_SYSTEMS.map((value) => ({
+    value,
+    label: t(UNIT_LONG_KEY[value]),
+  }));
+  const languageOptions: GOptionSheetOption<Language>[] = LANGUAGES.map((value) => ({
+    value,
+    label: t(LANGUAGE_KEY[value]),
+  }));
+  const themeOptions: GOptionSheetOption<ThemePreference>[] = THEME_PREFERENCES.map((value) => ({
+    value,
+    label: t(THEME_KEY[value]),
+  }));
+
   return (
     <GScreen header={{ title: t("settings.title"), onBack: () => router.back() }}>
       {saveError ? (
@@ -398,10 +504,8 @@ export default function Settings() {
         </View>
       ) : null}
 
-      <Text style={[textStyle("h3", locale), styles.sectionTitle, { color: theme.textPrimary }]}>
-        {t("settings.sections.profile")}
-      </Text>
-      <View style={styles.form}>
+      <GSectionHeader title={t("settings.sections.profile")} divider={false} />
+      <View style={styles.mixedGroup}>
         <GTextInput
           label={t("settings.fields.name")}
           value={form.name}
@@ -410,39 +514,24 @@ export default function Settings() {
           testID="settings-name"
         />
 
-        <View style={styles.row}>
-          <View style={styles.rowField}>
-            <GSelectCard
-              title={t("settings.fields.male")}
-              selected={form.gender === "male"}
-              onPress={() => setForm({ ...form, gender: "male" })}
-              testID="settings-gender-male"
-            />
-          </View>
-          <View style={styles.rowField}>
-            <GSelectCard
-              title={t("settings.fields.female")}
-              selected={form.gender === "female"}
-              onPress={() => setForm({ ...form, gender: "female" })}
-              testID="settings-gender-female"
-            />
-          </View>
+        {/* Nested so the two ROWS keep the row rhythm (`rowGap`) even though
+            the group around them keeps the field rhythm (`groupGap`). Without
+            this the rows sat 12dp apart here and 4dp apart under Training,
+            which read as an accident rather than as a density decision. */}
+        <View style={styles.rowGroup}>
+          <GSettingRow
+            label={t("settings.fields.gender")}
+            value={t(GENDER_KEY[form.gender])}
+            onPress={() => setOpenSheet("gender")}
+            testID="settings-gender-row"
+          />
+          <GSettingRow
+            label={t("settings.fields.birthDate")}
+            value={dateFormatter.format(fromIsoDate(form.birthDate))}
+            onPress={() => setShowDatePicker(true)}
+            testID="settings-birth-date"
+          />
         </View>
-
-        <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
-          {t("settings.fields.birthDate")}
-        </Text>
-        <Pressable
-          onPress={() => setShowDatePicker(true)}
-          accessibilityRole="button"
-          accessibilityLabel={t("settings.fields.birthDate")}
-          style={[styles.dateField, { backgroundColor: theme.input, borderColor: theme.border }]}
-          testID="settings-birth-date"
-        >
-          <Text style={[textStyle("body", "en"), { color: theme.textPrimary }]}>
-            {dateFormatter.format(fromIsoDate(form.birthDate))}
-          </Text>
-        </Pressable>
         {showDatePicker ? (
           <DateTimePicker
             value={fromIsoDate(form.birthDate)}
@@ -507,127 +596,56 @@ export default function Settings() {
             testID="settings-weight-lb"
           />
         )}
-
-        <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
-          {t("settings.fields.goal")}
-        </Text>
-        <GSelectCard
-          title={t("settings.fields.goalLose")}
-          selected={form.goal === "lose"}
-          onPress={() => setForm({ ...form, goal: "lose" })}
-          disabled={loseDisabled}
-          disabledReason={loseDisabled ? t("settings.fields.goalLoseDisabledReason") : undefined}
-          testID="settings-goal-lose"
-        />
-        <GSelectCard
-          title={t("settings.fields.goalGain")}
-          selected={form.goal === "gain"}
-          onPress={() => setForm({ ...form, goal: "gain" })}
-          testID="settings-goal-gain"
-        />
-        <GSelectCard
-          title={t("settings.fields.goalMaintain")}
-          selected={form.goal === "maintain"}
-          onPress={() => setForm({ ...form, goal: "maintain" })}
-          testID="settings-goal-maintain"
-        />
-
-        <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
-          {t("settings.fields.experienceLevel")}
-        </Text>
-        <GSelectCard
-          title={t("settings.fields.experienceBeginner")}
-          selected={form.experienceLevel === "beginner"}
-          onPress={() => setForm({ ...form, experienceLevel: "beginner" })}
-          testID="settings-experience-beginner"
-        />
-        <GSelectCard
-          title={t("settings.fields.experienceIntermediate")}
-          selected={form.experienceLevel === "intermediate"}
-          onPress={() => setForm({ ...form, experienceLevel: "intermediate" })}
-          testID="settings-experience-intermediate"
-        />
-        <GSelectCard
-          title={t("settings.fields.experienceAdvanced")}
-          selected={form.experienceLevel === "advanced"}
-          onPress={() => setForm({ ...form, experienceLevel: "advanced" })}
-          testID="settings-experience-advanced"
-        />
-
-        <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
-          {t("settings.fields.activityLevel")}
-        </Text>
-        {ACTIVITY_LEVELS.map((level) => (
-          <GSelectCard
-            key={level}
-            title={t(ACTIVITY_KEY[level])}
-            selected={form.activityLevel === level}
-            onPress={() => setForm({ ...form, activityLevel: level })}
-            testID={`settings-activity-${level}`}
-          />
-        ))}
       </View>
 
-      <Text style={[textStyle("h3", locale), styles.sectionTitle, { color: theme.textPrimary }]}>
-        {t("settings.sections.preferences")}
-      </Text>
-      <View style={styles.form}>
-        <View style={styles.row}>
-          <View style={styles.rowField}>
-            <GSelectCard
-              title={t("settings.units.metric")}
-              selected={unit === "metric"}
-              onPress={() => handleUnitChange("metric")}
-              testID="settings-unit-metric"
-            />
-          </View>
-          <View style={styles.rowField}>
-            <GSelectCard
-              title={t("settings.units.imperial")}
-              selected={unit === "imperial"}
-              onPress={() => handleUnitChange("imperial")}
-              testID="settings-unit-imperial"
-            />
-          </View>
-        </View>
-        <View style={styles.row}>
-          <View style={styles.rowField}>
-            <GSelectCard
-              title={t("settings.language.arabic")}
-              selected={form.language === "ar"}
-              onPress={() => handleLanguageChange("ar")}
-              testID="settings-language-ar"
-            />
-          </View>
-          <View style={styles.rowField}>
-            <GSelectCard
-              title={t("settings.language.english")}
-              selected={form.language === "en"}
-              onPress={() => handleLanguageChange("en")}
-              testID="settings-language-en"
-            />
-          </View>
-        </View>
+      <GSectionHeader title={t("settings.sections.training")} />
+      <View style={styles.rowGroup}>
+        <GSettingRow
+          label={t("settings.fields.goal")}
+          value={t(GOAL_KEY[form.goal])}
+          onPress={() => setOpenSheet("goal")}
+          testID="settings-goal-row"
+        />
+        <GSettingRow
+          label={t("settings.fields.experienceLevel")}
+          value={t(EXPERIENCE_KEY[form.experienceLevel])}
+          onPress={() => setOpenSheet("experience")}
+          testID="settings-experience-row"
+        />
+        <GSettingRow
+          label={t("settings.fields.activityLevel")}
+          value={
+            form.activityLevel === null
+              ? t("settings.fields.notSet")
+              : t(ACTIVITY_KEY[form.activityLevel])
+          }
+          onPress={() => setOpenSheet("activity")}
+          testID="settings-activity-row"
+        />
+      </View>
 
-        <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
-          {t("settings.theme.label")}
-        </Text>
-        <View style={styles.row}>
-          {THEME_PREFERENCES.map((option) => (
-            <View key={option} style={styles.rowField}>
-              <GSelectCard
-                title={t(THEME_KEY[option])}
-                selected={themePreference === option}
-                // Applies on this frame and persists locally; no Save, no
-                // reload prompt — unlike the language switch above, a palette
-                // swap does not need one.
-                onPress={() => setThemePreference(option)}
-                testID={`settings-theme-${option}`}
-              />
-            </View>
-          ))}
-        </View>
-
+      <GSectionHeader title={t("settings.sections.preferences")} />
+      <View style={styles.rowGroup}>
+        <GSettingRow
+          label={t("settings.units.label")}
+          value={t(UNIT_KEY[unit])}
+          onPress={() => setOpenSheet("unit")}
+          testID="settings-unit-row"
+        />
+        <GSettingRow
+          label={t("settings.language.label")}
+          value={t(LANGUAGE_KEY[form.language])}
+          onPress={() => setOpenSheet("language")}
+          testID="settings-language-row"
+        />
+        <GSettingRow
+          label={t("settings.theme.label")}
+          value={t(THEME_KEY[themePreference])}
+          onPress={() => setOpenSheet("theme")}
+          testID="settings-theme-row"
+        />
+      </View>
+      <View style={styles.timezoneGroup}>
         <GTextInput
           label={t("settings.fields.timezone")}
           value={form.timezone}
@@ -645,18 +663,21 @@ export default function Settings() {
         />
       </View>
 
-      <GButton
-        label={t("settings.save")}
-        onPress={handleSave}
-        loading={saving}
-        fullWidth
-        testID="settings-save"
-      />
+      {/* The one primary action on this screen. Everything above it is a row
+          or a field and everything below it is `secondary` or `ghost`, so
+          exactly one filled control competes for the eye. */}
+      <View style={styles.saveBlock}>
+        <GButton
+          label={t("settings.save")}
+          onPress={handleSave}
+          loading={saving}
+          fullWidth
+          testID="settings-save"
+        />
+      </View>
 
-      <Text style={[textStyle("h3", locale), styles.sectionTitle, { color: theme.textPrimary }]}>
-        {t("settings.sections.account")}
-      </Text>
-      <View style={styles.form}>
+      <GSectionHeader title={t("settings.sections.account")} />
+      <View style={styles.accountGroup}>
         {accountError ? (
           <GErrorBanner
             code={accountError}
@@ -683,7 +704,14 @@ export default function Settings() {
           fullWidth
           testID="settings-logout-all"
         />
+      </View>
 
+      {/* Destructive actions last and set apart by a full `sectionGap`, so
+          "Delete account" is never what a thumb lands on next after "Log out".
+          The typed-DELETE-plus-password confirm below is the one this screen
+          already had, unchanged -- note it is an inline panel, not a GDialog;
+          GDialog here covers the language-reload and account-deleted notices. */}
+      <View style={styles.dangerZone}>
         {!deletePanelOpen ? (
           <GButton
             variant="ghost"
@@ -692,7 +720,9 @@ export default function Settings() {
             testID="settings-delete-open"
           />
         ) : (
-          <View style={[styles.deletePanel, { borderColor: theme.error }]}>
+          <View
+            style={[styles.deletePanel, { borderColor: theme.error, backgroundColor: theme.errorBg }]}
+          >
             <Text style={[textStyle("body", locale), { color: theme.error }]}>
               {t("settings.account.deleteWarning")}
             </Text>
@@ -734,6 +764,77 @@ export default function Settings() {
         )}
       </View>
 
+      {/* The choices. Each sheet mounts nothing until its row is tapped, which
+          is the whole reason the screen is no longer a wall. The testIDs are
+          the ones the old cards carried -- GOptionSheet appends the option
+          value, so "settings-goal" still yields "settings-goal-lose". */}
+      <GOptionSheet
+        visible={openSheet === "gender"}
+        title={t("settings.fields.gender")}
+        options={genderOptions}
+        selected={form.gender}
+        onSelect={(gender) => setForm({ ...form, gender })}
+        onClose={() => setOpenSheet(null)}
+        testID="settings-gender"
+      />
+      <GOptionSheet
+        visible={openSheet === "goal"}
+        title={t("settings.fields.goal")}
+        options={goalOptions}
+        selected={form.goal}
+        onSelect={(goal) => setForm({ ...form, goal })}
+        onClose={() => setOpenSheet(null)}
+        testID="settings-goal"
+      />
+      <GOptionSheet
+        visible={openSheet === "experience"}
+        title={t("settings.fields.experienceLevel")}
+        options={experienceOptions}
+        selected={form.experienceLevel}
+        onSelect={(experienceLevel) => setForm({ ...form, experienceLevel })}
+        onClose={() => setOpenSheet(null)}
+        testID="settings-experience"
+      />
+      <GOptionSheet
+        visible={openSheet === "activity"}
+        title={t("settings.fields.activityLevel")}
+        options={activityOptions}
+        selected={form.activityLevel}
+        onSelect={(activityLevel) => setForm({ ...form, activityLevel })}
+        onClose={() => setOpenSheet(null)}
+        testID="settings-activity"
+      />
+      <GOptionSheet
+        visible={openSheet === "unit"}
+        title={t("settings.units.label")}
+        options={unitOptions}
+        selected={unit}
+        onSelect={handleUnitChange}
+        onClose={() => setOpenSheet(null)}
+        testID="settings-unit"
+      />
+      <GOptionSheet
+        visible={openSheet === "language"}
+        title={t("settings.language.label")}
+        options={languageOptions}
+        selected={form.language}
+        onSelect={handleLanguageChange}
+        onClose={() => setOpenSheet(null)}
+        testID="settings-language"
+      />
+      <GOptionSheet
+        visible={openSheet === "theme"}
+        title={t("settings.theme.label")}
+        options={themeOptions}
+        selected={themePreference}
+        // Applies on this frame and persists locally; no Save, no reload
+        // prompt -- unlike the language switch above, a palette swap does not
+        // need one.
+        onSelect={setThemePreference}
+        onClose={() => setOpenSheet(null)}
+        testID="settings-theme"
+      />
+
       <GDialog
         visible={languageNoticeVisible}
         onClose={() => setLanguageNoticeVisible(false)}
@@ -773,12 +874,30 @@ export default function Settings() {
 }
 
 const styles = StyleSheet.create({
-  sectionTitle: {
-    marginTop: space[5],
-    marginBottom: space[1],
+  // Density, deliberately not uniform. A group that MIXES inline fields with
+  // rows breathes at the field's rhythm (`groupGap`); a group of pure rows is
+  // tighter (`rowGap`), because each row already carries its own 56dp of
+  // height and so needs separation rather than distance. The space BETWEEN
+  // groups is owned by GSectionHeader, so it is stated once for the whole app
+  // instead of re-picked here.
+  mixedGroup: {
+    gap: layout.groupGap,
   },
-  form: {
-    gap: space[3],
+  rowGroup: {
+    gap: layout.rowGap,
+  },
+  timezoneGroup: {
+    gap: layout.groupGap,
+    marginTop: layout.looseGap,
+  },
+  saveBlock: {
+    marginTop: layout.sectionGap,
+  },
+  accountGroup: {
+    gap: layout.groupGap,
+  },
+  dangerZone: {
+    marginTop: layout.sectionGap,
   },
   row: {
     flexDirection: "row",
@@ -786,13 +905,6 @@ const styles = StyleSheet.create({
   },
   rowField: {
     flex: 1,
-  },
-  dateField: {
-    minHeight: controlHeight,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    justifyContent: "center",
-    paddingHorizontal: space[3],
   },
   notice: {
     borderRadius: radius.md,
@@ -803,6 +915,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1,
     padding: space[3],
-    gap: space[3],
+    gap: layout.groupGap,
   },
 });

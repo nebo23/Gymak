@@ -199,6 +199,7 @@
     "title": "الإعدادات",
     "sections": {
       "profile": "الملف الشخصي",
+      "training": "التدريب",
       "preferences": "التفضيلات",
       "account": "الحساب"
     },
@@ -229,11 +230,15 @@
       "activityHigh": "عالٍ",
       "activityVeryHigh": "عالٍ جدًا",
       "timezone": "المنطقة الزمنية",
-      "timezoneUseDevice": "استخدام المنطقة الزمنية لهذا الجهاز"
+      "timezoneUseDevice": "استخدام المنطقة الزمنية لهذا الجهاز",
+      "notSet": "غير محدّد"
     },
     "units": {
+      "label": "الوحدات",
       "metric": "متري (سم / كجم)",
-      "imperial": "إمبراطوري (قدم / رطل)"
+      "imperial": "إمبراطوري (قدم / رطل)",
+      "metricShort": "متري",
+      "imperialShort": "إمبراطوري"
     },
     "theme": {
       "label": "المظهر",
@@ -242,6 +247,7 @@
       "dark": "داكن"
     },
     "language": {
+      "label": "اللغة",
       "arabic": "العربية",
       "english": "English"
     },

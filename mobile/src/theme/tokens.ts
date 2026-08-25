@@ -65,6 +65,39 @@ export const radius = {
 } as const;
 
 export const screenPadding = 20;
+
+/**
+ * Stacking distances, named by the RELATIONSHIP they express rather than by
+ * size. Every value is a step on `space` — this is not a second scale, it is
+ * the decision about which step means what, made once.
+ *
+ * The redesign brief's second hierarchy rule: real hierarchy comes from
+ * UNEQUAL space. Before this, most screens set one `gap` (usually `space[4]`)
+ * on a container and let every child sit that far from every other child, so a
+ * section heading was exactly as far from its own first row as that row was
+ * from the next section — which is why nothing read as grouped. The ratios
+ * below are what fixes that, and they only work if they stay unequal:
+ *
+ *   rowGap      4   inside a group; rows already carry a 56dp height, so they
+ *                   need separation, not distance
+ *   groupGap   12   between a group's non-row members (a field and its helper)
+ *   headingGap  8   heading -> the rows it introduces: TIGHT, so the heading
+ *                   belongs to what follows it
+ *   sectionGap 32   group -> next group: 4x headingGap, the ratio that makes
+ *                   the grouping legible without a box around anything
+ *
+ * `denseGap` and `looseGap` are the density pair. A dashboard glanced at
+ * between sets and a settings screen read once a month must not breathe
+ * identically, so a screen picks one and uses it throughout.
+ */
+export const layout = {
+  rowGap: space[0],
+  groupGap: space[2],
+  headingGap: space[1],
+  sectionGap: space[6],
+  denseGap: space[2],
+  looseGap: space[4],
+} as const;
 export const controlHeight = 52;
 export const minTouchTarget = 48;
 
