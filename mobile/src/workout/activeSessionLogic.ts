@@ -15,14 +15,17 @@
  * activeSession.ts re-exports everything below, so nothing outside this
  * pair of files needs to know the split exists.
  */
+import type { ExerciseListItem } from "../api/exercises";
 import type { ProgramDayExerciseDetail } from "../api/program";
 import type { SessionDetailExerciseGroup, WorkoutSetData } from "../api/workouts";
 import type { ResolvedErrorCode } from "../api/errors";
 
-// §5.4's day fetch has no target/rest data for an empty session's exercises,
-// and §4.5's own rest_seconds CHECK floor is 30 -- this is only ever used on
-// the unreachable-today empty-session path (no exercise picker exists until
-// T-29), so it is a documented, honest fallback, not a real prescription.
+// §5.4's day fetch has no target/rest data for an exercise the program day did
+// not prescribe, and §4.5's own rest_seconds CHECK floor is 30. Two paths reach
+// it: an empty session's own server-returned exercises, and an ad-hoc exercise
+// picked mid-session from the library (T-30 wired that picker to this module --
+// see `exerciseTargetFromLibraryItem` below). Neither carries a prescription, so
+// this is a documented, honest fallback rather than a real one.
 export const FALLBACK_REST_SECONDS = 90;
 
 export interface ExerciseTarget {
@@ -96,6 +99,46 @@ export function exerciseTargetFromSessionGroup(group: SessionDetailExerciseGroup
     restSeconds: FALLBACK_REST_SECONDS,
     lastPerformance: null,
   };
+}
+
+/**
+ * An exercise chosen mid-session from the library (§5.2) rather than
+ * prescribed by the program day. The backend imposes no restriction --
+ * `POST /workouts/{id}/sets` accepts any valid `exercise_id`, not only the
+ * program day's (§5.7) -- so the only thing missing client-side is a target,
+ * which by definition does not exist for an unprescribed exercise. Every
+ * target field is therefore null and rest falls back to FALLBACK_REST_SECONDS,
+ * exactly as `exerciseTargetFromSessionGroup` already does for the same
+ * reason. `last_performance` is null too: §5.2's list response does not carry
+ * it, and inventing one would be worse than showing none.
+ */
+export function exerciseTargetFromLibraryItem(item: ExerciseListItem): ExerciseTarget {
+  return {
+    exerciseId: item.id,
+    slug: item.slug,
+    name: item.name,
+    primaryMuscle: item.primary_muscle,
+    targetSets: null,
+    targetRepsMin: null,
+    targetRepsMax: null,
+    restSeconds: FALLBACK_REST_SECONDS,
+    lastPerformance: null,
+  };
+}
+
+/**
+ * Adds `target` to the session's exercise list if it is not already there and
+ * returns the index to make current either way. Picking an exercise the day
+ * already prescribes must select the existing entry, never append a duplicate
+ * that would split its own set list in two and lose its target line.
+ */
+export function selectExerciseTarget(
+  exercises: ExerciseTarget[],
+  target: ExerciseTarget,
+): { exercises: ExerciseTarget[]; index: number } {
+  const existing = exercises.findIndex((item) => item.exerciseId === target.exerciseId);
+  if (existing >= 0) return { exercises, index: existing };
+  return { exercises: [...exercises, target], index: exercises.length };
 }
 
 /** §8.3.2: "pre-fill from the user's previous set of that exercise in this

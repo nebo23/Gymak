@@ -340,7 +340,8 @@
       "loadError": "تعذّر تحميل تمرينك.",
       "noActiveSession": "لا يوجد تمرين قيد التقدم.",
       "backToPlan": "العودة إلى الخطة",
-      "emptyExercises": "لا توجد تمارين في هذه الجلسة بعد."
+      "emptyExercises": "لا توجد تمارين في هذه الجلسة بعد.",
+      "addExercise": "إضافة تمرين"
     },
     "untitledSession": "تمرين",
     "status": {

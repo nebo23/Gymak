@@ -37,17 +37,20 @@ import {
   type WorkoutFinishResponse,
 } from "../api/workouts";
 import { getProgramDay, type ProgramDayExerciseDetail } from "../api/program";
+import type { ExerciseListItem } from "../api/exercises";
 import { parseApiError, resolveErrorCode, type ResolvedErrorCode } from "../api/errors";
 import {
   computeRemainingSeconds,
   computeSessionTotals,
   discardUnsentSets,
+  exerciseTargetFromLibraryItem,
   exerciseTargetFromProgramDay,
   exerciseTargetFromSessionGroup,
   findMostRecentExerciseIndex,
   generateLocalId,
   resolveConfirmedSet,
   resolveFailedSet,
+  selectExerciseTarget,
   type ExerciseTarget,
   type SessionSetRow,
   type SessionTotals,
@@ -84,6 +87,12 @@ interface ActiveSessionState {
    * session is already loaded (the rotation/remount fast path). */
   ensureFresh: () => Promise<void>;
   setCurrentExerciseIndex: (index: number) => void;
+  /** T-30 gap 1: the hand-back from the §5.2 library sheet opened mid-session
+   * (`/(app)/exercises?picker=1`). Adds the exercise to this session if it is
+   * not already in the list and makes it current, so the next Log Set targets
+   * it. Local only -- §5.7 needs no announcement of an exercise ahead of a set,
+   * and a picked exercise the user never logs against must leave no trace. */
+  selectAdHocExercise: (item: ExerciseListItem) => void;
   logSet: (input: SetInput) => Promise<void>;
   retrySet: (localId: string) => Promise<void>;
   retryAllUnsent: () => Promise<void>;
@@ -183,6 +192,12 @@ export const useActiveSessionStore = create<ActiveSessionState>((set, get) => ({
   },
 
   setCurrentExerciseIndex: (index) => set({ currentExerciseIndex: index }),
+
+  selectAdHocExercise: (item) =>
+    set((state) => {
+      const next = selectExerciseTarget(state.exercises, exerciseTargetFromLibraryItem(item));
+      return { exercises: next.exercises, currentExerciseIndex: next.index };
+    }),
 
   logSet: async (input) => {
     const { sessionId, exercises, currentExerciseIndex } = get();

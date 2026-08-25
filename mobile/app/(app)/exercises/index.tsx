@@ -1,10 +1,9 @@
 /**
- * §5.2/§8.2 screen 23 -- the exercise library list, and (per this task's own brief)
+ * §5.2/§8.2 screen 23 -- the exercise library list, and (per T-29's own brief)
  * "the same list, in a GSheet, is the exercise picker for an empty session". One
  * route serves both: `?picker=1` switches the wrapping chrome from a full GScreen to
  * a GSheet and swaps the row-press action from "open detail" to "hand back a
- * selection" (see `handlePick` below for why that hand-back currently goes nowhere
- * -- this task's own report has the full account).
+ * selection" (`handlePick` below).
  *
  * §8.1 registers this route directly in `(app)/_layout.tsx`'s <Tabs> (`href: null`,
  * same treatment as workout/active, plan/[dayId] and history -- see that file for
@@ -17,11 +16,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
-import { FlatList, ScrollView, StyleSheet, Text, View } from "react-native";
+import { FlatList, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
 import { resolveErrorCode } from "../../../src/api/errors";
 import { listExercises, type ExerciseListItem } from "../../../src/api/exercises";
 import { useSession } from "../../../src/auth/useSession";
+import { useActiveSessionStore } from "../../../src/workout/activeSession";
 import {
   GButton,
   GChip,
@@ -60,6 +60,19 @@ const EQUIPMENT_FILTER_VALUES = [
 // keystroke -- a full search (a few words, a correction or two) costs single-digit
 // requests, nowhere near the budget even shared with pagination and the picker.
 const SEARCH_DEBOUNCE_MS = 400;
+
+// GSheet hugs its content (`maxHeight: "85%"`, no height of its own), which is
+// right for progress.tsx's log-weight form -- every child there is intrinsically
+// sized. This body is not: its FlatList and its wrapper both carry `flex: 1`, and
+// a flex child of a hug-content parent contributes a base height of zero, so the
+// sheet collapsed to its own header with the list rendered entirely off-screen.
+// T-30 found that the first time anything actually opened this picker (T-29 built
+// it with no entry point, so it had never been seen on a device). Bounding the
+// body to a real pixel height is what gives those flex children something to fill.
+// Measured from the live window rather than hardcoded, so it stays correct across
+// rotation and font scale; 0.62 leaves the sheet's header, handle and padding
+// comfortably inside GSheet's own 85% cap.
+const PICKER_BODY_HEIGHT_RATIO = 0.62;
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -266,23 +279,39 @@ export default function ExerciseLibrary() {
   const { t, locale } = useI18n();
   const params = useLocalSearchParams<{ picker?: string }>();
   const isPicker = params.picker === "1";
+  const selectAdHocExercise = useActiveSessionStore((s) => s.selectAdHocExercise);
+  const { height: windowHeight } = useWindowDimensions();
 
-  const handleClose = useCallback(() => router.back(), []);
+  // Both this route and workout/active are sibling <Tabs.Screen>s of the same
+  // navigator (§8.1's "outside the tabs", `href: null`), not entries on a stack.
+  // `router.back()` therefore pops the *tab navigator's* history, which lands on
+  // its initial route -- the dashboard -- not on the screen that opened the
+  // sheet. Observed on a device the first time anything opened this picker.
+  // Picker mode has exactly one opener, the active session, so it names that
+  // destination explicitly; browse mode keeps `back()`, which is correct for a
+  // screen reached from more than one place.
+  const handleClose = useCallback(() => {
+    if (isPicker) router.replace("/(app)/workout/active");
+    else router.back();
+  }, [isPicker]);
 
   const handleBrowsePress = useCallback((item: ExerciseListItem) => {
     router.push(`/(app)/exercises/${item.id}`);
   }, []);
 
-  // Picker mode's own row-press: closes the sheet, but cannot hand the pick to
-  // anywhere yet -- activeSession.ts exposes no action to add/select an ad-hoc
-  // exercise mid-session, and workout/active.tsx has no entry point that opens this
-  // sheet in the first place; both are T-26's files, outside this task's own list
-  // (see this task's report). Closing on selection is still correct sheet behaviour
-  // on its own, and leaves nothing half-built to trip over once that entry point
-  // exists.
-  const handlePick = useCallback((_item: ExerciseListItem) => {
-    router.back();
-  }, []);
+  // Picker mode's own row-press. T-30 closed the gap T-29 and T-26 each left to the
+  // other: the hand-back goes through activeSession.ts's module-level Zustand store
+  // rather than a navigation param, because that store -- not any screen's props --
+  // is already where §8.3.7 says session state lives, and workout/active.tsx re-reads
+  // it on focus anyway. `router.back()` then returns to the active screen with the
+  // picked exercise current, which is T-29's own done-when.
+  const handlePick = useCallback(
+    (item: ExerciseListItem) => {
+      selectAdHocExercise(item);
+      handleClose();
+    },
+    [selectAdHocExercise, handleClose],
+  );
 
   if (isPicker) {
     return (
@@ -298,7 +327,9 @@ export default function ExerciseLibrary() {
             testID="exercise-picker-close"
           />
         </View>
-        <ExerciseLibraryBody onPressExercise={handlePick} />
+        <View style={{ height: windowHeight * PICKER_BODY_HEIGHT_RATIO }}>
+          <ExerciseLibraryBody onPressExercise={handlePick} />
+        </View>
       </GSheet>
     );
   }

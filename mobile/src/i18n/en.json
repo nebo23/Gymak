@@ -340,7 +340,8 @@
       "loadError": "We couldn't load your workout.",
       "noActiveSession": "No workout is in progress.",
       "backToPlan": "Back to plan",
-      "emptyExercises": "No exercises in this session yet."
+      "emptyExercises": "No exercises in this session yet.",
+      "addExercise": "Add exercise"
     },
     "untitledSession": "Workout",
     "status": {

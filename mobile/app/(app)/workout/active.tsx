@@ -1,11 +1,13 @@
 /**
  * §8.3 screen 19 — the active workout. "The screen the phase lives or dies
  * on." Reached today from `plan/[dayId].tsx`'s Start button (a plan-backed
- * session). There is no exercise picker yet (T-29), so an empty session (no
- * `program_day_id`) has nothing to log against beyond whatever the server
- * already returned; this screen renders that state honestly (§8.3's
- * `emptyExercises` empty state) rather than crashing, but it is not a flow
- * any current entry point reaches.
+ * session). T-30 added the "add exercise" entry point below, which opens the
+ * §5.2 library as a picker sheet (`/(app)/exercises?picker=1`) and hands the
+ * selection back through activeSession.ts's `selectAdHocExercise` -- so an
+ * exercise the program day never prescribed, and an empty session (no
+ * `program_day_id`) whose `emptyExercises` state used to be a dead end, are
+ * both loggable now. The backend already allowed it: §5.7's
+ * `POST /workouts/{id}/sets` accepts any valid `exercise_id`.
  *
  * This route is registered directly in `(app)/_layout.tsx`'s `<Tabs>` (with
  * `href: null`, so it never becomes a tab button) rather than nested in its
@@ -284,6 +286,14 @@ export default function ActiveWorkout() {
 
   const allowExitRef = useRef(false);
   const exercisesAtFinishRef = useRef<ExerciseTarget[]>([]);
+  // This screen is a persistent Tabs.Screen (see the file-level comment), so
+  // its BackHandler subscription below stays registered even when the T-30
+  // picker sheet is pushed on top of it -- without this, dismissing that sheet
+  // with the hardware back button would trip *this* screen's leave-confirm
+  // instead of closing the sheet. `useFocusEffect` is the only thing that
+  // knows the difference; a ref rather than state because both guards read it
+  // at event time, not render time.
+  const focusedRef = useRef(false);
 
   // Not a plain mount effect: this screen is a persistent Tabs.Screen (see
   // the file-level comment), so `useFocusEffect` is what makes returning to
@@ -293,7 +303,11 @@ export default function ActiveWorkout() {
   // (backgrounding, a guarded nav bounce) costs nothing extra.
   useFocusEffect(
     useCallback(() => {
+      focusedRef.current = true;
       void ensureFresh();
+      return () => {
+        focusedRef.current = false;
+      };
     }, [ensureFresh]),
   );
 
@@ -409,7 +423,7 @@ export default function ActiveWorkout() {
   // away themselves, so they don't trip their own guard.
   useEffect(() => {
     const unsubscribe = navigation.addListener("beforeRemove", (e) => {
-      if (allowExitRef.current || !guardActive) return;
+      if (allowExitRef.current || !guardActive || !focusedRef.current) return;
       e.preventDefault();
       showLeaveConfirm();
     });
@@ -418,7 +432,7 @@ export default function ActiveWorkout() {
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (allowExitRef.current || !guardActive) return false;
+      if (allowExitRef.current || !guardActive || !focusedRef.current) return false;
       showLeaveConfirm();
       return true;
     });
@@ -601,19 +615,34 @@ export default function ActiveWorkout() {
             contentContainerStyle={styles.scrollableContent}
             keyboardShouldPersistTaps="handled"
           >
-            {exercises.length > 1 ? (
-              <View style={styles.chipsRow} testID="active-workout-exercise-switcher">
-                {exercises.map((exercise, index) => (
-                  <GChip
-                    key={exercise.exerciseId}
-                    label={exercise.name}
-                    selected={index === currentExerciseIndex}
-                    onPress={() => setCurrentExerciseIndex(index)}
-                    testID={`active-workout-exercise-chip-${index}`}
-                  />
-                ))}
-              </View>
-            ) : null}
+            {/* T-30 gap 1: the picker's entry point, as the last chip in the
+                switcher rather than a button of its own. Always present, not
+                only when the day prescribed nothing -- §5.7 lets any exercise
+                be logged into any session, and swapping a prescribed machine
+                for whatever is free is the ordinary case in a real gym, not an
+                edge case. A chip because a full-width button here cost a whole
+                row of vertical space: once the rest timer is showing, §8.3.1's
+                pinned block already pushes the log form to the edge of the
+                fold, and a device pass at 130% font (check 15) is exactly where
+                one extra row stops fitting. That is also why the row now
+                renders for any exercise count instead of only `> 1`. */}
+            <View style={styles.chipsRow} testID="active-workout-exercise-switcher">
+              {exercises.map((exercise, index) => (
+                <GChip
+                  key={exercise.exerciseId}
+                  label={exercise.name}
+                  selected={index === currentExerciseIndex}
+                  onPress={() => setCurrentExerciseIndex(index)}
+                  testID={`active-workout-exercise-chip-${index}`}
+                />
+              ))}
+              <GChip
+                label={t("workout.active.addExercise")}
+                selected={false}
+                onPress={() => router.push("/(app)/exercises?picker=1")}
+                testID="active-workout-add-exercise"
+              />
+            </View>
 
             {sessionTotals ? (
               <Text style={[textStyle("label", locale), { color: theme.textSecondary }]} testID="active-workout-totals">

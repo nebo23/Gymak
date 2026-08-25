@@ -10,16 +10,20 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  FALLBACK_REST_SECONDS,
   computePrefill,
   computeRemainingSeconds,
   discardUnsentSets,
+  exerciseTargetFromLibraryItem,
   findMostRecentExerciseIndex,
   hasUnsentSets,
   resolveConfirmedSet,
   resolveFailedSet,
+  selectExerciseTarget,
   type ExerciseTarget,
   type SessionSetRow,
 } from "./activeSessionLogic";
+import type { ExerciseListItem } from "../api/exercises";
 import type { WorkoutSetData } from "../api/workouts";
 
 const squat: ExerciseTarget = {
@@ -217,5 +221,68 @@ describe("findMostRecentExerciseIndex", () => {
       pendingRow("ex-bench"),
     ];
     expect(findMostRecentExerciseIndex(exercises, sets)).toBe(0);
+  });
+});
+
+// T-30 gap 1: the mid-session exercise picker's hand-back.
+const curlLibraryItem: ExerciseListItem = {
+  id: "ex-curl",
+  slug: "dumbbell-biceps-curl",
+  name: "Dumbbell biceps curl",
+  primary_muscle: "biceps",
+  secondary_muscles: ["forearms"],
+  equipment: "dumbbell",
+  movement_pattern: "elbow_flexion",
+  is_compound: false,
+  difficulty: "beginner",
+};
+
+describe("exerciseTargetFromLibraryItem", () => {
+  it("carries identity across and leaves every target field null", () => {
+    const target = exerciseTargetFromLibraryItem(curlLibraryItem);
+    expect(target).toEqual({
+      exerciseId: "ex-curl",
+      slug: "dumbbell-biceps-curl",
+      name: "Dumbbell biceps curl",
+      primaryMuscle: "biceps",
+      targetSets: null,
+      targetRepsMin: null,
+      targetRepsMax: null,
+      restSeconds: FALLBACK_REST_SECONDS,
+      lastPerformance: null,
+    });
+  });
+});
+
+describe("selectExerciseTarget", () => {
+  const dayExercises = [squat, bench];
+
+  it("appends an exercise the day did not prescribe and makes it current", () => {
+    const picked = exerciseTargetFromLibraryItem(curlLibraryItem);
+    const result = selectExerciseTarget(dayExercises, picked);
+    expect(result.index).toBe(dayExercises.length);
+    expect(result.exercises).toHaveLength(dayExercises.length + 1);
+    expect(result.exercises[result.index]).toBe(picked);
+  });
+
+  it("selects the existing entry instead of appending a duplicate", () => {
+    const alreadyPresent = exerciseTargetFromLibraryItem({
+      ...curlLibraryItem,
+      id: "ex-bench",
+      slug: "barbell-bench-press",
+      name: "Barbell bench press",
+    });
+    const result = selectExerciseTarget(dayExercises, alreadyPresent);
+    expect(result.index).toBe(1);
+    expect(result.exercises).toBe(dayExercises);
+    // The prescribed target survives -- the picked stand-in never overwrites it.
+    expect(result.exercises[1]!.targetSets).toBe(bench.targetSets);
+  });
+
+  it("works from an empty session, which had no exercise to log against at all", () => {
+    const picked = exerciseTargetFromLibraryItem(curlLibraryItem);
+    const result = selectExerciseTarget([], picked);
+    expect(result.index).toBe(0);
+    expect(result.exercises).toEqual([picked]);
   });
 });
