@@ -235,6 +235,12 @@
       "metric": "متري (سم / كجم)",
       "imperial": "إمبراطوري (قدم / رطل)"
     },
+    "theme": {
+      "label": "المظهر",
+      "system": "النظام",
+      "light": "فاتح",
+      "dark": "داكن"
+    },
     "language": {
       "arabic": "العربية",
       "english": "English"

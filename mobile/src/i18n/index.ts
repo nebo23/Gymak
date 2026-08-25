@@ -14,6 +14,7 @@ import { createContext, createElement, useContext, useMemo, useState, type React
 import { getLocales } from "expo-localization";
 import { I18nManager } from "react-native";
 import { I18n } from "i18n-js";
+import * as SecureStore from "expo-secure-store";
 
 import ar from "./ar.json";
 import en from "./en.json";
@@ -49,11 +50,49 @@ if (__DEV__) {
   }
 }
 
-// §13.2 item 7: Arabic by default, but the device locale is respected on
-// first launch if it is English. There is no persisted user override yet —
-// that lands with the Settings screen (T-14) — so this runs fresh every
-// cold start.
+/**
+ * §13.2 item 7: Arabic by default, but the device locale is respected on first
+ * launch if it is English.
+ *
+ * The user's own choice wins over both, and is cached on the device so it is
+ * known *before first render*. It has to be: `applyRTLFor` below runs at module
+ * scope, and `I18nManager.forceRTL` only takes effect for the next mount — so a
+ * locale that arrived later (from the profile, over the network) could not flip
+ * direction without a second reload. Device check 14 is what this is for: before
+ * this cache existed, choosing العربية updated the profile, told the user to
+ * restart, and then came back in English, because the restart re-derived the
+ * locale from the *device* and discarded the choice.
+ *
+ * The profile's `language` remains the account-level source of truth (it is what
+ * the Settings form edits and what the server localises exercise names by); this
+ * is only a device-local bootstrap copy, written whenever the user picks a
+ * language. Same honest-compromise storage note as `src/theme/useTheme.ts`:
+ * SecureStore is nominally for secrets and this is not one, but §A.2 forbids
+ * adding a dependency and it is the only key-value store installed. Namespaced
+ * `gymak.locale.*`, not `gymak.session.*`, so signing out does not clear it.
+ */
+const LOCALE_PREFERENCE_KEY = "gymak.locale.preference";
+
+function readStoredLocale(): Locale | null {
+  try {
+    const raw = SecureStore.getItem(LOCALE_PREFERENCE_KEY);
+    return raw === "ar" || raw === "en" ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredLocale(locale: Locale): void {
+  try {
+    SecureStore.setItem(LOCALE_PREFERENCE_KEY, locale);
+  } catch {
+    // Persisting failed; the in-memory switch below still applies for this run.
+  }
+}
+
 function detectInitialLocale(): Locale {
+  const stored = readStoredLocale();
+  if (stored) return stored;
   const device = getLocales()[0]?.languageCode;
   return device === "en" ? "en" : "ar";
 }
@@ -112,6 +151,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       t: (key, options) => translate(locale, key, options),
       setLocale: (next: Locale) => {
         applyRTLFor(next);
+        // Cached before the state update so the choice survives even if the
+        // user force-quits at the "restart to apply" prompt rather than after it.
+        writeStoredLocale(next);
         setLocaleState(next);
       },
     }),

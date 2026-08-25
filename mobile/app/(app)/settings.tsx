@@ -41,7 +41,8 @@ import {
   GTextInput,
 } from "../../src/components";
 import { useI18n } from "../../src/i18n";
-import { useTheme } from "../../src/theme/useTheme";
+import { useTheme, useThemePreference } from "../../src/theme/useTheme";
+import { THEME_PREFERENCES, type ThemePreference } from "../../src/theme/themePreference";
 import { textStyle } from "../../src/theme/typography";
 import { controlHeight, radius, space } from "../../src/theme/tokens";
 import {
@@ -115,6 +116,12 @@ function buildDiff(original: ProfileData, form: FormState): ProfileUpdateInput {
   return diff;
 }
 
+const THEME_KEY: Record<ThemePreference, string> = {
+  system: "settings.theme.system",
+  light: "settings.theme.light",
+  dark: "settings.theme.dark",
+};
+
 const ACTIVITY_LEVELS: ActivityLevel[] = ["sedentary", "light", "moderate", "high", "very_high"];
 const ACTIVITY_KEY: Record<ActivityLevel, string> = {
   sedentary: "settings.fields.activitySedentary",
@@ -126,6 +133,10 @@ const ACTIVITY_KEY: Record<ActivityLevel, string> = {
 
 export default function Settings() {
   const theme = useTheme();
+  // Device-local, deliberately not part of `form`/`buildDiff` — the theme is
+  // never sent to the server, so it has no place in the profile PATCH and no
+  // dependence on Save.
+  const { preference: themePreference, setPreference: setThemePreference } = useThemePreference();
   const { t, locale, setLocale } = useI18n();
   const { user } = useSession();
   const queryClient = useQueryClient();
@@ -596,6 +607,25 @@ export default function Settings() {
               testID="settings-language-en"
             />
           </View>
+        </View>
+
+        <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
+          {t("settings.theme.label")}
+        </Text>
+        <View style={styles.row}>
+          {THEME_PREFERENCES.map((option) => (
+            <View key={option} style={styles.rowField}>
+              <GSelectCard
+                title={t(THEME_KEY[option])}
+                selected={themePreference === option}
+                // Applies on this frame and persists locally; no Save, no
+                // reload prompt — unlike the language switch above, a palette
+                // swap does not need one.
+                onPress={() => setThemePreference(option)}
+                testID={`settings-theme-${option}`}
+              />
+            </View>
+          ))}
         </View>
 
         <GTextInput

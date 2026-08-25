@@ -235,6 +235,12 @@
       "metric": "Metric (cm / kg)",
       "imperial": "Imperial (ft / lb)"
     },
+    "theme": {
+      "label": "Theme",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
     "language": {
       "arabic": "العربية",
       "english": "English"

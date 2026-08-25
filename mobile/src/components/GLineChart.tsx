@@ -21,11 +21,19 @@
  * left-to-right ... even in Arabic"). A time-series chart is exactly that
  * kind of content: mirroring it would reverse which side "earlier" sits on,
  * which no reader benefits from and every reader would find confusing
- * regardless of script direction. The axis labels are always Western-digit
- * numbers or short month/day abbreviations (never Arabic script), formatted
- * with the Latin face on purpose -- Inter's numerals are what that face is
- * actually drawn for, unlike Cairo's, whose primary design target is Arabic
- * script. Colours are read from `useTheme()` only -- never a hex literal --
+ * regardless of script direction. The axis labels keep Western digits and that
+ * LTR order in both locales, which is what §9.6 actually constrains.
+ *
+ * AMENDED by device check 14 ("RTL throughout, INCLUDING THE CHART'S AXIS
+ * LABELS"): the month NAME is now localised, so an Arabic Progress screen reads
+ * "28 مايو" rather than "May 28". This paragraph previously claimed the labels
+ * were "never Arabic script" and pinned them to the Latin face; that went
+ * further than §9.6, which carves out digits and direction, not month names --
+ * and it left visible English inside an otherwise fully-Arabic screen. The
+ * weight labels are still formatted on the Latin face, which is what the
+ * numerals argument (Inter's digits vs Cairo's) was actually about; the date
+ * labels follow `locale` so Arabic script gets Cairo instead of falling back to
+ * a system font Inter cannot supply. Colours are read from `useTheme()` only -- never a hex literal --
  * but which token each series uses is the caller's choice (progress.tsx),
  * not hardcoded here, matching every other primitive's separation between
  * "generic component" and "this app's specific usage of it."
@@ -34,6 +42,7 @@ import { useState } from "react";
 import { StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import Svg, { Circle, G, Path } from "react-native-svg";
 
+import { useI18n, type Locale } from "../i18n";
 import { useTheme } from "../theme/useTheme";
 import { textStyle } from "../theme/typography";
 import { space } from "../theme/tokens";
@@ -79,16 +88,27 @@ const CHART_HEIGHT = 160;
 const Y_LABEL_COLUMN_WIDTH = 36;
 const DOT_RADIUS = 3;
 
-/** Deliberately locale-"en" (Latin face, Western digits) regardless of the
- * app's own locale -- see this file's module docstring. */
+/** Deliberately Western digits regardless of the app's own locale -- see this
+ * file's module docstring. A number has no language, so "en" and
+ * "ar-u-nu-latn" render this identically; "en" is kept for the plain case. */
 function formatAxisWeight(value: number): string {
   return new Intl.NumberFormat("en", { maximumFractionDigits: 0 }).format(Math.round(value));
 }
 
-function formatAxisDate(isoDate: string): string {
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(
-    new Date(`${isoDate}T00:00:00Z`),
-  );
+/** Western digits and LTR order in both locales (Phase 1 §9.6: "numbers, dates,
+ * weights ... stay left-to-right and use Western digits even in Arabic"), but
+ * the month NAME follows the app locale -- `ar-u-nu-latn` is the Arabic
+ * calendar with Latin numerals, the same pairing progress.tsx and settings.tsx
+ * already use for user-facing dates. §9.6 constrains digits and direction; it
+ * does not ask for an English month name inside an Arabic UI, and device check
+ * 14 ("RTL throughout, including the chart's axis labels") is what catches the
+ * difference -- before this, an Arabic Progress screen still read "May 28". */
+function formatAxisDate(isoDate: string, locale: Locale): string {
+  return new Intl.DateTimeFormat(locale === "ar" ? "ar-u-nu-latn" : "en", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${isoDate}T00:00:00Z`));
 }
 
 export function GLineChart<T>({
@@ -100,6 +120,7 @@ export function GLineChart<T>({
   testID,
 }: GLineChartProps<T>) {
   const theme = useTheme();
+  const { locale } = useI18n();
   const [width, setWidth] = useState(0);
 
   const domainDays = Math.max(1, daysBetweenIso(range.start, range.end) + 1);
@@ -184,11 +205,15 @@ export function GLineChart<T>({
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        <Text style={[textStyle("caption", "en"), { color: theme.textMuted }]}>
-          {formatAxisDate(range.start)}
+        {/* `locale`, not a hardcoded "en": an Arabic month name needs the Cairo
+            face -- Inter has no Arabic glyphs and would fall back to a system
+            font. The weight labels above stay on the Latin face, which is what
+            the module docstring's numerals argument is actually about. */}
+        <Text style={[textStyle("caption", locale), { color: theme.textMuted }]}>
+          {formatAxisDate(range.start, locale)}
         </Text>
-        <Text style={[textStyle("caption", "en"), { color: theme.textMuted }]}>
-          {formatAxisDate(range.end)}
+        <Text style={[textStyle("caption", locale), { color: theme.textMuted }]}>
+          {formatAxisDate(range.end, locale)}
         </Text>
       </View>
     </View>
