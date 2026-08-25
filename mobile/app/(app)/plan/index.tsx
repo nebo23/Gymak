@@ -13,12 +13,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { useState } from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { generateProgram, getProgram, type ProgramSummary } from "../../../src/api/program";
 import { resolveErrorCode } from "../../../src/api/errors";
 import { useSession } from "../../../src/auth/useSession";
-import { GButton, GCard, GChip, GErrorBanner, GScreen, GSkeleton } from "../../../src/components";
+import {
+  GButton,
+  GCard,
+  GChip,
+  GDialog,
+  GErrorBanner,
+  GScreen,
+  GSkeleton,
+} from "../../../src/components";
 import { useI18n } from "../../../src/i18n";
 import { useTheme } from "../../../src/theme/useTheme";
 import { textStyle } from "../../../src/theme/typography";
@@ -58,18 +66,12 @@ export default function PlanOverview() {
   const isEmptyProgram =
     programQuery.isError && resolveErrorCode(programQuery.error) === "PROGRAM_NOT_FOUND";
 
+  // Holds what the OS alert used to capture in its closure: which program's
+  // day count to regenerate once the user confirms.
+  const [regenerateFor, setRegenerateFor] = useState<ProgramSummary | null>(null);
+
   const handleRegenerate = (program: ProgramSummary) => {
-    Alert.alert(
-      t("plan.overview.regenerateConfirmTitle"),
-      t("plan.overview.regenerateConfirmBody", { days: program.days_per_week }),
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("plan.overview.regenerateConfirmAction"),
-          onPress: () => generateMutation.mutate(program.days_per_week),
-        },
-      ],
-    );
+    setRegenerateFor(program);
   };
 
   return (
@@ -179,9 +181,45 @@ export default function PlanOverview() {
         </View>
       )}
 
+      {/* T-30: §8.1 says the exercise library is reached "from plan and from the
+          active session". The active-session half is workout/active.tsx's own
+          "add exercise" picker; this is the plan half, and until T-30 neither
+          existed -- screen 23 was as unreachable as history.tsx was, which
+          fails §10.3 item 1 the same way. Outside the conditional blocks above
+          so it is there whether or not a program exists: browsing the library
+          is exactly what someone with no plan yet may want to do. */}
+      <GButton
+        variant="secondary"
+        label={t("exercises.title")}
+        onPress={() => router.push("/(app)/exercises")}
+        fullWidth
+        testID="plan-open-exercise-library"
+      />
+
       <Text style={[textStyle("caption", locale), styles.disclaimer, { color: theme.textMuted }]}>
         {t("common.medicalDisclaimer")}
       </Text>
+
+      <GDialog
+        visible={regenerateFor !== null}
+        onClose={() => setRegenerateFor(null)}
+        titleKey="plan.overview.regenerateConfirmTitle"
+        bodyKey="plan.overview.regenerateConfirmBody"
+        bodyParams={{ days: regenerateFor?.days_per_week ?? 0 }}
+        actions={[
+          { labelKey: "common.cancel", onPress: () => setRegenerateFor(null) },
+          {
+            labelKey: "plan.overview.regenerateConfirmAction",
+            variant: "primary",
+            onPress: () => {
+              const program = regenerateFor;
+              setRegenerateFor(null);
+              if (program) generateMutation.mutate(program.days_per_week);
+            },
+          },
+        ]}
+        testID="plan-regenerate-confirm"
+      />
     </GScreen>
   );
 }

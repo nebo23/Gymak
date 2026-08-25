@@ -28,6 +28,7 @@ import {
   GScreen,
   GSelectCard,
   GSheet,
+  GDialog,
   GSkeleton,
   GStat,
   GTextInput,
@@ -101,6 +102,11 @@ export default function DevGallery() {
   const [repsValue, setRepsValue] = useState(8);
   const [weightValue, setWeightValue] = useState(60);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Every GDialog state the contract names, so all four can be eyeballed in
+  // both themes and both languages without navigating the real screens.
+  const [dialogDemo, setDialogDemo] = useState<
+    "one" | "two" | "destructive" | "long" | null
+  >(null);
 
   if (!__DEV__) {
     return <Redirect href="/(app)" />;
@@ -453,6 +459,105 @@ export default function DevGallery() {
           testID="dev-gallery-sheet-close"
         />
       </GSheet>
+
+      <Section title={t("devGallery.sections.dialog")}>
+        <View style={styles.buttonRow}>
+          <GButton
+            label={t("devGallery.sample.openDialogOne")}
+            variant="secondary"
+            onPress={() => setDialogDemo("one")}
+            testID="dev-gallery-dialog-one"
+          />
+          <GButton
+            label={t("devGallery.sample.openDialogTwo")}
+            variant="secondary"
+            onPress={() => setDialogDemo("two")}
+            testID="dev-gallery-dialog-two"
+          />
+          <GButton
+            label={t("devGallery.sample.openDialogDestructive")}
+            variant="secondary"
+            onPress={() => setDialogDemo("destructive")}
+            testID="dev-gallery-dialog-destructive"
+          />
+          <GButton
+            label={t("devGallery.sample.openDialogLong")}
+            variant="secondary"
+            onPress={() => setDialogDemo("long")}
+            testID="dev-gallery-dialog-long"
+          />
+        </View>
+      </Section>
+
+      {/* One action. */}
+      <GDialog
+        visible={dialogDemo === "one"}
+        onClose={() => setDialogDemo(null)}
+        titleKey="devGallery.sample.dialogTitle"
+        bodyKey="devGallery.sample.dialogBody"
+        actions={[
+          {
+            labelKey: "auth.language.ok",
+            variant: "primary",
+            onPress: () => setDialogDemo(null),
+          },
+        ]}
+        testID="dev-gallery-dialog-one-panel"
+      />
+
+      {/* Two actions: cancel + primary. */}
+      <GDialog
+        visible={dialogDemo === "two"}
+        onClose={() => setDialogDemo(null)}
+        titleKey="devGallery.sample.dialogTitle"
+        bodyKey="devGallery.sample.dialogBody"
+        actions={[
+          { labelKey: "common.cancel", onPress: () => setDialogDemo(null) },
+          {
+            labelKey: "devGallery.sample.dialogConfirm",
+            variant: "primary",
+            onPress: () => setDialogDemo(null),
+          },
+        ]}
+        testID="dev-gallery-dialog-two-panel"
+      />
+
+      {/* Destructive: `error` token, and never the focused action. */}
+      <GDialog
+        visible={dialogDemo === "destructive"}
+        onClose={() => setDialogDemo(null)}
+        titleKey="devGallery.sample.dialogDestructiveTitle"
+        bodyKey="devGallery.sample.dialogDestructiveBody"
+        actions={[
+          { labelKey: "common.cancel", onPress: () => setDialogDemo(null) },
+          {
+            labelKey: "devGallery.sample.dialogDestructiveAction",
+            variant: "destructive",
+            onPress: () => setDialogDemo(null),
+          },
+        ]}
+        testID="dev-gallery-dialog-destructive-panel"
+      />
+
+      {/* Long labels: both wrap, so the row must stack instead of clipping. */}
+      <GDialog
+        visible={dialogDemo === "long"}
+        onClose={() => setDialogDemo(null)}
+        titleKey="devGallery.sample.dialogTitle"
+        bodyKey="devGallery.sample.dialogBody"
+        actions={[
+          {
+            labelKey: "devGallery.sample.dialogLongLabelA",
+            onPress: () => setDialogDemo(null),
+          },
+          {
+            labelKey: "devGallery.sample.dialogLongLabelB",
+            variant: "primary",
+            onPress: () => setDialogDemo(null),
+          },
+        ]}
+        testID="dev-gallery-dialog-long-panel"
+      />
 
       <Section title={t("devGallery.sections.lineChart")}>
         <GLineChart

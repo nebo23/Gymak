@@ -5,7 +5,7 @@
  * and a language toggle in the corner. Built only from T-11 primitives.
  */
 import { useState } from "react";
-import { Alert, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { router } from "expo-router";
 
 import { socialSignIn } from "../../src/api/auth";
@@ -17,7 +17,7 @@ import {
   signInWithGoogle,
 } from "../../src/auth/firebase";
 import { useSessionStore } from "../../src/auth/session";
-import { GButton, GErrorBanner, GLogo, GScreen } from "../../src/components";
+import { GButton, GDialog, GErrorBanner, GLogo, GScreen } from "../../src/components";
 import { useI18n } from "../../src/i18n";
 import { useTheme } from "../../src/theme/useTheme";
 import { textStyle } from "../../src/theme/typography";
@@ -29,13 +29,12 @@ export default function Welcome() {
   const { width } = useWindowDimensions();
   const logoSize = Math.min(140, width * 0.38);
   const [socialLoading, setSocialLoading] = useState(false);
+  const [languageNoticeVisible, setLanguageNoticeVisible] = useState(false);
   const [error, setError] = useState<ResolvedErrorCode | null>(null);
 
   const handleToggleLanguage = () => {
     setLocale(locale === "ar" ? "en" : "ar");
-    Alert.alert(t("auth.language.reloadTitle"), t("auth.language.reloadMessage"), [
-      { text: t("auth.language.ok") },
-    ]);
+    setLanguageNoticeVisible(true);
   };
 
   const handleGoogleSignIn = async () => {
@@ -119,6 +118,21 @@ export default function Welcome() {
           testID="welcome-google"
         />
       </View>
+
+      <GDialog
+        visible={languageNoticeVisible}
+        onClose={() => setLanguageNoticeVisible(false)}
+        titleKey="auth.language.reloadTitle"
+        bodyKey="auth.language.reloadMessage"
+        actions={[
+          {
+            labelKey: "auth.language.ok",
+            variant: "primary",
+            onPress: () => setLanguageNoticeVisible(false),
+          },
+        ]}
+        testID="welcome-language-notice"
+      />
     </GScreen>
   );
 }
@@ -148,6 +162,8 @@ const styles = StyleSheet.create({
     gap: space[3],
     marginVertical: space[1],
   },
+  // A hairline rule: 1dp is the line itself, not a spacing choice, so it is
+  // one-off geometry rather than a value the scale should own.
   dividerLine: {
     flex: 1,
     height: 1,

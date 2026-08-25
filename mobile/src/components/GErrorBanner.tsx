@@ -10,7 +10,7 @@ import { AccessibilityInfo, Pressable, StyleSheet, Text, View } from "react-nati
 import { useI18n } from "../i18n";
 import { useTheme } from "../theme/useTheme";
 import { textStyle } from "../theme/typography";
-import { minTouchTarget, radius, space } from "../theme/tokens";
+import { iconSize, minTouchTarget, radius, space } from "../theme/tokens";
 
 export interface GErrorBannerProps {
   /** Looked up as `errors.<code>` (§7.2/§9.6). */
@@ -77,7 +77,8 @@ export function GErrorBanner({ code, message, onRetry, onDismiss, testID }: GErr
 // The retry/dismiss controls are visually compact; hit-slop brings each
 // one's effective touch area up to the §10.6 floor — the same pattern
 // GTextInput's toggleHitSlop uses.
-const actionVisualSize = 20;
+// The rendered extent of the label-sized glyph these actions draw.
+const actionVisualSize = iconSize.sm;
 const actionHitSlopPad = Math.max(0, (minTouchTarget - actionVisualSize) / 2);
 const actionHitSlop = {
   top: actionHitSlopPad,

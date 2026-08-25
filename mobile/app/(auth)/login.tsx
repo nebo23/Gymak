@@ -275,6 +275,8 @@ const styles = StyleSheet.create({
     gap: space[3],
     marginVertical: space[1],
   },
+  // A hairline rule: 1dp is the line itself, not a spacing choice, so it is
+  // one-off geometry rather than a value the scale should own.
   dividerLine: {
     flex: 1,
     height: 1,

@@ -19,7 +19,7 @@ import {
 import { useI18n } from "../i18n";
 import { useTheme } from "../theme/useTheme";
 import { textStyle } from "../theme/typography";
-import { controlHeight, minTouchTarget, radius, space } from "../theme/tokens";
+import { controlHeight, iconSize, minTouchTarget, radius, space } from "../theme/tokens";
 
 export interface GTextInputProps {
   label: string;
@@ -147,7 +147,8 @@ function EyeIcon({ revealed, color }: EyeIconProps) {
 
 // The reveal toggle's icon is shorter than `minTouchTarget`; hit-slop
 // brings its effective touch area up to the §10.6 floor.
-const toggleIconSize = 22;
+// Must track the eye icon's real box, or the slop maths below is wrong.
+const toggleIconSize = iconSize.md;
 const toggleHitSlopPad = Math.max(0, (minTouchTarget - toggleIconSize) / 2);
 // `hitSlop`'s Insets type is physical (left/right), not logical — it has no
 // start/end variant, so this is not a §9.6 layout-direction violation.
@@ -179,9 +180,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingStart: space[2],
   },
+  // Hand-drawn eye. The BOX is the scale's standard inline size; the lens,
+  // pupil and 1.5dp strokes below are the drawing's own proportions -- one-off
+  // geometry like an SVG path, kept literal on purpose.
   eyeIcon: {
-    width: 22,
-    height: 22,
+    width: iconSize.md,
+    height: iconSize.md,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -200,9 +204,11 @@ const styles = StyleSheet.create({
   },
   eyeSlash: {
     position: "absolute",
-    top: 10,
+    // Centred on the box rather than a literal offset, so it stays centred if
+    // the icon size ever changes.
+    top: iconSize.md / 2,
     start: 0,
-    width: 22,
+    width: iconSize.md,
     height: 1.5,
     transform: [{ rotate: "45deg" }],
   },

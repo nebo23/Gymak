@@ -43,7 +43,6 @@ import {
   AccessibilityInfo,
   AppState,
   BackHandler,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -64,6 +63,7 @@ import {
   GButton,
   GCard,
   GChip,
+  GDialog,
   GErrorBanner,
   GNumberField,
   GRestTimer,
@@ -281,6 +281,18 @@ export default function ActiveWorkout() {
   const [warmupValue, setWarmupValue] = useState(false);
   const [finishSummary, setFinishSummary] = useState<WorkoutFinishResponse | null>(null);
   const [actionErrorCode, setActionErrorCode] = useState<ResolvedErrorCode | null>(null);
+  /**
+   * The four confirmations this screen used to raise through `Alert.alert`.
+   * One discriminated value rather than four booleans, because they are
+   * mutually exclusive and one of them (leave) opens another (finish/unsent).
+   */
+  const [dialog, setDialog] = useState<
+    | { kind: "abandon" }
+    | { kind: "finish" }
+    | { kind: "unsent"; count: number }
+    | { kind: "leave" }
+    | null
+  >(null);
   const [showRecordBanner, setShowRecordBanner] = useState(false);
   const [restResyncTick, forceRestResync] = useState(0);
 
@@ -372,45 +384,23 @@ export default function ActiveWorkout() {
   }, [abandon, queryClient, reset]);
 
   const handleAbandonPress = useCallback(() => {
-    Alert.alert(t("workout.active.abandonConfirmTitle"), t("workout.active.abandonConfirmBody"), [
-      { text: t("common.cancel"), style: "cancel" },
-      {
-        text: t("workout.active.abandonConfirmAction"),
-        style: "destructive",
-        onPress: () => void doAbandon(),
-      },
-    ]);
-  }, [t, doAbandon]);
+    setDialog({ kind: "abandon" });
+  }, []);
 
   const handleFinishPress = useCallback(() => {
     if (hasUnsentSets(useActiveSessionStore.getState().sets)) {
       const unsentCount = useActiveSessionStore
         .getState()
         .sets.filter((row) => row.kind === "pending").length;
-      Alert.alert(
-        t("workout.active.unsentBlockTitle"),
-        t("workout.active.unsentBlockBody", { count: unsentCount }),
-        [
-          { text: t("common.cancel"), style: "cancel" },
-          { text: t("workout.active.retryAll"), onPress: () => void retryAllUnsent() },
-          { text: t("workout.active.discardUnsent"), style: "destructive", onPress: discardUnsent },
-        ],
-      );
+      setDialog({ kind: "unsent", count: unsentCount });
       return;
     }
-    Alert.alert(t("workout.active.finishConfirmTitle"), t("workout.active.finishConfirmBody"), [
-      { text: t("common.cancel"), style: "cancel" },
-      { text: t("workout.active.finishConfirmAction"), onPress: () => void doFinish() },
-    ]);
-  }, [t, retryAllUnsent, discardUnsent, doFinish]);
+    setDialog({ kind: "finish" });
+  }, []);
 
   const showLeaveConfirm = useCallback(() => {
-    Alert.alert(t("workout.active.backConfirmTitle"), t("workout.active.backConfirmBody"), [
-      { text: t("common.cancel"), style: "cancel" },
-      { text: t("workout.active.finish"), onPress: handleFinishPress },
-      { text: t("workout.active.abandon"), style: "destructive", onPress: handleAbandonPress },
-    ]);
-  }, [t, handleFinishPress, handleAbandonPress]);
+    setDialog({ kind: "leave" });
+  }, []);
 
   const guardActive = status === "ready" && finishSummary === null;
 
@@ -758,6 +748,99 @@ export default function ActiveWorkout() {
           </ScrollView>
         </View>
       ) : null}
+
+      <GDialog
+        visible={dialog?.kind === "abandon"}
+        onClose={() => setDialog(null)}
+        titleKey="workout.active.abandonConfirmTitle"
+        bodyKey="workout.active.abandonConfirmBody"
+        actions={[
+          { labelKey: "common.cancel", onPress: () => setDialog(null) },
+          {
+            labelKey: "workout.active.abandonConfirmAction",
+            variant: "destructive",
+            onPress: () => {
+              setDialog(null);
+              void doAbandon();
+            },
+          },
+        ]}
+        testID="active-abandon-confirm"
+      />
+
+      <GDialog
+        visible={dialog?.kind === "finish"}
+        onClose={() => setDialog(null)}
+        titleKey="workout.active.finishConfirmTitle"
+        bodyKey="workout.active.finishConfirmBody"
+        actions={[
+          { labelKey: "common.cancel", onPress: () => setDialog(null) },
+          {
+            labelKey: "workout.active.finishConfirmAction",
+            variant: "primary",
+            onPress: () => {
+              setDialog(null);
+              void doFinish();
+            },
+          },
+        ]}
+        testID="active-finish-confirm"
+      />
+
+      <GDialog
+        visible={dialog?.kind === "unsent"}
+        onClose={() => setDialog(null)}
+        titleKey="workout.active.unsentBlockTitle"
+        bodyKey="workout.active.unsentBlockBody"
+        bodyParams={{ count: dialog?.kind === "unsent" ? dialog.count : 0 }}
+        actions={[
+          { labelKey: "common.cancel", onPress: () => setDialog(null) },
+          {
+            labelKey: "workout.active.retryAll",
+            variant: "primary",
+            onPress: () => {
+              setDialog(null);
+              void retryAllUnsent();
+            },
+          },
+          {
+            labelKey: "workout.active.discardUnsent",
+            variant: "destructive",
+            onPress: () => {
+              setDialog(null);
+              discardUnsent();
+            },
+          },
+        ]}
+        testID="active-unsent-block"
+      />
+
+      <GDialog
+        visible={dialog?.kind === "leave"}
+        onClose={() => setDialog(null)}
+        titleKey="workout.active.backConfirmTitle"
+        bodyKey="workout.active.backConfirmBody"
+        actions={[
+          { labelKey: "common.cancel", onPress: () => setDialog(null) },
+          {
+            labelKey: "workout.active.finish",
+            variant: "primary",
+            onPress: () => {
+              setDialog(null);
+              handleFinishPress();
+            },
+          },
+          {
+            labelKey: "workout.active.abandon",
+            variant: "destructive",
+            onPress: () => {
+              setDialog(null);
+              handleAbandonPress();
+            },
+          },
+        ]}
+        testID="active-leave-confirm"
+      />
     </GScreen>
   );
 }

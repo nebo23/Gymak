@@ -361,7 +361,8 @@
       "title": "No workouts yet",
       "body": "Start your first workout from your plan.",
       "action": "Go to plan"
-    }
+    },
+    "entryPointSubtitle": "Your past workouts"
   },
   "progress": {
     "title": "Progress",
@@ -586,7 +587,8 @@
       "numberField": "GNumberField",
       "sheet": "GSheet",
       "restTimer": "GRestTimer",
-      "lineChart": "GLineChart"
+      "lineChart": "GLineChart",
+      "dialog": "GDialog"
     },
     "state": {
       "idle": "Idle",
@@ -649,7 +651,19 @@
       "unitKg": "kg",
       "sheetBody": "This is example content inside a bottom sheet.",
       "openSheet": "Open sheet",
-      "lineChartAccessibilityLabel": "Weight, 7 entries, from 82 to 80.2 kilograms over 10 days"
+      "lineChartAccessibilityLabel": "Weight, 7 entries, from 82 to 80.2 kilograms over 10 days",
+      "openDialogOne": "One action",
+      "openDialogTwo": "Two actions",
+      "openDialogDestructive": "Destructive",
+      "openDialogLong": "Long labels",
+      "dialogTitle": "Discard this set?",
+      "dialogBody": "The reps and weight you entered will not be saved.",
+      "dialogConfirm": "Discard",
+      "dialogDestructiveTitle": "Delete your account?",
+      "dialogDestructiveBody": "This removes every workout, plan and measurement. It cannot be undone.",
+      "dialogDestructiveAction": "Delete permanently",
+      "dialogLongLabelA": "Keep the session running in the background",
+      "dialogLongLabelB": "Finish and save every recorded set now"
     }
   }
 }

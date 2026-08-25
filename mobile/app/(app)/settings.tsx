@@ -9,10 +9,10 @@
  * duplicated locally rather than extracted into a ninth shared component,
  * per "use only T-11 primitives, no new component."
  */
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { getCalendars } from "expo-localization";
 
@@ -32,7 +32,14 @@ import {
 } from "../../src/api/profile";
 import { useSessionStore } from "../../src/auth/session";
 import { useSession } from "../../src/auth/useSession";
-import { GButton, GErrorBanner, GScreen, GSelectCard, GTextInput } from "../../src/components";
+import {
+  GButton,
+  GDialog,
+  GErrorBanner,
+  GScreen,
+  GSelectCard,
+  GTextInput,
+} from "../../src/components";
 import { useI18n } from "../../src/i18n";
 import { useTheme } from "../../src/theme/useTheme";
 import { textStyle } from "../../src/theme/typography";
@@ -148,24 +155,58 @@ export default function Settings() {
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
+  // The profile object the form's current values were seeded from. T-30 needs
+  // it to tell "the server has newer values" from "the user has typed
+  // something" -- see the re-seed effect below.
+  const seededFromRef = useRef<ProfileData | null>(null);
+
+  const seedForm = useCallback((profile: ProfileData) => {
+    const seeded = toFormState(profile);
+    seededFromRef.current = profile;
+    setForm(seeded);
+    setUnit(seeded.unitSystem);
+    setHeightCmText(String(seeded.heightCm));
+    setWeightKgText(String(seeded.weightKg));
+    const imperial = cmToFeetInches(seeded.heightCm);
+    setFeetText(String(imperial.feet));
+    setInchesText(String(imperial.inches));
+    setWeightLbText(String(kgToLbs(seeded.weightKg)));
+  }, []);
+
   // Seed the editable form once the profile loads. Only when `form` is still
   // null, so a save's own optimistic cache update doesn't clobber in-flight
   // edits with a refetch.
   useEffect(() => {
-    if (profileQuery.data && form === null) {
-      const seeded = toFormState(profileQuery.data);
-      setForm(seeded);
-      setUnit(seeded.unitSystem);
-      setHeightCmText(String(seeded.heightCm));
-      setWeightKgText(String(seeded.weightKg));
-      const imperial = cmToFeetInches(seeded.heightCm);
-      setFeetText(String(imperial.feet));
-      setInchesText(String(imperial.inches));
-      setWeightLbText(String(kgToLbs(seeded.weightKg)));
-    }
-  }, [profileQuery.data, form]);
+    if (profileQuery.data && form === null) seedForm(profileQuery.data);
+  }, [profileQuery.data, form, seedForm]);
+
+  // T-30, device check 12: logging a body weight on the Progress tab updates
+  // `profiles.weight_kg` server-side (P2-ADR-06) and invalidates ["profile"],
+  // but this screen is a tab that Expo Router keeps mounted, and the seeding
+  // effect above deliberately fires only once -- so the weight field went on
+  // showing the value it was first seeded with. Refetch on focus, then adopt
+  // the newer profile only when the form still matches what it was seeded
+  // from; a form the user has actually edited is never overwritten, which is
+  // the property the once-only guard above was protecting.
+  const refetchProfile = profileQuery.refetch;
+  useFocusEffect(
+    useCallback(() => {
+      void refetchProfile();
+    }, [refetchProfile]),
+  );
+
+  useEffect(() => {
+    const latest = profileQuery.data;
+    const seeded = seededFromRef.current;
+    if (!latest || !seeded || latest === seeded || form === null) return;
+    if (Object.keys(buildDiff(seeded, form)).length > 0) return;
+    seedForm(latest);
+  }, [profileQuery.data, form, seedForm]);
 
   const hasPassword = user?.authMethods.includes("password") ?? false;
+
+  const [languageNoticeVisible, setLanguageNoticeVisible] = useState(false);
+  const [deletedNoticeVisible, setDeletedNoticeVisible] = useState(false);
 
   const loseDisabled = form ? !isGoalPermitted("lose", form.birthDate) : false;
 
@@ -198,9 +239,7 @@ export default function Settings() {
     setForm({ ...form, language: next });
     if (next !== locale) {
       setLocale(next);
-      Alert.alert(t("auth.language.reloadTitle"), t("auth.language.reloadMessage"), [
-        { text: t("auth.language.ok") },
-      ]);
+      setLanguageNoticeVisible(true);
     }
   };
 
@@ -263,6 +302,7 @@ export default function Settings() {
     try {
       const updated = await updateProfile(diff);
       queryClient.setQueryData(["profile"], updated);
+      seededFromRef.current = updated;
       setForm(toFormState(updated));
       setSavedNotice(true);
     } catch (err) {
@@ -310,8 +350,7 @@ export default function Settings() {
     try {
       await deleteAccount(hasPassword ? deletePassword : undefined);
       await useSessionStore.getState().signOut();
-      router.replace("/(auth)/welcome");
-      Alert.alert(t("settings.account.deletedNotice"));
+      setDeletedNoticeVisible(true);
     } catch (err) {
       setAccountError(resolveErrorCode(err));
     } finally {
@@ -664,6 +703,41 @@ export default function Settings() {
           </View>
         )}
       </View>
+
+      <GDialog
+        visible={languageNoticeVisible}
+        onClose={() => setLanguageNoticeVisible(false)}
+        titleKey="auth.language.reloadTitle"
+        bodyKey="auth.language.reloadMessage"
+        actions={[
+          {
+            labelKey: "auth.language.ok",
+            variant: "primary",
+            onPress: () => setLanguageNoticeVisible(false),
+          },
+        ]}
+        testID="settings-language-notice"
+      />
+
+      <GDialog
+        visible={deletedNoticeVisible}
+        onClose={() => {
+          setDeletedNoticeVisible(false);
+          router.replace("/(auth)/welcome");
+        }}
+        titleKey="settings.account.deletedNotice"
+        actions={[
+          {
+            labelKey: "auth.language.ok",
+            variant: "primary",
+            onPress: () => {
+              setDeletedNoticeVisible(false);
+              router.replace("/(auth)/welcome");
+            },
+          },
+        ]}
+        testID="settings-deleted-notice"
+      />
     </GScreen>
   );
 }

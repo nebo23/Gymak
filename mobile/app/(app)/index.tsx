@@ -4,13 +4,18 @@
  * weight sparkline, recent records, the stale-plan prompt, and the
  * disclaimer line. Replaces the T-23 placeholder.
  *
- * "Start"/"Resume"/"Build my plan"/"Log today's weight"/"Review plan" all
- * land on the `plan`/`progress` tabs rather than a program day, an active
- * session, or a body-weight entry sheet — none of those screens exist yet
- * (T-25/26/28), and building them is explicitly out of this task's scope.
+ * T-24 wrote every action here as a placeholder that landed on the `plan` or
+ * `progress` tab, because "none of those screens exist yet (T-25/26/28)".
+ * They exist now, so T-30 points the two that were actually wrong at their
+ * real destinations: Resume goes to the active session, and the next
+ * workout's Start goes to that program day rather than the plan list. Left
+ * alone: "Build my plan" and "Review plan" (the plan tab IS where a plan is
+ * built and reviewed) and "Log today's weight" (the log sheet lives on the
+ * progress tab, which is where that button already goes).
  */
+import { useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 
 import {
@@ -144,6 +149,10 @@ function DashboardSkeleton() {
 function DashboardContent({ data }: { data: DashboardData }) {
   const theme = useTheme();
   const { t, locale } = useI18n();
+  // Narrowed once so the Start handler below closes over a non-null id rather
+  // than re-reading `data.next_workout` inside a callback TypeScript cannot
+  // see the enclosing null check from.
+  const nextWorkout = data.next_workout;
 
   return (
     <View style={styles.section}>
@@ -161,7 +170,7 @@ function DashboardContent({ data }: { data: DashboardData }) {
           footer={
             <GButton
               label={t("dashboard.resume.action")}
-              onPress={() => router.push("/(app)/plan")}
+              onPress={() => router.push("/(app)/workout/active")}
               fullWidth
               testID="dashboard-resume-action"
             />
@@ -173,18 +182,18 @@ function DashboardContent({ data }: { data: DashboardData }) {
         <Text style={[textStyle("label", locale), styles.blockHeading, { color: theme.textSecondary }]}>
           {t("dashboard.nextWorkout.heading")}
         </Text>
-        {data.next_workout ? (
+        {nextWorkout ? (
           <GCard
             testID="dashboard-next-workout"
-            title={t(data.next_workout.label_key)}
+            title={t(nextWorkout.label_key)}
             subtitle={t("dashboard.nextWorkout.footer", {
-              count: data.next_workout.exercise_count,
-              minutes: data.next_workout.estimated_minutes,
+              count: nextWorkout.exercise_count,
+              minutes: nextWorkout.estimated_minutes,
             })}
             footer={
               <GButton
                 label={t("dashboard.nextWorkout.start")}
-                onPress={() => router.push("/(app)/plan")}
+                onPress={() => router.push(`/(app)/plan/${nextWorkout.program_day_id}`)}
                 fullWidth
                 testID="dashboard-next-workout-start"
               />
@@ -322,6 +331,21 @@ export default function Dashboard() {
     queryFn: getDashboard,
     enabled: user !== null,
   });
+
+  // T-30, found on a device: generate a plan, tap Home, and the dashboard still
+  // said "No plan yet". Expo Router's tab navigator keeps every tab's screen
+  // mounted, so switching back to this one never remounts it and React Query's
+  // mount-based refetch never fires -- and `POST /program/generate` (plan/index)
+  // and `PATCH /profile` (settings) both change what this screen shows without
+  // invalidating ["dashboard"]. Refetching on focus is the same fix progress.tsx
+  // already documents for the same cause, and it covers every writer rather than
+  // needing each one to remember this key.
+  const refetchDashboard = dashboardQuery.refetch;
+  useFocusEffect(
+    useCallback(() => {
+      if (user !== null) void refetchDashboard();
+    }, [user, refetchDashboard]),
+  );
 
   return (
     <GScreen>

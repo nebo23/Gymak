@@ -5,10 +5,10 @@
  * (§9.6), same affordance and reload notice as welcome.tsx's toggle.
  */
 import { useState } from "react";
-import { Alert, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { GButton, GProgressBar, GScreen, GSelectCard } from "../../src/components";
+import { GButton, GDialog, GProgressBar, GScreen, GSelectCard } from "../../src/components";
 import { useI18n } from "../../src/i18n";
 import { useOnboardingDraft } from "../../src/onboarding/draft";
 import { space } from "../../src/theme/tokens";
@@ -24,6 +24,7 @@ export default function OnboardingStepSix() {
   const setLanguage = useOnboardingDraft((s) => s.setLanguage);
 
   const [selectedLanguage, setSelectedLanguage] = useState<Language>(language);
+  const [languageNoticeVisible, setLanguageNoticeVisible] = useState(false);
 
   const handleUnitSelect = (next: UnitSystem) => {
     setUnitSystem(next);
@@ -34,9 +35,7 @@ export default function OnboardingStepSix() {
     setSelectedLanguage(next);
     if (next !== locale) {
       setLocale(next);
-      Alert.alert(t("auth.language.reloadTitle"), t("auth.language.reloadMessage"), [
-        { text: t("auth.language.ok") },
-      ]);
+      setLanguageNoticeVisible(true);
     }
   };
 

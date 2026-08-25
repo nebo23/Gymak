@@ -22,7 +22,7 @@ import { GButton, GErrorBanner, GScreen, GTextInput } from "../../src/components
 import { useI18n } from "../../src/i18n";
 import { useTheme } from "../../src/theme/useTheme";
 import { textStyle } from "../../src/theme/typography";
-import { minTouchTarget, radius, space } from "../../src/theme/tokens";
+import { iconSize, minTouchTarget, radius, space } from "../../src/theme/tokens";
 import { registerSchema } from "../../src/validation/schemas";
 
 type RegisterForm = z.infer<typeof registerSchema>;
@@ -296,8 +296,8 @@ const styles = StyleSheet.create({
     gap: space[2],
   },
   checkbox: {
-    width: 24,
-    height: 24,
+    width: iconSize.md,
+    height: iconSize.md,
     borderRadius: radius.sm,
     borderWidth: 2,
     alignItems: "center",

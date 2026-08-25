@@ -32,7 +32,7 @@ import { useSession } from "../../src/auth/useSession";
 import { useI18n } from "../../src/i18n";
 import { useTheme } from "../../src/theme/useTheme";
 import { textStyle } from "../../src/theme/typography";
-import { space } from "../../src/theme/tokens";
+import { iconSize, space } from "../../src/theme/tokens";
 
 /**
  * Sends the device's real IANA zone the first time it's still the server
@@ -211,13 +211,27 @@ export default function AppTabsLayout() {
   );
 }
 
+/**
+ * Optical extent of a tab glyph inside its `box`. Before this, the four icons
+ * were drawn at 22, 18, 22 and 20 wide inside the same box, which is why the
+ * bar looked uneven -- they now share one extent, derived from the icon scale
+ * rather than picked per icon. The border widths, paddings and gaps below are
+ * the drawings themselves and stay literal, as one-off geometry.
+ */
+const TAB_GLYPH = iconSize.md - space[0];
+
 const iconStyles = StyleSheet.create({
-  box: { width: 22, height: 22, alignItems: "center", justifyContent: "center" },
+  box: {
+    width: iconSize.md,
+    height: iconSize.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   homeRoof: {
     width: 0,
     height: 0,
-    borderLeftWidth: 11,
-    borderRightWidth: 11,
+    borderLeftWidth: TAB_GLYPH / 2,
+    borderRightWidth: TAB_GLYPH / 2,
     borderBottomWidth: 9,
     borderLeftColor: "transparent",
     borderRightColor: "transparent",
@@ -228,8 +242,8 @@ const iconStyles = StyleSheet.create({
     borderWidth: 2,
   },
   planBoard: {
-    width: 18,
-    height: 20,
+    width: TAB_GLYPH,
+    height: TAB_GLYPH,
     borderWidth: 2,
     borderRadius: 3,
     padding: 3,
@@ -241,11 +255,11 @@ const iconStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
-    width: 22,
-    height: 20,
+    width: TAB_GLYPH,
+    height: TAB_GLYPH,
   },
   progressBar: { width: 4, borderRadius: 1 },
-  settingsColumn: { width: 20, height: 20, justifyContent: "space-between" },
+  settingsColumn: { width: TAB_GLYPH, height: TAB_GLYPH, justifyContent: "space-between" },
   sliderTrack: { height: 2, borderRadius: 1, justifyContent: "center" },
   sliderKnob: { position: "absolute", width: 6, height: 6, borderRadius: 3, top: -2 },
 });

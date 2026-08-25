@@ -361,7 +361,8 @@
       "title": "لا توجد تمارين بعد",
       "body": "ابدأ أول تمرين لك من خطتك.",
       "action": "الذهاب إلى الخطة"
-    }
+    },
+    "entryPointSubtitle": "تمارينك السابقة"
   },
   "progress": {
     "title": "التقدم",
@@ -586,7 +587,8 @@
       "numberField": "GNumberField",
       "sheet": "GSheet",
       "restTimer": "GRestTimer",
-      "lineChart": "GLineChart"
+      "lineChart": "GLineChart",
+      "dialog": "GDialog"
     },
     "state": {
       "idle": "الحالة الافتراضية",
@@ -649,7 +651,19 @@
       "unitKg": "كجم",
       "sheetBody": "هذا محتوى تجريبي داخل ورقة سفلية.",
       "openSheet": "فتح الورقة السفلية",
-      "lineChartAccessibilityLabel": "الوزن، 7 إدخالات، من 82 إلى 80.2 كيلوغرام خلال 10 أيام"
+      "lineChartAccessibilityLabel": "الوزن، 7 إدخالات، من 82 إلى 80.2 كيلوغرام خلال 10 أيام",
+      "openDialogOne": "إجراء واحد",
+      "openDialogTwo": "إجراءان",
+      "openDialogDestructive": "إجراء متلف",
+      "openDialogLong": "تسميات طويلة",
+      "dialogTitle": "هل تريد تجاهل هذه المجموعة؟",
+      "dialogBody": "لن يتم حفظ التكرارات والوزن الذي أدخلته.",
+      "dialogConfirm": "تجاهل",
+      "dialogDestructiveTitle": "هل تريد حذف حسابك؟",
+      "dialogDestructiveBody": "سيؤدي هذا إلى إزالة كل تمرين وخطة وقياس. لا يمكن التراجع عن هذا الإجراء.",
+      "dialogDestructiveAction": "حذف نهائي",
+      "dialogLongLabelA": "الاستمرار في تشغيل الجلسة في الخلفية",
+      "dialogLongLabelB": "إنهاء وحفظ كل مجموعة مسجلة الآن"
     }
   }
 }

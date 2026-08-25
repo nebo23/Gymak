@@ -76,6 +76,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: space[2],
   },
+  // The grabber is a drawn affordance, not an icon: 36x4 is the bar itself,
+  // one-off geometry in the same sense as an SVG path. It carries no meaning at
+  // another size and nothing else in the app reuses it, so it stays literal.
   handle: {
     width: 36,
     height: 4,

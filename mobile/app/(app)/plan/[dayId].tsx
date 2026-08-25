@@ -16,13 +16,20 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { getProgramDay } from "../../../src/api/program";
 import { parseApiError, resolveErrorCode, type ResolvedErrorCode } from "../../../src/api/errors";
 import { abandonWorkout, startWorkout } from "../../../src/api/workouts";
 import { useSession } from "../../../src/auth/useSession";
-import { GButton, GErrorBanner, GListRow, GScreen, GSkeleton } from "../../../src/components";
+import {
+  GButton,
+  GDialog,
+  GErrorBanner,
+  GListRow,
+  GScreen,
+  GSkeleton,
+} from "../../../src/components";
 import { useI18n } from "../../../src/i18n";
 import { useTheme } from "../../../src/theme/useTheme";
 import { textStyle } from "../../../src/theme/typography";
@@ -36,6 +43,12 @@ export default function PlanDayDetail() {
 
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<ResolvedErrorCode | null>(null);
+  // Carries the closure the OS alert used to capture: which session to discard
+  // and which day to start once the user chooses.
+  const [activeSessionPrompt, setActiveSessionPrompt] = useState<{
+    activeSessionId: string | undefined;
+    programDayId: string;
+  } | null>(null);
 
   const dayQuery = useQuery({
     queryKey: ["program", "day", dayId],
@@ -52,15 +65,7 @@ export default function PlanDayDetail() {
     } catch (err) {
       const problem = parseApiError(err);
       if (problem.code === "SESSION_ALREADY_ACTIVE") {
-        Alert.alert(t("plan.dayDetail.activeSessionTitle"), t("plan.dayDetail.activeSessionBody"), [
-          { text: t("common.cancel"), style: "cancel" },
-          { text: t("plan.dayDetail.resume"), onPress: () => router.push("/(app)/workout/active") },
-          {
-            text: t("plan.dayDetail.discardAndStartNew"),
-            style: "destructive",
-            onPress: () => void discardAndStartNew(problem.detail, programDayId),
-          },
-        ]);
+        setActiveSessionPrompt({ activeSessionId: problem.detail, programDayId });
       } else {
         setStartError(problem.code);
       }
@@ -163,6 +168,34 @@ export default function PlanDayDetail() {
           <GSkeleton width="100%" height={64} />
         </View>
       )}
+
+      <GDialog
+        visible={activeSessionPrompt !== null}
+        onClose={() => setActiveSessionPrompt(null)}
+        titleKey="plan.dayDetail.activeSessionTitle"
+        bodyKey="plan.dayDetail.activeSessionBody"
+        actions={[
+          { labelKey: "common.cancel", onPress: () => setActiveSessionPrompt(null) },
+          {
+            labelKey: "plan.dayDetail.resume",
+            variant: "primary",
+            onPress: () => {
+              setActiveSessionPrompt(null);
+              router.push("/(app)/workout/active");
+            },
+          },
+          {
+            labelKey: "plan.dayDetail.discardAndStartNew",
+            variant: "destructive",
+            onPress: () => {
+              const prompt = activeSessionPrompt;
+              setActiveSessionPrompt(null);
+              if (prompt) void discardAndStartNew(prompt.activeSessionId, prompt.programDayId);
+            },
+          },
+        ]}
+        testID="day-active-session-prompt"
+      />
     </GScreen>
   );
 }

@@ -10,7 +10,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useI18n } from "../i18n";
 import { useTheme } from "../theme/useTheme";
 import { textStyle } from "../theme/typography";
-import { space } from "../theme/tokens";
+import { minTouchTarget, space } from "../theme/tokens";
 
 export interface GListRowProps {
   title: string;
@@ -80,7 +80,8 @@ export function GListRow({
 
 const styles = StyleSheet.create({
   container: {
-    minHeight: 56,
+    // 48dp touch target plus one gutter -- same 56 as before, now derived.
+    minHeight: minTouchTarget + space[1],
     justifyContent: "center",
     paddingHorizontal: space[3],
   },

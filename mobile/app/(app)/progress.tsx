@@ -27,9 +27,9 @@
  * the same number.
  */
 import { useCallback, useMemo, useState } from "react";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import {
   deleteBodyWeight,
@@ -45,6 +45,7 @@ import {
   GButton,
   GCard,
   GChip,
+  GDialog,
   GEmptyState,
   GErrorBanner,
   GLineChart,
@@ -255,20 +256,11 @@ export default function Progress() {
     upsertMutation.mutate({ measured_on: sheetMeasuredOn, weight_kg: sheetWeight });
   };
 
+  // The entry pending deletion -- what the OS alert captured in its closure.
+  const [pendingDelete, setPendingDelete] = useState<BodyWeightPoint | null>(null);
+
   const handleDelete = (entry: BodyWeightPoint) => {
-    const formattedDate = formatEntryDate(entry.measured_on, locale);
-    Alert.alert(
-      t("progress.entries.deleteConfirmTitle"),
-      t("progress.entries.deleteConfirmBody", { date: formattedDate }),
-      [
-        { text: t("common.cancel"), style: "cancel" },
-        {
-          text: t("progress.entries.deleteConfirmAction"),
-          style: "destructive",
-          onPress: () => deleteMutation.mutate(entry.measured_on),
-        },
-      ],
-    );
+    setPendingDelete(entry);
   };
 
   const entries = bodyWeightQuery.data?.entries ?? [];
@@ -422,6 +414,24 @@ export default function Progress() {
               />
             )}
           </View>
+
+          {/* T-30 gap 2: history.tsx worked but nothing opened it, which fails
+              §10.3 item 1 (every P2-FR demonstrated on a device) on its own.
+              §8.2 never says where history is reached from and §8.1 fixes the
+              tab bar at exactly four, so a fifth tab is out. This tab is the
+              least surprising of the remaining options: Progress is already
+              the backward-looking surface (the weight chart, the entry log,
+              the records list), whereas the dashboard's blocks are enumerated
+              by §5.12 and Plan is forward-looking. Placed under records, so
+              "what have I done" reads top to bottom. */}
+          <GCard testID="progress-history-card">
+            <GListRow
+              title={t("history.title")}
+              subtitle={t("history.entryPointSubtitle")}
+              onPress={() => router.push("/(app)/history")}
+              testID="progress-open-history"
+            />
+          </GCard>
         </View>
       )}
 
@@ -463,6 +473,29 @@ export default function Progress() {
           testID="progress-sheet-cancel"
         />
       </GSheet>
+
+      <GDialog
+        visible={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        titleKey="progress.entries.deleteConfirmTitle"
+        bodyKey="progress.entries.deleteConfirmBody"
+        bodyParams={{
+          date: pendingDelete ? formatEntryDate(pendingDelete.measured_on, locale) : "",
+        }}
+        actions={[
+          { labelKey: "common.cancel", onPress: () => setPendingDelete(null) },
+          {
+            labelKey: "progress.entries.deleteConfirmAction",
+            variant: "destructive",
+            onPress: () => {
+              const entry = pendingDelete;
+              setPendingDelete(null);
+              if (entry) deleteMutation.mutate(entry.measured_on);
+            },
+          },
+        ]}
+        testID="progress-delete-confirm"
+      />
     </GScreen>
   );
 }

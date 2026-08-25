@@ -14,7 +14,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useI18n } from "../i18n";
 import { useTheme } from "../theme/useTheme";
 import { textStyle } from "../theme/typography";
-import { controlHeight, minTouchTarget, radius, space } from "../theme/tokens";
+import { controlHeight, iconSize, minTouchTarget, radius, space } from "../theme/tokens";
 
 export interface GNumberFieldProps {
   value: number;
@@ -187,21 +187,24 @@ const styles = StyleSheet.create({
     textAlign: "center",
     padding: 0,
   },
+  // The +/- are drawn from Views, not an icon font. Their EXTENT comes from
+  // the scale; the 2dp stroke and its 1dp cap radius are the drawing itself --
+  // one-off geometry in the same sense as an SVG path, so they stay literal.
   minusGlyph: {
-    width: 14,
+    width: iconSize.sm,
     height: 2,
     borderRadius: 1,
   },
   plusGlyph: {
-    width: 14,
-    height: 14,
+    width: iconSize.sm,
+    height: iconSize.sm,
     alignItems: "center",
     justifyContent: "center",
   },
   plusGlyphVertical: {
     position: "absolute",
     width: 2,
-    height: 14,
+    height: iconSize.sm,
     borderRadius: 1,
   },
 });

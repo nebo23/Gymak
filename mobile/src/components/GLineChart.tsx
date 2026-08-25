@@ -217,6 +217,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     marginTop: space[1],
-    marginLeft: Y_LABEL_COLUMN_WIDTH,
+    // Inset past the y-label column so the two date labels line up with the
+    // canvas, not with the axis numbers. `marginStart`, not `marginLeft`,
+    // even though `ltrRoot` above forces this subtree left-to-right and the
+    // two therefore resolve identically here -- the codebase-wide "start/end,
+    // never left/right" rule stays mechanically greppable that way, and the
+    // forced direction is what makes the choice a no-op rather than a risk.
+    marginStart: Y_LABEL_COLUMN_WIDTH,
   },
 });
