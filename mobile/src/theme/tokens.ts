@@ -94,6 +94,26 @@ export const iconSize = {
   xl: 48,
 } as const;
 
+/**
+ * Icon stroke width, in RENDERED dp, per `iconSize` step. Consumed by GIcon,
+ * which converts back to viewBox units so these numbers are what actually
+ * lands on glass.
+ *
+ * The ramp is deliberately SUB-LINEAR — optical sizing, not scaling. A single
+ * stroke width held constant in viewBox units renders proportionally to the
+ * box, which is wrong at both ends of a 16->48 scale: it would put 3.5dp on an
+ * xl empty-state glyph (a marker pen) and 1.17dp on an sm chevron (a hairline
+ * that breaks up at the 130% font scale of device check 15). Growing the
+ * stroke by 1dp while the box grows by 32dp keeps every glyph reading as the
+ * same weight of line.
+ */
+export const iconStroke: Record<keyof typeof iconSize, number> = {
+  sm: 1.5,
+  md: 1.75,
+  lg: 2,
+  xl: 2.5,
+};
+
 export const motion = {
   fast: 120,
   base: 200,

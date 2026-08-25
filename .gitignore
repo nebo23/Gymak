@@ -19,4 +19,5 @@ scratch-*.xml
 emulator.log
 emulator-err.log
 expo-run.log
+metro.log
 uvicorn.log

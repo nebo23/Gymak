@@ -14,6 +14,7 @@ export { GErrorBanner, type GErrorBannerProps } from "./GErrorBanner";
 export { GLogo, type GLogoProps } from "./GLogo";
 
 // Phase 2 primitives (§9.2)
+export { GIcon, type GIconProps, type GIconName, type GIconSize } from "./GIcon";
 export { GCard, type GCardProps } from "./GCard";
 export { GStat, type GStatProps, type GStatTone } from "./GStat";
 export { GChip, type GChipProps } from "./GChip";

@@ -11,10 +11,11 @@
 import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
+import { GIcon } from "./GIcon";
 import { useI18n } from "../i18n";
 import { useTheme } from "../theme/useTheme";
 import { textStyle } from "../theme/typography";
-import { controlHeight, iconSize, minTouchTarget, radius, space } from "../theme/tokens";
+import { controlHeight, minTouchTarget, radius, space } from "../theme/tokens";
 
 export interface GNumberFieldProps {
   value: number;
@@ -104,12 +105,7 @@ export function GNumberField({
           style={styles.stepper}
           hitSlop={stepperHitSlop}
         >
-          <View
-            style={[
-              styles.minusGlyph,
-              { backgroundColor: decrementDisabled ? theme.textDisabled : theme.primary },
-            ]}
-          />
+          <GIcon name="minus" color={decrementDisabled ? theme.textDisabled : theme.primary} />
         </Pressable>
 
         <View style={styles.valueWrap}>
@@ -139,20 +135,7 @@ export function GNumberField({
           style={styles.stepper}
           hitSlop={stepperHitSlop}
         >
-          <View style={styles.plusGlyph}>
-            <View
-              style={[
-                styles.minusGlyph,
-                { backgroundColor: incrementDisabled ? theme.textDisabled : theme.primary },
-              ]}
-            />
-            <View
-              style={[
-                styles.plusGlyphVertical,
-                { backgroundColor: incrementDisabled ? theme.textDisabled : theme.primary },
-              ]}
-            />
-          </View>
+          <GIcon name="plus" color={incrementDisabled ? theme.textDisabled : theme.primary} />
         </Pressable>
       </View>
     </View>
@@ -186,25 +169,5 @@ const styles = StyleSheet.create({
     minWidth: space[8],
     textAlign: "center",
     padding: 0,
-  },
-  // The +/- are drawn from Views, not an icon font. Their EXTENT comes from
-  // the scale; the 2dp stroke and its 1dp cap radius are the drawing itself --
-  // one-off geometry in the same sense as an SVG path, so they stay literal.
-  minusGlyph: {
-    width: iconSize.sm,
-    height: 2,
-    borderRadius: 1,
-  },
-  plusGlyph: {
-    width: iconSize.sm,
-    height: iconSize.sm,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  plusGlyphVertical: {
-    position: "absolute",
-    width: 2,
-    height: iconSize.sm,
-    borderRadius: 1,
   },
 });

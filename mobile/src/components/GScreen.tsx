@@ -4,7 +4,6 @@
  */
 import type { ReactNode } from "react";
 import {
-  I18nManager,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,6 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { GIcon } from "./GIcon";
 import { useI18n } from "../i18n";
 import { useTheme } from "../theme/useTheme";
 import { textStyle } from "../theme/typography";
@@ -52,17 +52,13 @@ export function GScreen({ children, header, footer, scroll = true, testID }: GSc
               accessibilityLabel={t("common.back")}
               style={styles.backButton}
             >
-              {/* A back chevron implies direction, so — unlike the OTP boxes
-                  or the logo — it must mirror under RTL (§9.6). */}
-              <Text
-                style={[
-                  textStyle("h2", locale),
-                  { color: theme.textPrimary },
-                  I18nManager.isRTL ? styles.chevronRTL : null,
-                ]}
-              >
-                {"‹"}
-              </Text>
+              {/* Was the text character "<" at `h2`, which made the app's back
+                  affordance a font glyph: no stroke control, and a different
+                  weight and optical size in Inter than in Cairo. It is a real
+                  path now. A back chevron implies direction, so — unlike the
+                  OTP boxes or the logo — it must mirror under RTL (§9.6);
+                  GIcon does that itself for this glyph. */}
+              <GIcon name="chevronBack" color={theme.textPrimary} />
             </Pressable>
           ) : (
             <View style={styles.backButtonSpacer} />
@@ -120,9 +116,6 @@ const styles = StyleSheet.create({
   },
   backButtonSpacer: {
     minWidth: minTouchTarget,
-  },
-  chevronRTL: {
-    transform: [{ scaleX: -1 }],
   },
   headerTitle: {
     flex: 1,

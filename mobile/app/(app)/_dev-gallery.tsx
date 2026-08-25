@@ -18,6 +18,7 @@ import {
   GChip,
   GEmptyState,
   GErrorBanner,
+  GIcon,
   GLineChart,
   GListRow,
   GLogo,
@@ -32,11 +33,35 @@ import {
   GSkeleton,
   GStat,
   GTextInput,
+  type GIconName,
+  type GIconSize,
 } from "../../src/components";
 import { useI18n } from "../../src/i18n";
 import { useTheme } from "../../src/theme/useTheme";
 import { textStyle } from "../../src/theme/typography";
 import { radius, space } from "../../src/theme/tokens";
+
+// Every glyph in the set, so one screenshot proves the stroke weight, the
+// corner treatment and the optical mass are actually shared rather than
+// per-icon. The size ramp row exists to show the SUB-LINEAR stroke: xl is 3x
+// sm's box but nowhere near 3x its stroke.
+const ICON_NAMES: readonly GIconName[] = [
+  "home",
+  "plan",
+  "progress",
+  "settings",
+  "chevron",
+  "chevronBack",
+  "eye",
+  "eyeOff",
+  "minus",
+  "plus",
+  "check",
+  "search",
+  "close",
+];
+
+const ICON_SIZES: readonly GIconSize[] = ["sm", "md", "lg", "xl"];
 
 function noop() {
   // Gallery buttons demonstrate visual state only; nothing to do on press.
@@ -119,6 +144,23 @@ export default function DevGallery() {
           {t("devGallery.badge")}
         </Text>
       </View>
+
+      <Section title={t("devGallery.sections.icon")}>
+        <Row label={t("devGallery.icon.set")}>
+          <View style={styles.iconGrid}>
+            {ICON_NAMES.map((name) => (
+              <GIcon key={name} name={name} color={theme.textPrimary} />
+            ))}
+          </View>
+        </Row>
+        <Row label={t("devGallery.icon.scale")}>
+          <View style={styles.iconGrid}>
+            {ICON_SIZES.map((size) => (
+              <GIcon key={size} name="settings" size={size} color={theme.textPrimary} />
+            ))}
+          </View>
+        </Row>
+      </Section>
 
       <Section title={t("devGallery.sections.button")}>
         <Row label={t("devGallery.state.idle")}>
@@ -577,6 +619,12 @@ export default function DevGallery() {
 }
 
 const styles = StyleSheet.create({
+  iconGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: space[3],
+  },
   badge: {
     borderRadius: radius.sm,
     padding: space[2],

@@ -16,6 +16,7 @@ import {
   type TextInputProps,
 } from "react-native";
 
+import { GIcon } from "./GIcon";
 import { useI18n } from "../i18n";
 import { useTheme } from "../theme/useTheme";
 import { textStyle } from "../theme/typography";
@@ -108,7 +109,7 @@ export function GTextInput({
             }
             style={styles.toggle}
           >
-            <EyeIcon revealed={revealed} color={theme.textMuted} />
+            <GIcon name={revealed ? "eye" : "eyeOff"} color={theme.textMuted} />
           </Pressable>
         ) : null}
       </View>
@@ -121,26 +122,6 @@ export function GTextInput({
           {error}
         </Text>
       ) : null}
-    </View>
-  );
-}
-
-interface EyeIconProps {
-  revealed: boolean;
-  color: string;
-}
-
-// Hand-drawn reveal-toggle glyph: @expo/vector-icons is not installed in
-// this project (checked mobile/node_modules/@expo/vector-icons), and A.2
-// permits no new dependency without asking first, so the eye is an ellipse
-// ring plus a pupil, with a rotated bar overlaid for the "hidden" state.
-function EyeIcon({ revealed, color }: EyeIconProps) {
-  return (
-    <View style={styles.eyeIcon}>
-      <View style={[styles.eyeOutline, { borderColor: color }]}>
-        <View style={[styles.eyePupil, { backgroundColor: color }]} />
-      </View>
-      {revealed ? null : <View style={[styles.eyeSlash, { backgroundColor: color }]} />}
     </View>
   );
 }
@@ -179,38 +160,6 @@ const styles = StyleSheet.create({
     minHeight: minTouchTarget,
     justifyContent: "center",
     paddingStart: space[2],
-  },
-  // Hand-drawn eye. The BOX is the scale's standard inline size; the lens,
-  // pupil and 1.5dp strokes below are the drawing's own proportions -- one-off
-  // geometry like an SVG path, kept literal on purpose.
-  eyeIcon: {
-    width: iconSize.md,
-    height: iconSize.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  eyeOutline: {
-    width: 20,
-    height: 12,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  eyePupil: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  eyeSlash: {
-    position: "absolute",
-    // Centred on the box rather than a literal offset, so it stays centred if
-    // the icon size ever changes.
-    top: iconSize.md / 2,
-    start: 0,
-    width: iconSize.md,
-    height: 1.5,
-    transform: [{ rotate: "45deg" }],
   },
   error: {
     marginTop: space[1],

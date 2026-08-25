@@ -620,7 +620,12 @@
       "sheet": "GSheet",
       "restTimer": "GRestTimer",
       "lineChart": "GLineChart",
-      "dialog": "GDialog"
+      "dialog": "GDialog",
+      "icon": "GIcon"
+    },
+    "icon": {
+      "set": "المجموعة الكاملة (md)",
+      "scale": "تدرّج الأحجام (sm / md / lg / xl)"
     },
     "state": {
       "idle": "الحالة الافتراضية",
