@@ -41,8 +41,21 @@ async def list_available_exercises(session: AsyncSession) -> list[Exercise]:
     slug back to an `exercise_id` (and, for the belt-and-braces ceiling recheck, a
     `primary_muscle`) when persisting. `is_active` only -- an inactive exercise must
     never be offered to a *new* plan (P2-ADR-02), even though it stays resolvable by id
-    for a session that already logged it."""
-    result = await session.execute(select(Exercise).where(Exercise.is_active.is_(True)))
+    for a session that already logged it.
+
+    `user_id IS NULL` -- seeded rows ONLY. Custom exercises (the owner-authorised
+    departure from §1.2) are for LOGGING, never for generation, and this filter is a
+    safety property rather than a cosmetic one. The generator is a pure, deterministic
+    function of `available_exercise_slugs` (P2-ADR-01), and §6.4's per-muscle volume
+    ceilings are computed from each row's `primary_muscle`. Those ceilings are only
+    meaningful because every seeded row's muscle tagging is curated; a user who tags
+    their own exercise `chest` because that is where they feel it would silently shift
+    a real training-volume limit. Nothing about a user-supplied tag can be trusted to
+    carry that weight, so none of them enter here at all.
+    """
+    result = await session.execute(
+        select(Exercise).where(Exercise.is_active.is_(True), Exercise.user_id.is_(None))
+    )
     return list(result.scalars().all())
 
 

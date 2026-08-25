@@ -693,3 +693,58 @@ async def test_regeneration_is_blocked_by_an_active_session(
     response = await _generate(client, registered["access_token"], days_per_week=5)
     assert response.status_code == 409
     assert json_body(response)["code"] == "SESSION_ACTIVE_BLOCKS_REGENERATION"
+
+
+# --- Custom exercises must never reach the generator (§6.4 safety, P2-ADR-01) -------------
+
+
+async def test_a_custom_exercise_never_appears_in_a_generated_plan(client: AsyncClient) -> None:
+    """`program_repo.list_available_exercises` filters to `user_id IS NULL`, and this is
+    the test that holds it there.
+
+    Not a cosmetic preference. The generator is a pure function of
+    `available_exercise_slugs` (P2-ADR-01), and §6.4's per-muscle volume ceilings are
+    computed from each row's `primary_muscle`. Those ceilings only mean anything because
+    every seeded row's muscle tagging is curated. A user who tags their own movement
+    `chest` -- honestly, because that is where they feel it -- would otherwise shift a
+    real training-volume limit for themselves. The custom exercise below is deliberately
+    tagged `chest` and marked compound, exactly the shape the generator would pick up if
+    the filter were ever dropped.
+    """
+    registered = await _register_and_onboard(client, goal="gain", experience_level="intermediate")
+    token = registered["access_token"]
+
+    created = await client.post(
+        "/api/v1/exercises",
+        json={
+            "name": "My Garage Press",
+            "primary_muscle": "chest",
+            "equipment": "barbell",
+            "movement_pattern": "horizontal_push",
+            "difficulty": "beginner",
+            "is_compound": True,
+        },
+        headers=_auth_headers(token),
+    )
+    assert created.status_code == 201, created.text
+    custom_id = json_body(created)["exercise"]["id"]
+
+    generated = await _generate(client, token, days_per_week=4)
+    assert generated.status_code == 201
+    days = json_body(generated)["program"]["days"]
+    assert days, "a generated plan with no days would make this test vacuous"
+
+    seen_ids: set[str] = set()
+    for day in days:
+        detail = await _get_day(client, token, day["id"])
+        assert detail.status_code == 200
+        exercises = json_body(detail)["day"]["exercises"]
+        assert exercises, "an empty day would make this test vacuous"
+        seen_ids.update(entry["exercise"]["id"] for entry in exercises)
+
+    assert custom_id not in seen_ids
+    # And the exercise really was visible to this user all along -- otherwise its absence
+    # from the plan would prove nothing about the generator's filter.
+    fetched = await client.get(f"/api/v1/exercises/{custom_id}", headers=_auth_headers(token))
+    assert fetched.status_code == 200
+    assert json_body(fetched)["exercise"]["is_custom"] is True

@@ -14,12 +14,17 @@
  * to resync here.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { FlatList, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
 import { resolveErrorCode } from "../../../src/api/errors";
-import { listExercises, type ExerciseListItem } from "../../../src/api/exercises";
+import {
+  listExercises,
+  type ExerciseDetailData,
+  type ExerciseListItem,
+} from "../../../src/api/exercises";
+import { ExerciseFormSheet } from "../../../src/exercises/ExerciseFormSheet";
 import { useSession } from "../../../src/auth/useSession";
 import { useActiveSessionStore } from "../../../src/workout/activeSession";
 import {
@@ -36,7 +41,7 @@ import {
 import { useI18n } from "../../../src/i18n";
 import { useTheme } from "../../../src/theme/useTheme";
 import { textStyle } from "../../../src/theme/typography";
-import { space } from "../../../src/theme/tokens";
+import { radius, space } from "../../../src/theme/tokens";
 
 // §4.1a's closed 17-value muscle vocabulary and §4.1's 7-value equipment vocabulary
 // -- the filter chips enumerate these two fixed sets exhaustively, never derived
@@ -85,6 +90,20 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
+/** A user's own exercise, marked so it is distinguishable from the seeded library at a
+ * glance. A tinted text badge rather than a colour-only cue: §10.5's "never colour
+ * alone" applies here as much as anywhere, and the word is what a screen reader reads
+ * out -- the badge is inside the row's accessibility label, not decoration beside it. */
+function CustomBadge({ label }: { label: string }) {
+  const theme = useTheme();
+  const { locale } = useI18n();
+  return (
+    <View style={[styles.badge, { backgroundColor: theme.primaryContainer }]}>
+      <Text style={[textStyle("caption", locale), { color: theme.textLink }]}>{label}</Text>
+    </View>
+  );
+}
+
 function ExerciseRow({
   item,
   onPress,
@@ -94,13 +113,19 @@ function ExerciseRow({
   onPress: () => void;
   t: Translate;
 }) {
+  const subtitle = t("exercises.row.subtitle", {
+    muscle: t(`muscles.${item.primary_muscle}`),
+    equipment: t(`equipment.${item.equipment}`),
+  });
+  const badgeLabel = t("exercises.custom.badge");
   return (
     <GListRow
       title={item.name}
-      subtitle={t("exercises.row.subtitle", {
-        muscle: t(`muscles.${item.primary_muscle}`),
-        equipment: t(`equipment.${item.equipment}`),
-      })}
+      subtitle={subtitle}
+      trailing={item.is_custom ? <CustomBadge label={badgeLabel} /> : undefined}
+      accessibilityLabel={
+        item.is_custom ? `${item.name}, ${badgeLabel}, ${subtitle}` : `${item.name}, ${subtitle}`
+      }
       onPress={onPress}
       testID={`exercise-row-${item.id}`}
     />
@@ -121,8 +146,10 @@ function ListSkeleton() {
 
 function ExerciseLibraryBody({
   onPressExercise,
+  onCreate,
 }: {
   onPressExercise: (item: ExerciseListItem) => void;
+  onCreate: () => void;
 }) {
   const theme = useTheme();
   const { t, locale } = useI18n();
@@ -233,6 +260,20 @@ function ExerciseLibraryBody({
         </ScrollView>
       </View>
 
+      {/* The create affordance sits directly above the results in BOTH modes. The
+          in-workout picker is the case this feature exists for -- being mid-session and
+          needing a movement the library does not have -- so it cannot live only on the
+          browse screen, and putting it here rather than in each mode's header gives it
+          one implementation instead of two. */}
+      <View style={styles.createRow}>
+        <GButton
+          variant="secondary"
+          label={t("exercises.form.addAction")}
+          onPress={onCreate}
+          testID="exercises-create-action"
+        />
+      </View>
+
       {listQuery.isLoading ? (
         <ListSkeleton />
       ) : listQuery.isError ? (
@@ -295,9 +336,32 @@ export default function ExerciseLibrary() {
     else router.back();
   }, [isPicker]);
 
+  const [formVisible, setFormVisible] = useState(false);
+  const queryClient = useQueryClient();
+
   const handleBrowsePress = useCallback((item: ExerciseListItem) => {
     router.push(`/(app)/exercises/${item.id}`);
   }, []);
+
+  const handleCreate = useCallback(() => setFormVisible(true), []);
+
+  /** A new exercise has to appear in the list it was created from, so the library query
+   * is invalidated rather than the row being spliced in locally: the list is paginated
+   * and filtered server-side, so only the server knows where (or whether) the new row
+   * belongs under the filters currently applied. */
+  const handleSaved = useCallback(
+    (exercise: ExerciseDetailData) => {
+      void queryClient.invalidateQueries({ queryKey: ["exercises"] });
+      // Created from inside the picker: the reason to make it mid-session is to log
+      // against it immediately, so it is selected and the sheet closes, exactly as
+      // picking an existing row does.
+      if (isPicker) {
+        selectAdHocExercise(exercise);
+        handleClose();
+      }
+    },
+    [queryClient, isPicker, selectAdHocExercise, handleClose],
+  );
 
   // Picker mode's own row-press. T-30 closed the gap T-29 and T-26 each left to the
   // other: the hand-back goes through activeSession.ts's module-level Zustand store
@@ -328,8 +392,14 @@ export default function ExerciseLibrary() {
           />
         </View>
         <View style={{ height: windowHeight * PICKER_BODY_HEIGHT_RATIO }}>
-          <ExerciseLibraryBody onPressExercise={handlePick} />
+          <ExerciseLibraryBody onPressExercise={handlePick} onCreate={handleCreate} />
         </View>
+        <ExerciseFormSheet
+          visible={formVisible}
+          onClose={() => setFormVisible(false)}
+          onSaved={handleSaved}
+          testID="exercise-form-sheet"
+        />
       </GSheet>
     );
   }
@@ -340,12 +410,26 @@ export default function ExerciseLibrary() {
       header={{ title: t("exercises.title"), onBack: () => router.back() }}
       testID="exercises-list-screen"
     >
-      <ExerciseLibraryBody onPressExercise={handleBrowsePress} />
+      <ExerciseLibraryBody onPressExercise={handleBrowsePress} onCreate={handleCreate} />
+      <ExerciseFormSheet
+        visible={formVisible}
+        onClose={() => setFormVisible(false)}
+        onSaved={handleSaved}
+        testID="exercise-form-sheet"
+      />
     </GScreen>
   );
 }
 
 const styles = StyleSheet.create({
+  badge: {
+    paddingHorizontal: space[1],
+    paddingVertical: space[0],
+    borderRadius: radius.pill,
+  },
+  createRow: {
+    marginBottom: space[2],
+  },
   body: {
     flex: 1,
     gap: space[3],

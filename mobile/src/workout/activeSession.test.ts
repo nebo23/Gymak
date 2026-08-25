@@ -233,6 +233,7 @@ const curlLibraryItem: ExerciseListItem = {
   secondary_muscles: ["forearms"],
   equipment: "dumbbell",
   movement_pattern: "elbow_flexion",
+  is_custom: false,
   is_compound: false,
   difficulty: "beginner",
 };

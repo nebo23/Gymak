@@ -145,10 +145,30 @@ _OWN_RESOURCE_FIELDS = {
     # zoneinfo.available_timezones(), a fixed set with no per-user ownership).
     "notes",  # T-18: WorkoutFinishRequest -- free text about the caller's own session,
     # not a reference to anyone else's row.
-    "exercise_id",  # T-19: WorkoutSetCreateRequest -- exercises are public reference
-    # data with no owner (P2-ADR-09's stated exception, §4.10): every onboarded user
-    # can legitimately log a set against any active exercise id, so there is no "other
-    # user's exercise" for this field to steal.
+    "exercise_id",  # T-19: WorkoutSetCreateRequest. This was reviewed in when exercises
+    # were public reference data with no owner at all (P2-ADR-09's stated exception,
+    # §4.10). Custom exercises ended that, so the justification is now different, not
+    # absent: a caller may still legitimately log a set against any exercise they can
+    # SEE, and what they can see is the seeded library plus their own rows. Another
+    # user's custom exercise is not among them -- workout_service.create_set resolves it
+    # through exercise_repo.get_by_id, whose `user_id` filter and the p_exercises_read
+    # policy both exclude it, so a substituted id gets EXERCISE_NOT_FOUND's generic 404.
+    # Proven directly by
+    # test_user_b_cannot_log_a_set_against_user_as_custom_exercise below, because the
+    # body-field scanner cannot express "belongs to another user" for this field.
+    "primary_muscle",
+    "equipment",
+    "movement_pattern",
+    "difficulty",
+    "is_compound",
+    "secondary_muscles",
+    "instructions",  # Exercise{Create,Update}Request -- the caller's own description of
+    # their own movement. Every one of these is a scalar from a closed vocabulary (or
+    # free text), validated in routers/exercises.py against models/exercise.py's tuples;
+    # none of them names a row, so none is a cross-tenant identifier. The exercise being
+    # edited is named by the PATH, which this body-field scanner cannot see -- so
+    # ownership of it is proven directly instead, by
+    # test_user_b_cannot_patch_or_delete_user_as_custom_exercise below.
     "reps",
     "rpe",
     "is_warmup",  # T-19: WorkoutSet{Create,Patch}Request -- the caller's own set
@@ -188,14 +208,15 @@ def test_route_enumeration_finds_the_documented_catalogue() -> None:
     /workouts/{id}/sets[/{set_id}], for 27; T-20 (§5.10) adds PUT, GET and DELETE
     /body-weight[/{measured_on}], for 30; T-21 adds GET /records and GET /dashboard,
     for 32; §5.9's GET /workouts and GET /workouts/{id} -- the P2-FR-008 pair §12's
-    task pack never assigned to any task -- bring the catalogue to its full 34. If a
-    future FastAPI version changes how
+    task pack never assigned to any task -- bring the catalogue to its full 34. The
+    owner-authorised custom-exercise work adds POST /exercises, PATCH /exercises/{id}
+    and DELETE /exercises/{id}, for 37. If a future FastAPI version changes how
     `include_router` wires routes again, this fails immediately instead of the matrix
     below silently running zero cases.
     """
     routes = _enumerate_api_routes()
     found = sorted(_route_key(r) for r in routes)
-    assert len(routes) == 34, f"expected 34 routes per spec §5.1, found {len(routes)}: {found}"
+    assert len(routes) == 37, f"expected 37 routes, found {len(routes)}: {found}"
 
 
 def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() -> None:
@@ -223,6 +244,14 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
         # never of anything naming another user's row (exercises has no owner at all).
         ("GET", "/exercises"): frozenset(),
         ("GET", "/exercises/{exercise_id}"): frozenset(),
+        # Custom exercises: every body field on POST and PATCH is reviewed into
+        # _OWN_RESOURCE_FIELDS above as the caller's own content, so neither has a
+        # reference field. DELETE takes no body at all. All three address the row they
+        # act on through the path, which this scanner does not inspect -- the direct
+        # tests at the end of this file cover that instead.
+        ("POST", "/exercises"): frozenset(),
+        ("PATCH", "/exercises/{exercise_id}"): frozenset(),
+        ("DELETE", "/exercises/{exercise_id}"): frozenset(),
         # T-17: POST /program/generate's only body field is days_per_week, reviewed
         # into _OWN_RESOURCE_FIELDS above (a count, not a reference). GET /program
         # takes no body or path parameter at all. GET /program/days/{day_id} takes no
@@ -318,18 +347,19 @@ def test_user_scoped_classification_matches_the_reviewed_reference_field_sets() 
             "this file's cross-tenant case for it."
         )
 
-    # Of 34 enumerated routes, 8 are unauthenticated by design (register, login, social
+    # Of 37 enumerated routes, 8 are unauthenticated by design (register, login, social
     # sign-in, refresh, the three password-reset calls, and health) and are scoped, if
     # at all, by a submitted email/token under their own §7.3 error contract rather than
-    # by a bearer identity -- not this matrix's concern. The remaining 26 are user-scoped;
-    # of those, 24 accept no field that could name another user's resource at all (the
-    # only "identifier" is the bearer token itself, a reviewed own-content field, or --
-    # for the T-16/T-17/T-18/T-19/T-20/T-21/§5.9 GET-and-path-id routes -- a path id),
-    # and are instead each proven isolated by their own test below; 2 (POST /auth/logout's
-    # refresh_token and POST /workouts's program_day_id) do name another row and are the
-    # live identifier-substitution cases.
-    assert len(routes) == 34
-    assert len(user_scoped) == 26
+    # by a bearer identity -- not this matrix's concern. The remaining 29 are user-scoped
+    # (26 before the three custom-exercise routes); of those, 27 accept no field that
+    # could name another user's resource at all (the only "identifier" is the bearer
+    # token itself, a reviewed own-content field, or -- for the
+    # T-16/T-17/T-18/T-19/T-20/T-21/§5.9 GET-and-path-id routes and the custom-exercise
+    # PATCH/DELETE -- a path id), and are instead each proven isolated by their own test
+    # below; 2 (POST /auth/logout's refresh_token and POST /workouts's program_day_id) do
+    # name another row and are the live identifier-substitution cases.
+    assert len(routes) == 37
+    assert len(user_scoped) == 29
 
 
 def _reference_field_cases() -> list[tuple[str, str, str]]:
@@ -801,3 +831,145 @@ async def test_get_active_workout_never_returns_user_as_session(client: AsyncCli
     response = await _get_active_workout(client, user_b["access_token"])
     assert response.status_code == 204
     assert response.status_code != 403
+
+
+# --- Custom exercises: the path-addressed cases the body-field scanner cannot see ---------
+#
+# POST/PATCH/DELETE /exercises are the owner-authorised departure from §1.2. Their body
+# fields are all the caller's own content (reviewed into _OWN_RESOURCE_FIELDS above), so
+# the identifier-substitution matrix has nothing to substitute. What actually needs
+# proving is ownership of the row named by the PATH -- and, for POST /workouts/{id}/sets,
+# of the exercise named by a body field that is no longer ownerless.
+
+_CUSTOM_EXERCISE_BODY: JSONDict = {
+    "name": "Owner Only Machine",
+    "primary_muscle": "chest",
+    "equipment": "machine",
+    "movement_pattern": "horizontal_push",
+    "difficulty": "beginner",
+}
+
+
+async def _create_custom_exercise(client: AsyncClient, access_token: str) -> JSONDict:
+    response = await client.post(
+        _EXERCISES, json=_CUSTOM_EXERCISE_BODY, headers=_auth_headers(access_token)
+    )
+    assert response.status_code == 201, response.text
+    exercise = json_body(response)["exercise"]
+    assert isinstance(exercise, dict)
+    return exercise
+
+
+async def test_user_b_cannot_see_user_as_custom_exercise_in_the_library(
+    client: AsyncClient,
+) -> None:
+    """The feature's core isolation, at the HTTP layer: A's own exercise is part of A's
+    library and of nobody else's, whether listed or fetched by its id."""
+    user_a = await _register(client)
+    assert (await _onboard(client, user_a["access_token"])).status_code == 201
+    exercise = await _create_custom_exercise(client, user_a["access_token"])
+    exercise_id = exercise["id"]
+    assert exercise["is_custom"] is True
+
+    user_b = await _register(client)
+    assert (await _onboard(client, user_b["access_token"])).status_code == 201
+
+    listed = await _list_exercises(client, user_b["access_token"], limit=100)
+    assert listed.status_code == 200
+    assert all(item["id"] != exercise_id for item in json_body(listed)["items"])
+
+    fetched = await client.get(
+        f"{_EXERCISES}/{exercise_id}", headers=_auth_headers(user_b["access_token"])
+    )
+    assert fetched.status_code == 404
+    assert fetched.status_code != 403, "§6.5: never a 403, which would confirm it exists"
+
+    # A still sees it -- otherwise the assertions above would pass on a broken feature.
+    own = await client.get(
+        f"{_EXERCISES}/{exercise_id}", headers=_auth_headers(user_a["access_token"])
+    )
+    assert own.status_code == 200
+
+
+async def test_user_b_cannot_patch_or_delete_user_as_custom_exercise(client: AsyncClient) -> None:
+    user_a = await _register(client)
+    assert (await _onboard(client, user_a["access_token"])).status_code == 201
+    exercise_id = (await _create_custom_exercise(client, user_a["access_token"]))["id"]
+
+    user_b = await _register(client)
+    assert (await _onboard(client, user_b["access_token"])).status_code == 201
+    headers_b = _auth_headers(user_b["access_token"])
+
+    patched = await client.patch(
+        f"{_EXERCISES}/{exercise_id}", json={"name": "hijacked"}, headers=headers_b
+    )
+    assert patched.status_code == 404
+    assert patched.status_code != 403
+
+    deleted = await client.delete(f"{_EXERCISES}/{exercise_id}", headers=headers_b)
+    assert deleted.status_code == 404
+    assert deleted.status_code != 403
+
+    # Unchanged for its owner: the 404s above were refusals, not silent successes.
+    still = await client.get(
+        f"{_EXERCISES}/{exercise_id}", headers=_auth_headers(user_a["access_token"])
+    )
+    assert still.status_code == 200
+    body = json_body(still)["exercise"]
+    assert isinstance(body, dict)
+    assert body["name"] == _CUSTOM_EXERCISE_BODY["name"]
+
+
+async def test_nobody_can_patch_or_delete_a_seeded_exercise(client: AsyncClient) -> None:
+    """A seeded row belongs to the library, not to whoever asks. Same generic 404 as
+    someone else's row -- a 403 would tell a prober which ids are real seeded rows."""
+    user = await _register(client)
+    assert (await _onboard(client, user["access_token"])).status_code == 201
+    headers = _auth_headers(user["access_token"])
+
+    listing = await _list_exercises(client, user["access_token"], limit=1)
+    seeded_id = json_body(listing)["items"][0]["id"]
+
+    patched = await client.patch(
+        f"{_EXERCISES}/{seeded_id}", json={"name": "mine"}, headers=headers
+    )
+    assert patched.status_code == 404
+    assert patched.status_code != 403
+
+    deleted = await client.delete(f"{_EXERCISES}/{seeded_id}", headers=headers)
+    assert deleted.status_code == 404
+    assert deleted.status_code != 403
+
+    # Still there, still active, still named what the seed named it.
+    fetched = await client.get(f"{_EXERCISES}/{seeded_id}", headers=headers)
+    assert fetched.status_code == 200
+
+
+async def test_user_b_cannot_log_a_set_against_user_as_custom_exercise(
+    client: AsyncClient,
+) -> None:
+    """`exercise_id` on WorkoutSetCreateRequest sits in _OWN_RESOURCE_FIELDS, so the
+    substitution matrix skips it. That was unconditionally safe while exercises had no
+    owner; now it is safe only because the exercise is resolved through a user-scoped
+    read. This is the test that proves the difference.
+    """
+    user_a = await _register(client)
+    assert (await _onboard(client, user_a["access_token"])).status_code == 201
+    exercise_id = (await _create_custom_exercise(client, user_a["access_token"]))["id"]
+
+    user_b = await _register(client)
+    assert (await _onboard(client, user_b["access_token"])).status_code == 201
+    headers_b = _auth_headers(user_b["access_token"])
+
+    started = await client.post(_WORKOUTS, json={}, headers=headers_b)
+    assert started.status_code == 201
+    session_id = json_body(started)["session"]["id"]
+
+    logged = await client.post(
+        f"{_WORKOUTS}/{session_id}/sets",
+        json={"exercise_id": exercise_id, "reps": 8, "weight_kg": 40},
+        headers=headers_b,
+    )
+    assert logged.status_code == 404
+    assert json_body(logged)["code"] == "EXERCISE_NOT_FOUND"
+    assert logged.status_code != 403

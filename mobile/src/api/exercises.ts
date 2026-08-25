@@ -17,6 +17,9 @@ export interface ExerciseListItem {
   movement_pattern: string;
   is_compound: boolean;
   difficulty: string;
+  /** True for a row this user created. The server derives it from `user_id` and never
+   * sends the owner id itself. Drives the list badge and whether edit/delete show. */
+  is_custom: boolean;
 }
 
 export interface ExerciseDetailData extends ExerciseListItem {
@@ -119,4 +122,109 @@ export async function getExerciseRecord(exerciseId: string): Promise<ExerciseRec
     params: { exercise_id: exerciseId },
   });
   return response.data.records[0] ?? null;
+}
+
+
+// --- Custom exercises -------------------------------------------------------------
+//
+// The owner-authorised departure from spec §1.2 ("Custom user-created exercises ...
+// do not build"). Shapes mirror backend/app/schemas/exercise.py.
+//
+// One `name`, in whichever language the user typed: the server writes it to BOTH
+// name columns, so a custom exercise never renders blank after a language switch.
+// The four vocabulary fields are closed sets validated server-side against the same
+// tuples the CHECK constraints are built from -- the picker UI offers exactly those
+// values, so a rejection here means the two lists have drifted, not that the user
+// did something unusual.
+
+/** The closed vocabularies, mirroring backend/app/models/exercise.py. Kept here so
+ * the create form can offer them; each value has an i18n key under
+ * `exercises.vocab.*`, so nothing user-visible is derived from these strings. */
+export const PRIMARY_MUSCLES = [
+  "chest",
+  "back",
+  "lats",
+  "traps",
+  "front_delts",
+  "side_delts",
+  "rear_delts",
+  "biceps",
+  "triceps",
+  "forearms",
+  "quads",
+  "hamstrings",
+  "glutes",
+  "calves",
+  "abs",
+  "obliques",
+  "lower_back",
+] as const;
+
+export const EQUIPMENT = [
+  "barbell",
+  "dumbbell",
+  "machine",
+  "cable",
+  "bodyweight",
+  "kettlebell",
+  "band",
+] as const;
+
+export const MOVEMENT_PATTERNS = [
+  "squat",
+  "hinge",
+  "horizontal_push",
+  "vertical_push",
+  "horizontal_pull",
+  "vertical_pull",
+  "lunge",
+  "carry",
+  "isolation",
+] as const;
+
+export const DIFFICULTIES = ["beginner", "intermediate", "advanced"] as const;
+
+export interface ExerciseCreateInput {
+  name: string;
+  primary_muscle: string;
+  equipment: string;
+  movement_pattern: string;
+  difficulty: string;
+  is_compound?: boolean;
+  secondary_muscles?: string[];
+  instructions?: string;
+}
+
+export type ExerciseUpdateInput = Partial<ExerciseCreateInput>;
+
+export interface ExerciseDeleteResponse {
+  id: string;
+  is_active: boolean;
+}
+
+/** POST /exercises. 201 with the created row, already language-resolved. */
+export async function createExercise(
+  input: ExerciseCreateInput,
+): Promise<ExerciseDetailResponse> {
+  const response = await client.post<ExerciseDetailResponse>("/exercises", input);
+  return response.data;
+}
+
+/** PATCH /exercises/{id}. Own rows only -- a seeded row is a 404, not a 403. */
+export async function updateExercise(
+  exerciseId: string,
+  input: ExerciseUpdateInput,
+): Promise<ExerciseDetailResponse> {
+  const response = await client.patch<ExerciseDetailResponse>(
+    `/exercises/${exerciseId}`,
+    input,
+  );
+  return response.data;
+}
+
+/** DELETE /exercises/{id}. A SOFT delete: the row leaves the library but still
+ * resolves by id, so a session that already logged it keeps its name. */
+export async function deleteExercise(exerciseId: string): Promise<ExerciseDeleteResponse> {
+  const response = await client.delete<ExerciseDeleteResponse>(`/exercises/${exerciseId}`);
+  return response.data;
 }

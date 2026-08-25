@@ -457,6 +457,81 @@
         "title": "DerivedFields",
         "type": "object"
       },
+      "ExerciseCreateRequest": {
+        "description": "POST /exercises. One `name`, in whichever language the user typed -- see\n`exercise_repo.create_custom` for why it is written to both name columns rather than\ntranslated or left blank.\n\nEvery closed-vocabulary field is a bare `str` here and validated in the router\nagainst models/exercise.py's exported tuples, the same tuples the CHECK constraints\nare built from. Typing them as Literal/Enum would move the failure into pydantic and\nproduce FastAPI's 422 body instead of \u00a77.2's envelope with a per-field code.",
+        "properties": {
+          "difficulty": {
+            "title": "Difficulty",
+            "type": "string"
+          },
+          "equipment": {
+            "title": "Equipment",
+            "type": "string"
+          },
+          "instructions": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "is_compound": {
+            "default": false,
+            "title": "Is Compound",
+            "type": "boolean"
+          },
+          "movement_pattern": {
+            "title": "Movement Pattern",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "primary_muscle": {
+            "title": "Primary Muscle",
+            "type": "string"
+          },
+          "secondary_muscles": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Secondary Muscles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "primary_muscle",
+          "equipment",
+          "movement_pattern",
+          "difficulty"
+        ],
+        "title": "ExerciseCreateRequest",
+        "type": "object"
+      },
+      "ExerciseDeleteResponse": {
+        "description": "\u00a75.2's soft delete: the row stays resolvable by id for sessions that logged it,\nso the response reports what actually happened rather than an empty 204 that would\nimply the row is gone.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "is_active"
+        ],
+        "title": "ExerciseDeleteResponse",
+        "type": "object"
+      },
       "ExerciseDetail": {
         "description": "\u00a75.2: \"GET /exercises/{id} additionally returns instructions.\" ",
         "properties": {
@@ -479,6 +554,10 @@
           },
           "is_compound": {
             "title": "Is Compound",
+            "type": "boolean"
+          },
+          "is_custom": {
+            "title": "Is Custom",
             "type": "boolean"
           },
           "movement_pattern": {
@@ -515,6 +594,7 @@
           "movement_pattern",
           "is_compound",
           "difficulty",
+          "is_custom",
           "instructions"
         ],
         "title": "ExerciseDetail",
@@ -552,6 +632,10 @@
             "title": "Is Compound",
             "type": "boolean"
           },
+          "is_custom": {
+            "title": "Is Custom",
+            "type": "boolean"
+          },
           "movement_pattern": {
             "title": "Movement Pattern",
             "type": "string"
@@ -585,7 +669,8 @@
           "equipment",
           "movement_pattern",
           "is_compound",
-          "difficulty"
+          "difficulty",
+          "is_custom"
         ],
         "title": "ExerciseListItem",
         "type": "object"
@@ -616,6 +701,108 @@
           "next_cursor"
         ],
         "title": "ExerciseListResponse",
+        "type": "object"
+      },
+      "ExerciseUpdateRequest": {
+        "description": "PATCH /exercises/{id}. Every field optional; only what is sent is changed. `None`\nmeans \"not sent\" rather than \"clear it\" -- none of these columns is nullable, so\nthere is nothing a client could legitimately clear.",
+        "properties": {
+          "difficulty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "equipment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equipment"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          },
+          "is_compound": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Compound"
+          },
+          "movement_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Movement Pattern"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "primary_muscle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Muscle"
+          },
+          "secondary_muscles": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Muscles"
+          }
+        },
+        "title": "ExerciseUpdateRequest",
         "type": "object"
       },
       "ForgotPasswordRequest": {
@@ -3362,9 +3549,98 @@
         "tags": [
           "exercises"
         ]
+      },
+      "post": {
+        "operationId": "create_exercise_route_api_v1_exercises_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExerciseCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExerciseDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Exercise Route",
+        "tags": [
+          "exercises"
+        ]
       }
     },
     "/api/v1/exercises/{exercise_id}": {
+      "delete": {
+        "operationId": "delete_exercise_route_api_v1_exercises__exercise_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exercise_id",
+            "required": true,
+            "schema": {
+              "title": "Exercise Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExerciseDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Exercise Route",
+        "tags": [
+          "exercises"
+        ]
+      },
       "get": {
         "operationId": "get_exercise_route_api_v1_exercises__exercise_id__get",
         "parameters": [
@@ -3406,6 +3682,61 @@
           }
         ],
         "summary": "Get Exercise Route",
+        "tags": [
+          "exercises"
+        ]
+      },
+      "patch": {
+        "operationId": "update_exercise_route_api_v1_exercises__exercise_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exercise_id",
+            "required": true,
+            "schema": {
+              "title": "Exercise Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExerciseUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExerciseDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Exercise Route",
         "tags": [
           "exercises"
         ]

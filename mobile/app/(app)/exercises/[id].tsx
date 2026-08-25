@@ -6,14 +6,29 @@
  * comes from a second, independent request (GET /records?exercise_id=), so a slow or
  * failed record fetch never blocks the exercise content above it from showing.
  */
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 
 import { resolveErrorCode } from "../../../src/api/errors";
-import { getExercise, getExerciseRecord } from "../../../src/api/exercises";
+import {
+  deleteExercise,
+  getExercise,
+  getExerciseRecord,
+  type ExerciseDetailData,
+} from "../../../src/api/exercises";
+import { ExerciseFormSheet } from "../../../src/exercises/ExerciseFormSheet";
 import { useSession } from "../../../src/auth/useSession";
-import { GCard, GEmptyState, GErrorBanner, GScreen, GSkeleton } from "../../../src/components";
+import {
+  GButton,
+  GCard,
+  GDialog,
+  GEmptyState,
+  GErrorBanner,
+  GScreen,
+  GSkeleton,
+} from "../../../src/components";
 import { useI18n } from "../../../src/i18n";
 import { useTheme } from "../../../src/theme/useTheme";
 import { textStyle } from "../../../src/theme/typography";
@@ -50,6 +65,34 @@ export default function ExerciseDetail() {
 
   const exercise = exerciseQuery.data?.exercise;
   const weightUnit = t("workout.active.weightUnit");
+
+  const queryClient = useQueryClient();
+  const [editVisible, setEditVisible] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteErrorCode, setDeleteErrorCode] = useState<string | null>(null);
+
+  const handleSaved = useCallback(
+    (updated: ExerciseDetailData) => {
+      queryClient.setQueryData(["exercise", updated.id], { exercise: updated });
+      void queryClient.invalidateQueries({ queryKey: ["exercises"] });
+    },
+    [queryClient],
+  );
+
+  /** Soft delete: the row leaves the library but still resolves by id, so any session
+   * that already logged it keeps its name. Nothing is destroyed, which is why the
+   * confirmation says the sets survive rather than warning about losing them. */
+  const handleDelete = useCallback(async () => {
+    setConfirmDelete(false);
+    setDeleteErrorCode(null);
+    try {
+      await deleteExercise(id);
+      void queryClient.invalidateQueries({ queryKey: ["exercises"] });
+      router.back();
+    } catch (error) {
+      setDeleteErrorCode(resolveErrorCode(error));
+    }
+  }, [id, queryClient]);
 
   return (
     <GScreen
@@ -105,6 +148,29 @@ export default function ExerciseDetail() {
               </Text>
             </GCard>
           </View>
+
+          {/* Own rows only. A seeded row offers neither action, because the API would
+              answer a PATCH or DELETE on one with the same 404 it gives a stranger's
+              row -- showing the buttons would be promising something that cannot work. */}
+          {exercise.is_custom ? (
+            <View style={styles.ownerActions}>
+              {deleteErrorCode ? (
+                <GErrorBanner code={deleteErrorCode} testID="exercise-detail-delete-error" />
+              ) : null}
+              <GButton
+                variant="secondary"
+                label={t("exercises.custom.editAction")}
+                onPress={() => setEditVisible(true)}
+                testID="exercise-detail-edit"
+              />
+              <GButton
+                variant="ghost"
+                label={t("exercises.custom.deleteAction")}
+                onPress={() => setConfirmDelete(true)}
+                testID="exercise-detail-delete"
+              />
+            </View>
+          ) : null}
 
           <View>
             <Text style={[textStyle("label", locale), styles.blockHeading, { color: theme.textSecondary }]}>
@@ -166,6 +232,29 @@ export default function ExerciseDetail() {
       ) : exerciseQuery.isError ? null : (
         <DetailSkeleton />
       )}
+      <ExerciseFormSheet
+        visible={editVisible}
+        onClose={() => setEditVisible(false)}
+        initial={exercise ?? null}
+        onSaved={handleSaved}
+        testID="exercise-edit-sheet"
+      />
+
+      <GDialog
+        visible={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        titleKey="exercises.custom.deleteConfirmTitle"
+        bodyKey="exercises.custom.deleteConfirmBody"
+        actions={[
+          { labelKey: "common.cancel", onPress: () => setConfirmDelete(false) },
+          {
+            labelKey: "exercises.custom.deleteConfirmAction",
+            variant: "destructive",
+            onPress: () => void handleDelete(),
+          },
+        ]}
+        testID="exercise-delete-confirm"
+      />
     </GScreen>
   );
 }
@@ -173,6 +262,9 @@ export default function ExerciseDetail() {
 const styles = StyleSheet.create({
   section: {
     gap: space[4],
+  },
+  ownerActions: {
+    gap: space[2],
   },
   infoRow: {
     flexDirection: "row",

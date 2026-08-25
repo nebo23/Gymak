@@ -176,8 +176,12 @@ async def test_list_exercises_happy_path_shape(client: AsyncClient) -> None:
         "movement_pattern",
         "is_compound",
         "difficulty",
+        # Custom-exercise support: the client badges its own rows and shows edit/delete
+        # only for them, so every list item says which kind it is. Seeded rows are false.
+        "is_custom",
     }
     assert "instructions" not in item, "the list view must not carry instructions (§5.2)"
+    assert item["is_custom"] is False, "a seeded row is not anyone's custom exercise"
 
 
 async def test_muscle_filter_returns_only_that_primary_muscle(client: AsyncClient) -> None:
@@ -413,3 +417,226 @@ async def test_get_exercise_malformed_id_returns_404_not_a_validation_error(
     response = await _get_exercise(client, registered["access_token"], "not-a-uuid")
     assert response.status_code == 404
     assert json_body(response)["code"] == "EXERCISE_NOT_FOUND"
+
+
+# --- Custom exercises (owner-authorised departure from §1.2) ------------------------------
+
+
+def _custom_body(**overrides: object) -> JSONDict:
+    body: dict[str, object] = {
+        "name": "Landmine Press",
+        "primary_muscle": "chest",
+        "equipment": "barbell",
+        "movement_pattern": "horizontal_push",
+        "difficulty": "beginner",
+    }
+    body.update(overrides)
+    return body
+
+
+async def _create_custom(client: AsyncClient, access_token: str, **overrides: object) -> Response:
+    return await client.post(
+        _EXERCISES, json=_custom_body(**overrides), headers=_auth_headers(access_token)
+    )
+
+
+async def test_create_custom_exercise_happy_path(client: AsyncClient) -> None:
+    registered = await _register(client)
+    await _onboard(client, registered["access_token"])
+
+    response = await _create_custom(client, registered["access_token"])
+    assert response.status_code == 201, response.text
+    exercise = json_body(response)["exercise"]
+    assert exercise["name"] == "Landmine Press"
+    assert exercise["is_custom"] is True
+    assert exercise["primary_muscle"] == "chest"
+    assert exercise["instructions"] == ""
+
+
+async def test_custom_exercise_appears_in_the_owners_library(client: AsyncClient) -> None:
+    registered = await _register(client)
+    await _onboard(client, registered["access_token"])
+    created = await _create_custom(client, registered["access_token"])
+    exercise_id = json_body(created)["exercise"]["id"]
+
+    listed = await _list_exercises(client, registered["access_token"], limit=100)
+    assert listed.status_code == 200
+    items = json_body(listed)["items"]
+    match = [item for item in items if item["id"] == exercise_id]
+    assert len(match) == 1, "the owner's own exercise belongs in their library listing"
+    assert match[0]["is_custom"] is True
+    assert any(item["is_custom"] is False for item in items), "seeded rows are still there too"
+
+
+async def test_custom_exercise_is_found_by_the_q_filter(client: AsyncClient) -> None:
+    """§5.2's filters apply to custom rows identically -- including the Arabic
+    normalisation, since a custom row's name_ar is a real name like any other."""
+    registered = await _register(client)
+    await _onboard(client, registered["access_token"])
+    await _create_custom(client, registered["access_token"], name="زحف الدب")
+
+    found = await _list_exercises(client, registered["access_token"], q="زحف", limit=100)
+    assert found.status_code == 200
+    names = [item["name"] for item in json_body(found)["items"]]
+    assert "زحف الدب" in names
+
+
+async def test_one_typed_name_fills_both_languages(client: AsyncClient) -> None:
+    """The decision recorded in `exercise_repo.create_custom`: a user types one name and
+    it is written to both name columns. The point is what happens when the profile
+    language changes -- §5.2 resolves the display name server-side, so a blank
+    other-language column would render this row as an empty string. It must not.
+    """
+    registered = await _register(client)
+    # _onboard defaults language to "ar"; the name below is typed in Arabic.
+    await _onboard(client, registered["access_token"])
+    created = await _create_custom(client, registered["access_token"], name="ضغط أرضي")
+    exercise_id = json_body(created)["exercise"]["id"]
+
+    switched = await client.patch(
+        _PROFILE, json={"language": "en"}, headers=_auth_headers(registered["access_token"])
+    )
+    assert switched.status_code == 200
+
+    fetched = await _get_exercise(client, registered["access_token"], exercise_id)
+    assert fetched.status_code == 200
+    name = json_body(fetched)["exercise"]["name"]
+    assert name == "ضغط أرضي", "the typed name must survive a language switch"
+    assert name != ""
+
+
+async def test_two_exercises_with_the_same_name_both_succeed(client: AsyncClient) -> None:
+    """The slug-collision decision: custom slugs are per-user prefixed AND carry the
+    row's own id, so one user naming two exercises identically is not a failed INSERT.
+    """
+    registered = await _register(client)
+    await _onboard(client, registered["access_token"])
+
+    first = await _create_custom(client, registered["access_token"], name="Bench Press")
+    second = await _create_custom(client, registered["access_token"], name="Bench Press")
+    assert first.status_code == 201
+    assert second.status_code == 201, second.text
+    first_body = json_body(first)["exercise"]
+    second_body = json_body(second)["exercise"]
+    assert first_body["id"] != second_body["id"]
+    assert first_body["slug"] != second_body["slug"]
+
+
+async def test_two_users_may_invent_the_same_exercise_name(client: AsyncClient) -> None:
+    user_a = await _register(client)
+    await _onboard(client, user_a["access_token"])
+    user_b = await _register(client)
+    await _onboard(client, user_b["access_token"])
+
+    first = await _create_custom(client, user_a["access_token"], name="Sled Push")
+    second = await _create_custom(client, user_b["access_token"], name="Sled Push")
+    assert first.status_code == 201
+    assert second.status_code == 201, second.text
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("primary_muscle", "spleen"),
+        ("equipment", "sledgehammer"),
+        ("movement_pattern", "wiggle"),
+        ("difficulty", "impossible"),
+    ],
+)
+async def test_create_rejects_values_outside_the_closed_vocabularies(
+    client: AsyncClient, field: str, value: str
+) -> None:
+    """Validated against the same tuples the CHECK constraints are built from, so a
+    custom row can never carry a value the rest of the system cannot handle."""
+    registered = await _register(client)
+    await _onboard(client, registered["access_token"])
+
+    response = await _create_custom(client, registered["access_token"], **{field: value})
+    assert response.status_code == 422
+    body = json_body(response)
+    assert body["code"] == "VALIDATION_ERROR"
+    assert any(error["field"] == field for error in body["errors"])
+
+
+async def test_create_rejects_an_unknown_secondary_muscle(client: AsyncClient) -> None:
+    registered = await _register(client)
+    await _onboard(client, registered["access_token"])
+
+    response = await _create_custom(
+        client, registered["access_token"], secondary_muscles=["triceps", "gills"]
+    )
+    assert response.status_code == 422
+    assert any(error["field"] == "secondary_muscles" for error in json_body(response)["errors"])
+
+
+async def test_update_own_custom_exercise(client: AsyncClient) -> None:
+    registered = await _register(client)
+    await _onboard(client, registered["access_token"])
+    created = await _create_custom(client, registered["access_token"])
+    exercise_id = json_body(created)["exercise"]["id"]
+
+    patched = await client.patch(
+        f"{_EXERCISES}/{exercise_id}",
+        json={"name": "Landmine Press (heavy)", "difficulty": "advanced"},
+        headers=_auth_headers(registered["access_token"]),
+    )
+    assert patched.status_code == 200, patched.text
+    exercise = json_body(patched)["exercise"]
+    assert exercise["name"] == "Landmine Press (heavy)"
+    assert exercise["difficulty"] == "advanced"
+    # Untouched fields keep their values -- PATCH, not PUT.
+    assert exercise["primary_muscle"] == "chest"
+
+
+async def test_delete_is_a_soft_delete_that_still_resolves_by_id(client: AsyncClient) -> None:
+    """P2-ADR-02's mechanism, reused: a retired custom exercise leaves the library but a
+    session that logged it must still be able to name it."""
+    registered = await _register(client)
+    await _onboard(client, registered["access_token"])
+    created = await _create_custom(client, registered["access_token"])
+    exercise_id = json_body(created)["exercise"]["id"]
+
+    deleted = await client.delete(
+        f"{_EXERCISES}/{exercise_id}", headers=_auth_headers(registered["access_token"])
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert json_body(deleted)["is_active"] is False
+
+    listed = await _list_exercises(client, registered["access_token"], limit=100)
+    assert all(item["id"] != exercise_id for item in json_body(listed)["items"])
+
+    resolved = await _get_exercise(client, registered["access_token"], exercise_id)
+    assert resolved.status_code == 200, "a soft-deleted row must still resolve by id"
+
+
+async def test_a_logged_custom_exercise_survives_its_own_soft_delete(client: AsyncClient) -> None:
+    """The reason the delete is soft at all: workout_sets.exercise_id is ON DELETE
+    RESTRICT, so a hard delete of a logged-against exercise is impossible. Retiring one
+    must not break the session that used it."""
+    registered = await _register(client)
+    await _onboard(client, registered["access_token"])
+    token = registered["access_token"]
+    created = await _create_custom(client, token)
+    exercise_id = json_body(created)["exercise"]["id"]
+
+    started = await client.post("/api/v1/workouts", json={}, headers=_auth_headers(token))
+    assert started.status_code == 201
+    session_id = json_body(started)["session"]["id"]
+    logged = await client.post(
+        f"/api/v1/workouts/{session_id}/sets",
+        json={"exercise_id": exercise_id, "reps": 8, "weight_kg": 40},
+        headers=_auth_headers(token),
+    )
+    assert logged.status_code == 201, logged.text
+
+    deleted = await client.delete(f"{_EXERCISES}/{exercise_id}", headers=_auth_headers(token))
+    assert deleted.status_code == 200
+    resolved = await _get_exercise(client, token, exercise_id)
+    assert resolved.status_code == 200
+
+
+async def test_create_requires_a_completed_profile(client: AsyncClient) -> None:
+    registered = await _register(client)
+    response = await _create_custom(client, registered["access_token"])
+    assert response.status_code == 409
+    assert json_body(response)["code"] == "PROFILE_REQUIRED"

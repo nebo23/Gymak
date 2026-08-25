@@ -7,7 +7,9 @@
     "languageToggleLabel": "Switch language",
     "medicalDisclaimer": "Gymak is not medical advice. Stop if something hurts, and talk to a doctor before starting a new programme.",
     "notEnoughData": "Not enough data yet",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "yes": "Yes",
+    "no": "No"
   },
   "nav": {
     "home": "Home",
@@ -428,6 +430,30 @@
       "bestE1rmLabel": "Best e1RM",
       "bestVolumeLabel": "Best session volume",
       "totalSetsLabel": "Total sets logged"
+    },
+    "form": {
+      "createTitle": "New exercise",
+      "editTitle": "Edit exercise",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. Landmine press",
+      "nameHint": "Type the name in whichever language you prefer. It is shown as you typed it in both English and Arabic.",
+      "nameRequired": "Enter a name",
+      "movementPatternLabel": "Movement pattern",
+      "difficultyLabel": "Difficulty",
+      "isCompoundLabel": "Compound movement",
+      "instructionsLabel": "Instructions (optional)",
+      "instructionsPlaceholder": "How you perform it",
+      "create": "Create exercise",
+      "save": "Save changes",
+      "addAction": "New exercise"
+    },
+    "custom": {
+      "badge": "Yours",
+      "editAction": "Edit",
+      "deleteAction": "Delete",
+      "deleteConfirmTitle": "Delete this exercise?",
+      "deleteConfirmBody": "It leaves your library. Workouts that already used it keep their sets.",
+      "deleteConfirmAction": "Delete"
     }
   },
   "muscles": {
@@ -665,5 +691,21 @@
       "dialogLongLabelA": "Keep the session running in the background",
       "dialogLongLabelB": "Finish and save every recorded set now"
     }
+  },
+  "movementPatterns": {
+    "squat": "Squat",
+    "hinge": "Hinge",
+    "horizontal_push": "Horizontal push",
+    "vertical_push": "Vertical push",
+    "horizontal_pull": "Horizontal pull",
+    "vertical_pull": "Vertical pull",
+    "lunge": "Lunge",
+    "carry": "Carry",
+    "isolation": "Isolation"
+  },
+  "difficulty": {
+    "beginner": "Beginner",
+    "intermediate": "Intermediate",
+    "advanced": "Advanced"
   }
 }

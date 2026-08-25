@@ -601,6 +601,14 @@ _PROGRAM_EXERCISES_OWNER_POLICY_SQL = (
     "AND p.user_id = NULLIF(current_setting('app.user_id', true), '')::uuid))"
 )
 
+# Restored verbatim by the exercises drop-test below -- must stay identical to what
+# migration a1c9f2e4b703 installs, or the test leaves the database weaker than it found
+# it.
+_EXERCISES_READ_POLICY_SQL = (
+    "CREATE POLICY p_exercises_read ON exercises FOR SELECT "
+    "USING (user_id IS NULL OR user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)"
+)
+
 # §4.10, verbatim -- the one policy the spec itself spells out in full.
 _WORKOUT_SETS_OWNER_POLICY_SQL = (
     "CREATE POLICY p_workout_sets_owner ON workout_sets "
@@ -686,11 +694,16 @@ async def test_referential_integrity_cascade_bypasses_row_security_entirely(
     assert remaining is None
 
 
-async def test_exercises_has_no_rls_at_all(db_session: AsyncSession) -> None:
-    """§4.10's stated exception: exercises is public reference data with no user_id --
-    SELECT granted, no policy, and RLS never enabled on it at all. Asserted explicitly
-    so the absence reads as a deliberate decision, not an oversight (spec 10.1: 'exercises
-    is readable by any authenticated user and writable by none')."""
+async def test_exercises_has_rls_enabled_and_forced(db_session: AsyncSession) -> None:
+    """This test used to assert the OPPOSITE, and was correct to: §4.10 / P2-ADR-09 named
+    exercises as the deliberate no-RLS exception -- "public reference data with no
+    user_id ... the security test asserts that this is deliberate rather than forgotten".
+
+    That exception died with migration a1c9f2e4b703, which added user-owned custom rows
+    to this very table. The moment one user's data lives here, "no policy" stops being a
+    considered decision and becomes a leak, so the assertion is inverted rather than
+    deleted: the table must now be ENABLEd and FORCEd like the other seven.
+    """
     row = (
         await db_session.execute(
             text(
@@ -699,18 +712,46 @@ async def test_exercises_has_no_rls_at_all(db_session: AsyncSession) -> None:
             )
         )
     ).one()
-    assert (row.relrowsecurity, row.relforcerowsecurity) == (False, False)
+    assert (row.relrowsecurity, row.relforcerowsecurity) == (True, True)
 
 
-async def test_exercises_is_readable_with_no_app_user_id_bound(db_session: AsyncSession) -> None:
-    """No policy means no owner column to scope by -- a plain GRANT SELECT, readable
-    regardless of whether app.user_id is bound at all."""
+async def test_exercises_policies_are_the_reviewed_set(db_session: AsyncSession) -> None:
+    """Pins the policy set itself, so a future edit that collapses the three app-role
+    policies into one permissive `FOR ALL` -- which would let a caller INSERT a row with
+    user_id NULL, forging an entry into the public seeded library -- fails by name.
+    """
+    rows = (
+        await db_session.execute(
+            text("SELECT policyname, cmd FROM pg_policies WHERE tablename = 'exercises'")
+        )
+    ).all()
+    assert {(row.policyname, row.cmd) for row in rows} == {
+        ("p_exercises_read", "SELECT"),
+        ("p_exercises_own_insert", "INSERT"),
+        ("p_exercises_own_update", "UPDATE"),
+        ("p_exercises_migrator", "ALL"),
+    }
+
+
+async def test_seeded_exercises_are_readable_with_no_app_user_id_bound(
+    db_session: AsyncSession,
+) -> None:
+    """The seeded library stays public: `p_exercises_read` admits `user_id IS NULL`
+    unconditionally, so an unbound app.user_id still reads the seeded rows rather than
+    erroring or returning nothing. Only the custom rows are scoped."""
     result = await db_session.execute(text("SELECT count(*) FROM exercises"))
-    assert result.scalar_one() >= 0  # the point is that this does not raise
+    assert result.scalar_one() > 0
 
 
-async def test_gymak_app_cannot_write_to_exercises(db_session: AsyncSession) -> None:
-    with pytest.raises(ProgrammingError, match="permission denied for table exercises"):
+async def test_gymak_app_cannot_forge_a_seeded_exercise(db_session: AsyncSession) -> None:
+    """The app role now HAS the INSERT privilege (it needs it for custom exercises), so
+    what stops it writing a public row is the policy, not the grant: a row with
+    user_id NULL satisfies neither `user_id = <app user>` write policy, so it is refused
+    as an RLS violation. Without this, any caller could publish an exercise into every
+    other user's library.
+    """
+    await set_rls_user(db_session, str(uuid.uuid4()))
+    with pytest.raises(ProgrammingError, match="row-level security policy"):
         await db_session.execute(
             text(
                 "INSERT INTO exercises (id, slug, name_en, name_ar, primary_muscle, "
@@ -722,9 +763,136 @@ async def test_gymak_app_cannot_write_to_exercises(db_session: AsyncSession) -> 
         )
 
 
-async def test_gymak_app_cannot_update_exercises(db_session: AsyncSession) -> None:
-    with pytest.raises(ProgrammingError, match="permission denied for table exercises"):
-        await db_session.execute(text("UPDATE exercises SET is_active = false"))
+async def test_gymak_app_cannot_insert_an_exercise_owned_by_someone_else(
+    db_session: AsyncSession, superuser_database_url: str
+) -> None:
+    """The other half of the INSERT policy: not just "no public rows", but "no rows for
+    another user either". `user_id` is attacker-controlled in the INSERT, so the policy
+    has to pin it to the bound app.user_id rather than merely require it to be non-null.
+    """
+    victim_id = await _seed_user_with_profile(superuser_database_url, name="Victim")
+    await set_rls_user(db_session, str(uuid.uuid4()))
+    with pytest.raises(ProgrammingError, match="row-level security policy"):
+        await db_session.execute(
+            text(
+                "INSERT INTO exercises (id, user_id, slug, name_en, name_ar, "
+                "primary_muscle, equipment, movement_pattern, is_compound, difficulty, "
+                "instructions_en, instructions_ar) VALUES (:id, :user_id, 'planted', "
+                "'x', 'x', 'chest', 'barbell', 'horizontal_push', true, 'beginner', "
+                "'x', 'x')"
+            ),
+            {"id": new_id(), "user_id": victim_id},
+        )
+
+
+async def test_gymak_app_cannot_update_a_seeded_exercise(db_session: AsyncSession) -> None:
+    """Retiring or renaming the shared library is not a thing any user may do. The
+    UPDATE policy's USING clause hides every seeded row from the update, so this
+    statement matches nothing rather than raising -- and the rows are untouched, which is
+    what the count actually proves.
+    """
+    await set_rls_user(db_session, str(uuid.uuid4()))
+    result = cast(
+        CursorResult[Any],
+        await db_session.execute(text("UPDATE exercises SET is_active = false")),
+    )
+    assert result.rowcount == 0
+    still_active = await db_session.execute(text("SELECT count(*) FROM exercises WHERE is_active"))
+    assert still_active.scalar_one() > 0
+
+
+async def _insert_custom_exercise(
+    superuser_database_url: str, owner_id: uuid.UUID, *, name: str = "Owner Only Move"
+) -> uuid.UUID:
+    """Seeded over a superuser connection like every other fixture in this file (A.5
+    item 13): superusers bypass RLS unconditionally, so this insert succeeds whether the
+    policy under test is correct, broken, or missing -- no test below can fail here
+    because of the very mechanism it exists to exercise.
+    """
+    exercise_id = new_id()
+    engine = create_async_engine(superuser_database_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO exercises (id, user_id, slug, name_en, name_ar, "
+                    "primary_muscle, equipment, movement_pattern, is_compound, "
+                    "difficulty, instructions_en, instructions_ar) VALUES "
+                    "(:id, :user_id, :slug, :name, :name, 'chest', 'barbell', "
+                    "'horizontal_push', true, 'beginner', '', '')"
+                ),
+                {
+                    "id": exercise_id,
+                    "user_id": owner_id,
+                    "slug": f"custom-{uuid.uuid4().hex}",
+                    "name": name,
+                },
+            )
+    finally:
+        await engine.dispose()
+    return exercise_id
+
+
+async def test_another_users_custom_exercise_is_invisible_even_by_its_own_id(
+    superuser_database_url: str, db_session: AsyncSession
+) -> None:
+    """The core guarantee of the custom-exercise feature: one user's own exercise is not
+    part of anyone else's library. Checked by id, not just by listing, because the id is
+    the one thing an attacker could plausibly obtain and replay.
+    """
+    owner_id = await _seed_user_with_profile(superuser_database_url, name="Exercise Owner")
+    exercise_id = await _insert_custom_exercise(superuser_database_url, owner_id)
+
+    await set_rls_user(db_session, str(owner_id))
+    own = await db_session.execute(
+        text("SELECT id FROM exercises WHERE id = :id"), {"id": exercise_id}
+    )
+    assert own.scalar_one() == exercise_id, "the owner must see their own exercise"
+
+    await set_rls_user(db_session, str(uuid.uuid4()))
+    intruder = await db_session.execute(
+        text("SELECT id FROM exercises WHERE id = :id"), {"id": exercise_id}
+    )
+    assert intruder.scalar_one_or_none() is None
+
+
+async def test_dropping_exercises_read_policy_leaks_across_tenants(
+    migrator_database_url: str, superuser_database_url: str, db_session: AsyncSession
+) -> None:
+    """The same load-bearing proof the other six tables carry: replace the policy with
+    `USING (true)` and the intruder DOES see the row, so the isolation above is
+    demonstrably the policy's doing and not an accident of the query, the fixture, or a
+    filter somewhere in the repository layer.
+    """
+    owner_id = await _seed_user_with_profile(superuser_database_url, name="Exercise Owner 2")
+    exercise_id = await _insert_custom_exercise(superuser_database_url, owner_id)
+    intruder_id = uuid.uuid4()
+
+    migrator_engine = create_async_engine(migrator_database_url)
+    try:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_exercises_read ON exercises"))
+            await conn.execute(
+                text("CREATE POLICY p_exercises_read ON exercises FOR SELECT USING (true)")
+            )
+
+        await set_rls_user(db_session, str(intruder_id))
+        leaked = await db_session.execute(
+            text("SELECT id FROM exercises WHERE id = :id"), {"id": exercise_id}
+        )
+        assert leaked.scalar_one() == exercise_id
+        await db_session.commit()
+    finally:
+        async with migrator_engine.begin() as conn:
+            await conn.execute(text("DROP POLICY p_exercises_read ON exercises"))
+            await conn.execute(text(_EXERCISES_READ_POLICY_SQL))
+        await migrator_engine.dispose()
+
+    await set_rls_user(db_session, str(intruder_id))
+    still_hidden = await db_session.execute(
+        text("SELECT id FROM exercises WHERE id = :id"), {"id": exercise_id}
+    )
+    assert still_hidden.scalar_one_or_none() is None
 
 
 async def test_gymak_app_cannot_delete_exercises(db_session: AsyncSession) -> None:

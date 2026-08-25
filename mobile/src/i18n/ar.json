@@ -7,7 +7,9 @@
     "languageToggleLabel": "تبديل اللغة",
     "medicalDisclaimer": "تطبيق Gymak ليس استشارة طبية. توقف إذا شعرت بألم، واستشر طبيبًا قبل بدء أي برنامج تدريبي جديد.",
     "notEnoughData": "لا توجد بيانات كافية بعد",
-    "cancel": "إلغاء"
+    "cancel": "إلغاء",
+    "yes": "نعم",
+    "no": "لا"
   },
   "nav": {
     "home": "الرئيسية",
@@ -428,6 +430,30 @@
       "bestE1rmLabel": "أفضل e1RM",
       "bestVolumeLabel": "أفضل حجم في جلسة",
       "totalSetsLabel": "إجمالي المجموعات المسجَّلة"
+    },
+    "form": {
+      "createTitle": "تمرين جديد",
+      "editTitle": "تعديل التمرين",
+      "nameLabel": "الاسم",
+      "namePlaceholder": "مثال: ضغط اللاندماين",
+      "nameHint": "اكتب الاسم باللغة التي تفضّلها. سيظهر كما كتبته في العربية والإنجليزية معًا.",
+      "nameRequired": "أدخل اسمًا",
+      "movementPatternLabel": "نمط الحركة",
+      "difficultyLabel": "المستوى",
+      "isCompoundLabel": "تمرين مركّب",
+      "instructionsLabel": "التعليمات (اختياري)",
+      "instructionsPlaceholder": "طريقة الأداء",
+      "create": "إنشاء التمرين",
+      "save": "حفظ التغييرات",
+      "addAction": "تمرين جديد"
+    },
+    "custom": {
+      "badge": "تمرينك",
+      "editAction": "تعديل",
+      "deleteAction": "حذف",
+      "deleteConfirmTitle": "حذف هذا التمرين؟",
+      "deleteConfirmBody": "سيخرج من مكتبتك. التمارين التي استخدمته من قبل تحتفظ بمجموعاتها.",
+      "deleteConfirmAction": "حذف"
     }
   },
   "muscles": {
@@ -665,5 +691,21 @@
       "dialogLongLabelA": "الاستمرار في تشغيل الجلسة في الخلفية",
       "dialogLongLabelB": "إنهاء وحفظ كل مجموعة مسجلة الآن"
     }
+  },
+  "movementPatterns": {
+    "squat": "قرفصاء",
+    "hinge": "ثني الورك",
+    "horizontal_push": "دفع أفقي",
+    "vertical_push": "دفع رأسي",
+    "horizontal_pull": "سحب أفقي",
+    "vertical_pull": "سحب رأسي",
+    "lunge": "طعن",
+    "carry": "حمل",
+    "isolation": "عزل"
+  },
+  "difficulty": {
+    "beginner": "مبتدئ",
+    "intermediate": "متوسط",
+    "advanced": "متقدم"
   }
 }

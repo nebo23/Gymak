@@ -446,7 +446,12 @@ async def create_set(
     workout_session = await _get_owned_session_for_update(session, session_id, user.id)
     _assert_in_progress(workout_session)
 
-    exercise = await exercise_repo.get_by_id(session, exercise_id)
+    # `user.id` scopes this to the seeded library plus the caller's OWN custom rows
+    # (migration a1c9f2e4b703). Another user's custom exercise resolves to None here and
+    # so becomes the same generic "Unknown exercise id." 404 as one that never existed --
+    # which is what stops a guessed uuid being logged against. The FK alone would not:
+    # Postgres runs foreign-key checks as the referencing table's owner, bypassing RLS.
+    exercise = await exercise_repo.get_by_id(session, user.id, exercise_id)
     if exercise is None:
         raise ExerciseNotFoundError(detail="Unknown exercise id.")
 
