@@ -41,7 +41,7 @@ import {
 import { useI18n } from "../../../src/i18n";
 import { useTheme } from "../../../src/theme/useTheme";
 import { textStyle } from "../../../src/theme/typography";
-import { radius, space } from "../../../src/theme/tokens";
+import { layout, radius, space } from "../../../src/theme/tokens";
 
 // §4.1a's closed 17-value muscle vocabulary and §4.1's 7-value equipment vocabulary
 // -- the filter chips enumerate these two fixed sets exhaustively, never derived
@@ -207,7 +207,10 @@ function ExerciseLibraryBody({
           testID="exercises-search-input"
         />
 
-        <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
+        <Text
+          style={[textStyle("label", locale), styles.filterLabel, { color: theme.textMuted }]}
+          accessibilityRole="header"
+        >
           {t("exercises.filters.muscleLabel")}
         </Text>
         <ScrollView
@@ -232,7 +235,10 @@ function ExerciseLibraryBody({
           ))}
         </ScrollView>
 
-        <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
+        <Text
+          style={[textStyle("label", locale), styles.filterLabel, { color: theme.textMuted }]}
+          accessibilityRole="header"
+        >
           {t("exercises.filters.equipmentLabel")}
         </Text>
         <ScrollView
@@ -427,15 +433,21 @@ const styles = StyleSheet.create({
     paddingVertical: space[0],
     borderRadius: radius.pill,
   },
-  createRow: {
-    marginBottom: space[2],
+  filterLabel: {
+    letterSpacing: 0.6,
   },
+  createRow: {
+    marginBottom: layout.groupGap,
+  },
+  // A dense screen on purpose (hierarchy rule 5): this is a search surface,
+  // scanned rather than read, so the controls stay tight and the results get
+  // as much of the viewport as possible.
   body: {
     flex: 1,
-    gap: space[3],
+    gap: layout.groupGap,
   },
   controls: {
-    gap: space[2],
+    gap: space[1],
   },
   chipsRow: {
     flexDirection: "row",

@@ -65,6 +65,7 @@ import {
   GChip,
   GDialog,
   GErrorBanner,
+  GMetric,
   GNumberField,
   GRestTimer,
   GScreen,
@@ -190,25 +191,23 @@ function FinishSummaryView({
           <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
             {t("workout.active.summaryDuration")}
           </Text>
-          <Text style={[textStyle("bodyStrong", locale), { color: theme.textPrimary }]}>
-            {formatDuration(summary.session.duration_seconds ?? 0, t)}
-          </Text>
+          <GMetric value={formatDuration(summary.session.duration_seconds ?? 0, t)} size="sm" />
         </View>
         <View style={styles.summaryRow}>
           <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
             {t("workout.active.summarySets")}
           </Text>
-          <Text style={[textStyle("bodyStrong", locale), { color: theme.textPrimary }]}>
-            {summary.session.set_count}
-          </Text>
+          <GMetric value={summary.session.set_count} size="sm" />
         </View>
         <View style={styles.summaryRow}>
           <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
             {t("workout.active.summaryVolume")}
           </Text>
-          <Text style={[textStyle("bodyStrong", locale), { color: theme.textPrimary }]}>
-            {summary.session.total_volume_kg ?? 0} {t("workout.active.weightUnit")}
-          </Text>
+          <GMetric
+            value={summary.session.total_volume_kg ?? 0}
+            unit={t("workout.active.weightUnit")}
+            size="sm"
+          />
         </View>
       </GCard>
 
@@ -219,12 +218,17 @@ function FinishSummaryView({
           </Text>
           <GCard testID="active-workout-summary-records">
             {summary.records_set.map((recordItem, index) => (
-              <Text
-                key={`${recordItem.exercise_id}-${index}`}
-                style={[textStyle("body", locale), { color: theme.textPrimary }]}
-              >
-                {exerciseName(recordItem.exercise_id)} · {recordItem.value} {t("workout.active.weightUnit")}
-              </Text>
+              <View key={`${recordItem.exercise_id}-${index}`} style={styles.summaryRow}>
+                <Text style={[textStyle("body", locale), { color: theme.textPrimary }]}>
+                  {exerciseName(recordItem.exercise_id)}
+                </Text>
+                <GMetric
+                  value={recordItem.value}
+                  unit={t("workout.active.weightUnit")}
+                  size="sm"
+                  accent
+                />
+              </View>
             ))}
           </GCard>
         </View>
@@ -475,7 +479,15 @@ export default function ActiveWorkout() {
   const footerContent =
     status === "ready" && !finishSummary ? (
       <View style={styles.footerActions}>
+        {/* Hierarchy rule 1, applied WITHOUT touching this screen's density or
+            its tap counts: "Log set" is the action of a workout and is the
+            filled button, so Finish drops to `secondary`. Two filled rust
+            buttons on the same screen -- one in the log form, one pinned in the
+            footer -- gave the eye no way to tell the repeated action from the
+            terminal one. Nothing moved and nothing went behind a disclosure;
+            §8.3.2's two-taps-from-resting still holds exactly as before. */}
         <GButton
+          variant="secondary"
           label={t("workout.active.finish")}
           onPress={handleFinishPress}
           loading={finishing}
@@ -483,8 +495,15 @@ export default function ActiveWorkout() {
           fullWidth
           testID="active-workout-finish"
         />
+        {/* One step lighter again, so the footer reads as a ladder rather than
+            two identical outlined buttons: filled "Log set" > outlined Finish >
+            text-only Abandon. Abandon keeps the GDialog confirm it already had.
+            `ghost` is the app's established treatment for a step-down action
+            (Settings' "Delete account" is the same), since §9.2's GButton
+            contract has no destructive variant and this pass restyles the
+            primitives rather than redefining them. */}
         <GButton
-          variant="secondary"
+          variant="ghost"
           label={t("workout.active.abandon")}
           onPress={handleAbandonPress}
           loading={abandoning}

@@ -183,6 +183,14 @@ interface SemanticTokens {
   textDisabled: string;
   textInverse: string;
   textLink: string;
+  /**
+   * Rust-coloured TEXT — a personal record's number, not a link and not a
+   * fill. `primary` is the fill step and is too light on a dark surface to be
+   * read as text: rust[400] on `surface` is 3.84:1, under AA's 4.5:1. This is
+   * the same split `textLink` already makes for the same reason, one notch
+   * further so it clears 4.5:1 on `bg` AND `surface` in both themes.
+   */
+  textAccent: string;
   success: string;
   successBg: string;
   warning: string;
@@ -239,6 +247,7 @@ export const LightTheme: SemanticTokens = {
   textDisabled: sand[500],
   textInverse: sand[50],
   textLink: rust[600],
+  textAccent: rust[600], // 6.40:1 on surface, 5.97:1 on bg
   // Darkened one notch each: on their own *Bg tints these were 4.16, 4.16 and
   // 3.96:1 — under 4.5:1 before this change as well as after it.
   success: "#387349",
@@ -305,6 +314,7 @@ export const DarkTheme: SemanticTokens = {
   textDisabled: "#757575",
   textInverse: sand[900],
   textLink: "#E8703F",
+  textAccent: rust[300], // 5.14:1 on surface, 6.51:1 on bg
   success: "#6FBF87",
   successBg: "#24361F",
   warning: "#E0A94B",

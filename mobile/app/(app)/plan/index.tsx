@@ -30,9 +30,30 @@ import {
 import { useI18n } from "../../../src/i18n";
 import { useTheme } from "../../../src/theme/useTheme";
 import { textStyle } from "../../../src/theme/typography";
-import { radius, space } from "../../../src/theme/tokens";
+import { layout, radius, space } from "../../../src/theme/tokens";
 
 const DAYS_PER_WEEK_OPTIONS = [2, 3, 4, 5, 6] as const;
+
+/**
+ * A day's focus muscles are CONTENT, not controls. They were rendered as
+ * `disabled` GChips with a no-op onPress, which is both semantically wrong (a
+ * screen reader was told these were disabled buttons) and a real accessibility
+ * failure: GChip's disabled state is `textDisabled` on `surfaceVariant`, which
+ * is 2.67:1 in light and 2.74:1 in dark -- well under WCAG AA's 4.5:1 for
+ * text, and it looked exactly as washed out as that number predicts.
+ *
+ * As a static tag in `textSecondary` it is 7.23:1 and 5.83:1, and it no longer
+ * claims to be interactive.
+ */
+function FocusTag({ label }: { label: string }) {
+  const theme = useTheme();
+  const { locale } = useI18n();
+  return (
+    <View style={[styles.focusTag, { backgroundColor: theme.surfaceVariant }]}>
+      <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>{label}</Text>
+    </View>
+  );
+}
 
 export default function PlanOverview() {
   const theme = useTheme();
@@ -84,6 +105,10 @@ export default function PlanOverview() {
         />
       ) : null}
 
+      <Text style={[textStyle("h1", locale), styles.screenTitle, { color: theme.textPrimary }]}>
+        {t("nav.plan")}
+      </Text>
+
       {programQuery.data ? (
         <View style={styles.section}>
           {generateMutation.data && generateMutation.data.notes_key.length > 0 ? (
@@ -109,19 +134,18 @@ export default function PlanOverview() {
               footer={
                 <View style={styles.chipsRow}>
                   {day.focus_muscles.map((muscle) => (
-                    <GChip
-                      key={muscle}
-                      label={t(`muscles.${muscle}`)}
-                      selected={false}
-                      disabled
-                      onPress={() => {}}
-                    />
+                    <FocusTag key={muscle} label={t(`muscles.${muscle}`)} />
                   ))}
                 </View>
               }
             />
           ))}
 
+        </View>
+      ) : null}
+
+      {programQuery.data ? (
+        <View style={styles.secondaryActions}>
           <GButton
             variant="secondary"
             label={t("plan.overview.regenerate")}
@@ -133,7 +157,7 @@ export default function PlanOverview() {
           />
         </View>
       ) : isEmptyProgram ? (
-        <View style={styles.section} testID="plan-empty">
+        <View style={styles.emptyBlock} testID="plan-empty">
           <Text style={[textStyle("h2", locale), { color: theme.textPrimary }]}>
             {t("plan.empty.title")}
           </Text>
@@ -157,14 +181,16 @@ export default function PlanOverview() {
               ))}
             </View>
           </View>
-          <GButton
-            label={t("plan.empty.generate")}
-            onPress={() => generateMutation.mutate(selectedDays)}
-            loading={generateMutation.isPending}
-            disabled={generateMutation.isPending}
-            fullWidth
-            testID="plan-generate"
-          />
+          <View style={styles.emptyAction}>
+            <GButton
+              label={t("plan.empty.generate")}
+              onPress={() => generateMutation.mutate(selectedDays)}
+              loading={generateMutation.isPending}
+              disabled={generateMutation.isPending}
+              fullWidth
+              testID="plan-generate"
+            />
+          </View>
         </View>
       ) : programQuery.isError ? (
         <GErrorBanner
@@ -188,13 +214,15 @@ export default function PlanOverview() {
           fails §10.3 item 1 the same way. Outside the conditional blocks above
           so it is there whether or not a program exists: browsing the library
           is exactly what someone with no plan yet may want to do. */}
-      <GButton
-        variant="secondary"
-        label={t("exercises.title")}
-        onPress={() => router.push("/(app)/exercises")}
-        fullWidth
-        testID="plan-open-exercise-library"
-      />
+      <View style={styles.libraryAction}>
+        <GButton
+          variant="secondary"
+          label={t("exercises.title")}
+          onPress={() => router.push("/(app)/exercises")}
+          fullWidth
+          testID="plan-open-exercise-library"
+        />
+      </View>
 
       <Text style={[textStyle("caption", locale), styles.disclaimer, { color: theme.textMuted }]}>
         {t("common.medicalDisclaimer")}
@@ -225,13 +253,38 @@ export default function PlanOverview() {
 }
 
 const styles = StyleSheet.create({
+  screenTitle: {
+    marginBottom: layout.looseGap,
+  },
+  // Day cards are the content: dense, so more of the week is visible at once
+  // (hierarchy rule 5 -- this screen is scanned, not read).
   section: {
-    gap: space[4],
+    gap: layout.denseGap,
+  },
+  // Prose and the day picker stay tight together at `groupGap`; the one
+  // primary action on this screen is then pushed a further `looseGap` clear of
+  // them, so 12 + 20 = a full `sectionGap` of air above "Build my plan".
+  emptyBlock: {
+    gap: layout.groupGap,
+  },
+  emptyAction: {
+    marginTop: layout.looseGap,
+  },
+  secondaryActions: {
+    marginTop: layout.sectionGap,
+  },
+  libraryAction: {
+    marginTop: layout.groupGap,
   },
   chipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: space[2],
+  },
+  focusTag: {
+    borderRadius: radius.pill,
+    paddingHorizontal: space[2],
+    paddingVertical: space[0],
   },
   pickerLabel: {
     marginBottom: space[2],
@@ -243,6 +296,6 @@ const styles = StyleSheet.create({
   },
   disclaimer: {
     textAlign: "center",
-    marginTop: space[4],
+    marginTop: layout.sectionGap,
   },
 });

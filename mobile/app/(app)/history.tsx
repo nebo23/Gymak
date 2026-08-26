@@ -21,11 +21,18 @@ import { ActivityIndicator, SectionList, StyleSheet, Text, View } from "react-na
 import { resolveErrorCode } from "../../src/api/errors";
 import { listWorkouts, type WorkoutHistoryItem } from "../../src/api/workouts";
 import { useSession } from "../../src/auth/useSession";
-import { GEmptyState, GErrorBanner, GListRow, GScreen, GSkeleton } from "../../src/components";
+import {
+  GEmptyState,
+  GErrorBanner,
+  GListRow,
+  GMetric,
+  GScreen,
+  GSkeleton,
+} from "../../src/components";
 import { useI18n, type Locale } from "../../src/i18n";
 import { useTheme } from "../../src/theme/useTheme";
 import { textStyle } from "../../src/theme/typography";
-import { space } from "../../src/theme/tokens";
+import { layout, space } from "../../src/theme/tokens";
 import type { Theme } from "../../src/theme/tokens";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
@@ -110,9 +117,11 @@ function HistoryRow({
   const trailing =
     item.status === "completed" ? (
       <View style={styles.trailingStack}>
-        <Text style={[textStyle("bodyStrong", locale), { color: theme.textPrimary }]}>
-          {item.total_volume_kg ?? 0} {t("workout.active.weightUnit")}
-        </Text>
+        <GMetric
+          value={item.total_volume_kg ?? 0}
+          unit={t("workout.active.weightUnit")}
+          size="sm"
+        />
         {item.duration_seconds !== null ? (
           <Text style={[textStyle("caption", locale), { color: theme.textMuted }]}>
             {formatDuration(item.duration_seconds, t)}
@@ -203,7 +212,10 @@ export default function History() {
           renderItem={({ item }) => <HistoryRow item={item} locale={locale} theme={theme} t={t} />}
           renderSectionHeader={({ section }) => (
             <View style={[styles.sectionHeader, { backgroundColor: theme.bg }]}>
-              <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
+              <Text
+                style={[textStyle("label", locale), styles.sectionTitle, { color: theme.textMuted }]}
+                accessibilityRole="header"
+              >
                 {section.title}
               </Text>
             </View>
@@ -235,7 +247,13 @@ const styles = StyleSheet.create({
     paddingTop: space[2],
   },
   sectionHeader: {
-    paddingVertical: space[2],
+    paddingTop: layout.sectionGap,
+    paddingBottom: layout.headingGap,
+  },
+  sectionTitle: {
+    // Matches GSectionHeader's tracking so month headings and screen section
+    // headings read as the same kind of label.
+    letterSpacing: 0.6,
   },
   trailingStack: {
     alignItems: "flex-end",

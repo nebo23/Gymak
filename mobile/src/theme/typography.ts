@@ -77,7 +77,17 @@ interface TypeRole {
 // §10.4's role table. `caption`'s colour (textMuted) is a theme concern, not
 // a typography one — callers pair `typeScale.caption` with `theme.textMuted`.
 export const typeScale: Record<
-  "display" | "h1" | "h2" | "h3" | "body" | "bodyStrong" | "label" | "caption" | "stat",
+  | "display"
+  | "h1"
+  | "h2"
+  | "h3"
+  | "body"
+  | "bodyStrong"
+  | "label"
+  | "caption"
+  | "stat"
+  | "metric"
+  | "metricSm",
   TypeRole
 > = {
   display: { fontSize: 34, weight: 700, letterSpacing: -0.02 * 34 },
@@ -89,6 +99,22 @@ export const typeScale: Record<
   label: { fontSize: 14, weight: 500 },
   caption: { fontSize: 12, weight: 400 },
   stat: { fontSize: 34, weight: 700, tabularNums: true },
+  // Weights, reps, volumes, e1RMs and streaks are the CONTENT of this app, and
+  // they were being set in `body` and `bodyStrong` -- the same type as the
+  // sentence next to them, with proportional figures, so a column of numbers
+  // did not line up and a number the user is proud of read as prose.
+  //
+  // `stat` (34) is right for a hero and far too big for a list row, which is
+  // why those two roles kept reaching for body text instead. These fill that
+  // gap: both carry tabular figures, and both sit a deliberate step above the
+  // `label` (14) they are captioned by rather than level with it.
+  //
+  //   metric   22  a row's value, a card's secondary figure. Equal to `h2`, so
+  //                a number can head a row the way a title heads a card.
+  //   metricSm 18  an inline figure inside a dense row. Equal to `h3`, and one
+  //                clear step above the 16 of the body text beside it.
+  metric: { fontSize: 22, weight: 700, tabularNums: true },
+  metricSm: { fontSize: 18, weight: 600, tabularNums: true },
 };
 
 export interface ResolvedTextStyle {

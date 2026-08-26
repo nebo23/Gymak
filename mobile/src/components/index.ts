@@ -16,7 +16,12 @@ export { GLogo, type GLogoProps } from "./GLogo";
 // Phase 2 primitives (§9.2)
 export { GIcon, type GIconProps, type GIconName, type GIconSize } from "./GIcon";
 export { GSettingRow, type GSettingRowProps } from "./GSettingRow";
-export { GSectionHeader, type GSectionHeaderProps } from "./GSectionHeader";
+export {
+  GSectionHeader,
+  type GSectionHeaderProps,
+  type GSectionSeparation,
+} from "./GSectionHeader";
+export { GMetric, type GMetricProps, type GMetricSize } from "./GMetric";
 export {
   GOptionSheet,
   type GOptionSheetProps,

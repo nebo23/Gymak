@@ -504,7 +504,7 @@ export default function Settings() {
         </View>
       ) : null}
 
-      <GSectionHeader title={t("settings.sections.profile")} divider={false} />
+      <GSectionHeader title={t("settings.sections.profile")} separation="first" />
       <View style={styles.mixedGroup}>
         <GTextInput
           label={t("settings.fields.name")}

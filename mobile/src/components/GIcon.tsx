@@ -55,7 +55,8 @@ export type GIconName =
   | "plus"
   | "check"
   | "search"
-  | "close";
+  | "close"
+  | "trash";
 
 export type GIconSize = keyof typeof iconSize;
 
@@ -104,6 +105,13 @@ const GLYPHS: Record<GIconName, readonly string[]> = {
   check: ["M4.5 12.5 L9.5 17.5 L19.5 7"],
   search: [circle(10.5, 10.5, 6.5), "M15.5 15.5 L21 21"],
   close: ["M6 6 L18 18", "M18 6 L6 18"],
+  trash: [
+    "M4 6.5 H20",
+    "M9.5 6.5 V4.6 Q9.5 3.5 10.6 3.5 H13.4 Q14.5 3.5 14.5 4.6 V6.5",
+    "M6.5 6.5 V19.4 Q6.5 21 8.1 21 H15.9 Q17.5 21 17.5 19.4 V6.5",
+    "M10.5 10 V17.5",
+    "M13.5 10 V17.5",
+  ],
 };
 
 /**

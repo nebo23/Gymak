@@ -29,7 +29,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { router, useFocusEffect } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import {
   deleteBodyWeight,
@@ -49,16 +49,19 @@ import {
   GEmptyState,
   GErrorBanner,
   GLineChart,
+  GIcon,
   GListRow,
+  GMetric,
   GNumberField,
   GScreen,
+  GSectionHeader,
   GSheet,
   GSkeleton,
 } from "../../src/components";
 import { useI18n, type Locale } from "../../src/i18n";
 import { useTheme } from "../../src/theme/useTheme";
 import { textStyle } from "../../src/theme/typography";
-import { radius, space } from "../../src/theme/tokens";
+import { layout, minTouchTarget, radius, space } from "../../src/theme/tokens";
 import type { Theme } from "../../src/theme/tokens";
 
 const RANGE_OPTIONS = [30, 90, 365] as const;
@@ -132,9 +135,7 @@ function RecordRow({
         weight: record.heaviest_set.weight_kg,
       })}
       trailing={
-        <Text style={[textStyle("bodyStrong", locale), { color: theme.textPrimary }]}>
-          {record.best_e1rm.value_kg} {t("dashboard.weight.unit")}
-        </Text>
+        <GMetric value={record.best_e1rm.value_kg} unit={t("dashboard.weight.unit")} size="sm" />
       }
     />
   );
@@ -166,17 +167,22 @@ function EntryRow({
       })}
       onPress={onEdit}
       trailing={
+        // The value and the delete affordance sit SIDE BY SIDE. They were
+        // stacked, with delete as a full 52dp `controlHeight` ghost button,
+        // which made every log row three lines tall and left the date floating
+        // against the middle of that stack. An icon-only touchable keeps the
+        // row one line and still clears the 48dp floor via `entryDelete`.
         <View style={styles.entryTrailing}>
-          <Text style={[textStyle("bodyStrong", locale), { color: theme.textPrimary }]}>
-            {entry.weight_kg} {t("dashboard.weight.unit")}
-          </Text>
-          <GButton
-            variant="ghost"
-            label={t("progress.entries.deleteConfirmAction")}
-            accessibilityLabel={t("progress.entries.deleteLabel", { date: formattedDate })}
+          <GMetric value={entry.weight_kg} unit={t("dashboard.weight.unit")} size="sm" />
+          <Pressable
             onPress={onDelete}
+            accessibilityRole="button"
+            accessibilityLabel={t("progress.entries.deleteLabel", { date: formattedDate })}
+            style={styles.entryDelete}
             testID={`progress-entry-delete-${entry.measured_on}`}
-          />
+          >
+            <GIcon name="trash" size="sm" color={theme.error} />
+          </Pressable>
         </View>
       }
     />
@@ -333,26 +339,44 @@ export default function Progress() {
                     <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
                       {t("progress.summary.first")}
                     </Text>
-                    <Text style={[textStyle("bodyStrong", locale), { color: theme.textPrimary }]}>
-                      {summary.first} {t("dashboard.weight.unit")}
-                    </Text>
+                    {summary.first !== null ? (
+                      <GMetric
+                        value={summary.first}
+                        unit={t("dashboard.weight.unit")}
+                        size="sm"
+                      />
+                    ) : (
+                      <Text style={[textStyle("body", locale), { color: theme.textMuted }]}>
+                        {t("common.notEnoughData")}
+                      </Text>
+                    )}
                   </View>
                   <View>
                     <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
                       {t("progress.summary.latest")}
                     </Text>
-                    <Text style={[textStyle("bodyStrong", locale), { color: theme.textPrimary }]}>
-                      {summary.latest} {t("dashboard.weight.unit")}
-                    </Text>
+                    {summary.latest !== null ? (
+                      <GMetric
+                        value={summary.latest}
+                        unit={t("dashboard.weight.unit")}
+                        size="sm"
+                      />
+                    ) : (
+                      <Text style={[textStyle("body", locale), { color: theme.textMuted }]}>
+                        {t("common.notEnoughData")}
+                      </Text>
+                    )}
                   </View>
                   {summary.change_kg !== null ? (
                     <View>
                       <Text style={[textStyle("label", locale), { color: theme.textSecondary }]}>
                         {t("progress.summary.change")}
                       </Text>
-                      <Text style={[textStyle("bodyStrong", locale), { color: theme.textSecondary }]}>
-                        {formatSignedKg(summary.change_kg)} {t("dashboard.weight.unit")}
-                      </Text>
+                      <GMetric
+                        value={formatSignedKg(summary.change_kg)}
+                        unit={t("dashboard.weight.unit")}
+                        size="sm"
+                      />
                     </View>
                   ) : null}
                 </View>
@@ -366,20 +390,21 @@ export default function Progress() {
             />
           )}
 
+          {/* Hierarchy rule 1: the only filled button on this screen. */}
           <GButton
             label={t("dashboard.weight.emptyAction")}
             onPress={() => openSheetFor()}
+            fullWidth
             testID="progress-log-today"
           />
 
           {entries.length > 0 ? (
             <View>
-              <Text
-                style={[textStyle("label", locale), styles.blockHeading, { color: theme.textSecondary }]}
-              >
-                {t("progress.entries.heading")}
-              </Text>
-              <GCard testID="progress-entries">
+              <GSectionHeader title={t("progress.entries.heading")} separation="spaced" />
+              {/* A weight log is a LIST. It was a GCard wrapping rows, which
+                  gave a shadowed, bordered object the shape of a single thing
+                  when it is many things. */}
+              <View style={styles.rowList} testID="progress-entries">
                 {[...entries].reverse().map((entry) => (
                   <EntryRow
                     key={entry.measured_on}
@@ -390,22 +415,18 @@ export default function Progress() {
                     onDelete={() => handleDelete(entry)}
                   />
                 ))}
-              </GCard>
+              </View>
             </View>
           ) : null}
 
           <View>
-            <Text
-              style={[textStyle("label", locale), styles.blockHeading, { color: theme.textSecondary }]}
-            >
-              {t("progress.records.heading")}
-            </Text>
+            <GSectionHeader title={t("progress.records.heading")} separation="spaced" />
             {records.length > 0 ? (
-              <GCard testID="progress-records">
+              <View style={styles.rowList} testID="progress-records">
                 {records.map((record) => (
                   <RecordRow key={record.exercise.id} record={record} theme={theme} locale={locale} />
                 ))}
-              </GCard>
+              </View>
             ) : (
               <GEmptyState
                 testID="progress-records-empty"
@@ -424,14 +445,15 @@ export default function Progress() {
               the records list), whereas the dashboard's blocks are enumerated
               by §5.12 and Plan is forward-looking. Placed under records, so
               "what have I done" reads top to bottom. */}
-          <GCard testID="progress-history-card">
+          <View style={styles.historyRow} testID="progress-history-card">
             <GListRow
               title={t("history.title")}
               subtitle={t("history.entryPointSubtitle")}
               onPress={() => router.push("/(app)/history")}
+              trailing={<GIcon name="chevron" size="sm" color={theme.textMuted} />}
               testID="progress-open-history"
             />
-          </GCard>
+          </View>
         </View>
       )}
 
@@ -501,8 +523,20 @@ export default function Progress() {
 }
 
 const styles = StyleSheet.create({
+  // Dense inside a section; the 32dp between sections comes from
+  // GSectionHeader. One uniform `space[4]` on everything is what made the
+  // chart, the button and the two lists all read as equally important.
   section: {
-    gap: space[4],
+    gap: layout.denseGap,
+  },
+  // Cancels GListRow's own inset so row text lines up with the section
+  // heading above it. Side-neutral, so no §9.6 start/end concern.
+  rowList: {
+    marginHorizontal: -space[3],
+  },
+  historyRow: {
+    marginTop: layout.sectionGap,
+    marginHorizontal: -space[3],
   },
   chipsRow: {
     flexDirection: "row",
@@ -512,14 +546,18 @@ const styles = StyleSheet.create({
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: space[4],
-  },
-  blockHeading: {
-    marginBottom: space[1],
+    marginTop: layout.looseGap,
   },
   entryTrailing: {
-    alignItems: "flex-end",
-    gap: space[0],
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+  },
+  entryDelete: {
+    minWidth: minTouchTarget,
+    minHeight: minTouchTarget,
+    alignItems: "center",
+    justifyContent: "center",
   },
   sheetTitle: {
     marginBottom: space[2],
