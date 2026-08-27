@@ -279,10 +279,10 @@ export default function Progress() {
     const firstEntry = entries[0]!;
     const lastEntry = entries[entries.length - 1]!;
     return t("progress.chart.accessibilityLabel", {
-      count: entries.length,
+      entries: t("units.entry", { count: entries.length }),
       first: firstEntry.weight_kg,
       last: lastEntry.weight_kg,
-      days: rangeDays,
+      period: t("units.day", { count: rangeDays }),
     });
   }, [entries, today, from, rangeDays, t]);
 
@@ -312,7 +312,7 @@ export default function Progress() {
             {RANGE_OPTIONS.map((days) => (
               <GChip
                 key={days}
-                label={t("progress.range.option", { days })}
+                label={t("progress.range.option", { count: days })}
                 selected={rangeDays === days}
                 onPress={() => setRangeDays(days)}
                 testID={`progress-range-${days}`}

@@ -127,8 +127,8 @@ export default function PlanOverview() {
               testID={`plan-day-${day.day_index}`}
               title={t(day.label_key)}
               subtitle={t("plan.overview.footer", {
-                count: day.exercise_count,
-                minutes: day.estimated_minutes,
+                exercises: t("units.exercise", { count: day.exercise_count }),
+                duration: t("units.minute", { count: day.estimated_minutes }),
               })}
               onPress={() => router.push(`/(app)/plan/${day.id}`)}
               footer={
@@ -175,7 +175,7 @@ export default function PlanOverview() {
                   label={String(days)}
                   selected={selectedDays === days}
                   onPress={() => setSelectedDays(days)}
-                  accessibilityLabel={t("plan.empty.daysPerWeekOption", { days })}
+                  accessibilityLabel={t("plan.empty.daysPerWeekOption", { count: days })}
                   testID={`plan-days-per-week-${days}`}
                 />
               ))}
@@ -233,7 +233,7 @@ export default function PlanOverview() {
         onClose={() => setRegenerateFor(null)}
         titleKey="plan.overview.regenerateConfirmTitle"
         bodyKey="plan.overview.regenerateConfirmBody"
-        bodyParams={{ days: regenerateFor?.days_per_week ?? 0 }}
+        bodyParams={{ count: regenerateFor?.days_per_week ?? 0 }}
         actions={[
           { labelKey: "common.cancel", onPress: () => setRegenerateFor(null) },
           {

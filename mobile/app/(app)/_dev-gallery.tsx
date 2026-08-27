@@ -296,7 +296,7 @@ export default function DevGallery() {
         </Row>
         <Row label={t("devGallery.state.messageOnly")}>
           <GErrorBanner
-            message={t("auth.rateLimited.retryIn", { seconds: 30 })}
+            message={t("auth.rateLimited.retryIn", { count: 30 })}
             testID="dev-gallery-error-message-only"
           />
         </Row>

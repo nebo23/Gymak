@@ -87,7 +87,7 @@ export function GRestTimer({ seconds, onComplete, onSkip, paused, testID }: GRes
       </Text>
       <Text
         style={[textStyle("stat", locale), styles.time, { color: theme.textPrimary }]}
-        accessibilityLabel={t("workout.active.restTimer.accessibilityValue", { seconds: remaining })}
+        accessibilityLabel={t("workout.active.restTimer.accessibilityValue", { count: remaining })}
       >
         {formatMmSs(remaining)}
       </Text>

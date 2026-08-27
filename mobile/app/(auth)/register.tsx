@@ -114,7 +114,7 @@ export default function Register() {
     <GScreen header={{ title: t("auth.register.title"), onBack: () => router.back() }}>
       {retrySeconds !== null && retrySeconds > 0 ? (
         <GErrorBanner
-          message={t("auth.rateLimited.retryIn", { seconds: retrySeconds })}
+          message={t("auth.rateLimited.retryIn", { count: retrySeconds })}
           testID="register-rate-limited"
         />
       ) : requestError ? (

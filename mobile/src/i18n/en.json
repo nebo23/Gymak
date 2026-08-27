@@ -11,6 +11,33 @@
     "yes": "Yes",
     "no": "No"
   },
+  "units": {
+    "exercise": {
+      "zero": "No exercises",
+      "one": "1 exercise",
+      "other": "{{count}} exercises"
+    },
+    "minute": {
+      "zero": "No minutes",
+      "one": "1 minute",
+      "other": "{{count}} minutes"
+    },
+    "day": {
+      "zero": "No days",
+      "one": "1 day",
+      "other": "{{count}} days"
+    },
+    "entry": {
+      "zero": "No entries",
+      "one": "1 entry",
+      "other": "{{count}} entries"
+    },
+    "character": {
+      "zero": "No characters",
+      "one": "1 character",
+      "other": "{{count}} characters"
+    }
+  },
   "nav": {
     "home": "Home",
     "plan": "Plan",
@@ -62,7 +89,7 @@
       "title": "Enter code",
       "instructions": "Enter the 8-character code we sent to {{email}}.",
       "resend": "Resend code",
-      "resendIn": "Resend in {{seconds}}s",
+      "resendIn": "Resend in {{count}}s",
       "codeSent": "A new code was sent.",
       "submit": "Verify"
     },
@@ -81,7 +108,7 @@
       "ok": "OK"
     },
     "rateLimited": {
-      "retryIn": "Too many attempts. Try again in {{seconds}}s."
+      "retryIn": "Too many attempts. Try again in {{count}}s."
     }
   },
   "onboarding": {
@@ -156,7 +183,7 @@
     },
     "nextWorkout": {
       "heading": "Next workout",
-      "footer": "{{count}} exercises · about {{minutes}} min",
+      "footer": "{{exercises}} · about {{duration}}",
       "start": "Start"
     },
     "noProgram": {
@@ -167,7 +194,10 @@
     "streak": {
       "label": "Current streak",
       "unit": "days",
-      "longest": "Best: {{days}} days"
+      "longest": {
+        "one": "Best: 1 day",
+        "other": "Best: {{count}} days"
+      }
     },
     "thisWeek": {
       "label": "This week",
@@ -279,15 +309,21 @@
     "overview": {
       "regenerate": "Regenerate",
       "regenerateConfirmTitle": "Regenerate your plan?",
-      "regenerateConfirmBody": "This replaces your current plan with a new {{days}}-day plan. Your training history stays exactly as it is.",
+      "regenerateConfirmBody": {
+        "one": "This replaces your current plan with a new 1-day plan. Your training history stays exactly as it is.",
+        "other": "This replaces your current plan with a new {{count}}-day plan. Your training history stays exactly as it is."
+      },
       "regenerateConfirmAction": "Regenerate",
-      "footer": "{{count}} exercises · about {{minutes}} min"
+      "footer": "{{exercises}} · about {{duration}}"
     },
     "empty": {
       "title": "Build your plan",
       "body": "Choose how many days a week you want to train, and we'll build the rest.",
       "daysPerWeekLabel": "Days per week",
-      "daysPerWeekOption": "{{days}} days a week",
+      "daysPerWeekOption": {
+        "one": "1 day a week",
+        "other": "{{count}} days a week"
+      },
       "generate": "Build my plan"
     },
     "notes": {
@@ -327,7 +363,10 @@
         "pause": "Pause rest",
         "resume": "Resume rest",
         "complete": "Rest complete",
-        "accessibilityValue": "{{seconds}} seconds remaining"
+        "accessibilityValue": {
+          "one": "1 second remaining",
+          "other": "{{count}} seconds remaining"
+        }
       },
       "finish": "Finish",
       "finishConfirmTitle": "Finish this workout?",
@@ -340,12 +379,15 @@
       "backConfirmTitle": "Leave this workout?",
       "backConfirmBody": "Finish or abandon your workout before leaving.",
       "unsentBlockTitle": "You have unsent sets",
-      "unsentBlockBody": "{{count}} sets haven't been sent yet. Retry now, or discard them and finish without them.",
+      "unsentBlockBody": {
+        "one": "1 set hasn't been sent yet. Retry now, or discard it and finish without it.",
+        "other": "{{count}} sets haven't been sent yet. Retry now, or discard them and finish without them."
+      },
       "retryAll": "Retry all",
       "discardUnsent": "Discard unsent",
       "summaryTitle": "Workout complete",
       "summaryDuration": "Duration",
-      "summaryDurationMinutes": "{{minutes}} min",
+      "summaryDurationMinutes": "{{count}} min",
       "summaryDurationHoursMinutes": "{{hours}}h {{minutes}}m",
       "summarySets": "Sets",
       "summaryVolume": "Volume",
@@ -369,7 +411,10 @@
   },
   "history": {
     "title": "Workout history",
-    "rowSubtitle": "{{date}} · {{count}} sets",
+    "rowSubtitle": {
+      "one": "{{date}} · 1 set",
+      "other": "{{date}} · {{count}} sets"
+    },
     "loadingMore": "Loading more…",
     "empty": {
       "title": "No workouts yet",
@@ -381,10 +426,13 @@
   "progress": {
     "title": "Progress",
     "range": {
-      "option": "{{days}} days"
+      "option": {
+        "one": "1 day",
+        "other": "{{count}} days"
+      }
     },
     "chart": {
-      "accessibilityLabel": "Weight, {{count}} entries, from {{first}} to {{last}} kilograms over {{days}} days",
+      "accessibilityLabel": "Weight, {{entries}}, from {{first}} to {{last}} kilograms over {{period}}",
       "emptyBody": "Log your weight on at least two different days to see a chart."
     },
     "logSheet": {
@@ -544,7 +592,7 @@
     },
     "otp": {
       "label": "Reset code",
-      "progress": "{{count}} of {{total}} characters entered",
+      "progress": "{{entered}} of {{total}} entered",
       "invalid": "That code isn't valid"
     },
     "progressBar": {

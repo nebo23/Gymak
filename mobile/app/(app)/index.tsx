@@ -204,8 +204,11 @@ function DashboardContent({ data }: { data: DashboardData }) {
           testID="dashboard-next-workout"
           title={t(nextWorkout.label_key)}
           subtitle={t("dashboard.nextWorkout.footer", {
-            count: nextWorkout.exercise_count,
-            minutes: nextWorkout.estimated_minutes,
+            // Two counts, one sentence. `i18n-js` pluralises on a single
+            // `count`, so each number is inflected on its own through `units.*`
+            // and the sentence interpolates the finished phrases.
+            exercises: t("units.exercise", { count: nextWorkout.exercise_count }),
+            duration: t("units.minute", { count: nextWorkout.estimated_minutes }),
           })}
           footer={
             <GButton
@@ -263,7 +266,7 @@ function DashboardContent({ data }: { data: DashboardData }) {
         </View>
         {data.streak.longest_days > data.streak.current_days ? (
           <Text style={[textStyle("caption", locale), styles.streakLongest, { color: theme.textMuted }]}>
-            {t("dashboard.streak.longest", { days: data.streak.longest_days })}
+            {t("dashboard.streak.longest", { count: data.streak.longest_days })}
           </Text>
         ) : null}
       </View>

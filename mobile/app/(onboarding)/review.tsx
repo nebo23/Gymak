@@ -144,7 +144,7 @@ export default function OnboardingReview() {
 
       {retrySeconds !== null && retrySeconds > 0 ? (
         <GErrorBanner
-          message={t("auth.rateLimited.retryIn", { seconds: retrySeconds })}
+          message={t("auth.rateLimited.retryIn", { count: retrySeconds })}
           testID="onboarding-review-rate-limited"
         />
       ) : requestError ? (

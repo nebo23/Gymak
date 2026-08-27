@@ -18,14 +18,45 @@ import * as SecureStore from "expo-secure-store";
 
 import ar from "./ar.json";
 import en from "./en.json";
+import { PLURAL_CATEGORIES, pluralCandidates } from "./plural";
 
 export type Locale = "ar" | "en";
 
 const catalogs = { ar, en } as const;
 
+const PLURAL_CATEGORY_SET: ReadonlySet<string> = new Set(PLURAL_CATEGORIES);
+
+/**
+ * A plural catalogue entry: an object whose keys are *all* CLDR categories,
+ * e.g. `{ one: "1 set", other: "{{count}} sets" }`.
+ *
+ * These must be flattened as one logical key, not one key per category. Arabic
+ * legitimately carries up to six categories where English carries two, so a
+ * naive leaf walk reports `units.set.two`, `.few` and `.many` as "only in ar"
+ * and turns the correct catalogue into a warning — the symmetry check would
+ * then cry wolf on every plural string in the app, which is how a useful check
+ * gets ignored and then deleted.
+ *
+ * The `every` is deliberate rather than `some`: a real content object that
+ * happened to contain a key named `one` or `other` alongside ordinary keys is
+ * not a plural entry and must keep being walked normally.
+ */
+function isPluralEntry(obj: Record<string, unknown>): boolean {
+  const keys = Object.keys(obj);
+  return (
+    keys.length > 0 &&
+    keys.every((k) => PLURAL_CATEGORY_SET.has(k)) &&
+    Object.values(obj).every((v) => typeof v === "string")
+  );
+}
+
 function flattenKeys(obj: unknown, prefix = ""): Set<string> {
   const keys = new Set<string>();
   if (obj === null || typeof obj !== "object") {
+    keys.add(prefix);
+    return keys;
+  }
+  if (isPluralEntry(obj as Record<string, unknown>)) {
     keys.add(prefix);
     return keys;
   }
@@ -112,6 +143,17 @@ const i18n = new I18n(catalogs);
 i18n.defaultLocale = "ar";
 i18n.locale = initialLocale;
 i18n.enableFallback = true;
+
+/**
+ * `i18n-js` ships one pluralizer for every locale, and it implements the
+ * English rule: `one` for 1, `zero` for 0, `other` for the rest. Left alone it
+ * renders «٢ مجموعة» for two and «٣ مجموعة» for three — wrong in the language
+ * this app defaults to. `src/i18n/plural.ts` carries the real CLDR rules and
+ * the reasoning; registering both locales keeps English on the same tested path
+ * rather than on a library default.
+ */
+i18n.pluralization.register("ar", (_i18n, count) => pluralCandidates("ar", count));
+i18n.pluralization.register("en", (_i18n, count) => pluralCandidates("en", count));
 
 function translate(locale: Locale, key: string, options?: Record<string, unknown>): string {
   i18n.locale = locale;
