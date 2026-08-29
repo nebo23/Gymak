@@ -336,7 +336,7 @@ export default function DevGallery() {
           <GStat
             label={t("devGallery.sample.statLabel")}
             value={t("devGallery.sample.statValue")}
-            unit={t("devGallery.sample.statUnit")}
+            unit={t("devGallery.sample.statUnit", { count: 12 })}
             delta={2}
             tone="positive"
           />
@@ -345,7 +345,7 @@ export default function DevGallery() {
           <GStat
             label={t("devGallery.sample.statLabel")}
             value={t("devGallery.sample.statValue")}
-            unit={t("devGallery.sample.statUnit")}
+            unit={t("devGallery.sample.statUnit", { count: 12 })}
             delta={-1}
             tone="negative"
           />
@@ -354,7 +354,7 @@ export default function DevGallery() {
           <GStat
             label={t("devGallery.sample.statLabel")}
             value={t("devGallery.sample.statValue")}
-            unit={t("devGallery.sample.statUnit")}
+            unit={t("devGallery.sample.statUnit", { count: 12 })}
             tone="neutral"
           />
         </Row>

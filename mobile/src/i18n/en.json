@@ -193,7 +193,10 @@
     },
     "streak": {
       "label": "Current streak",
-      "unit": "days",
+      "unit": {
+        "one": "day",
+        "other": "days"
+      },
       "longest": {
         "one": "Best: 1 day",
         "other": "Best: {{count}} days"
@@ -725,7 +728,10 @@
       "cardFooter": "5 exercises · about 55 min",
       "statLabel": "Current streak",
       "statValue": "4",
-      "statUnit": "days",
+      "statUnit": {
+        "one": "day",
+        "other": "days"
+      },
       "chipChest": "Chest",
       "chipBarbell": "Barbell",
       "chipLegs": "Legs",

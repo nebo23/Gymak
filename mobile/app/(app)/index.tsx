@@ -242,7 +242,7 @@ function DashboardContent({ data }: { data: DashboardData }) {
             testID="dashboard-streak"
             label={t("dashboard.streak.label")}
             value={data.streak.current_days}
-            unit={t("dashboard.streak.unit")}
+            unit={t("dashboard.streak.unit", { count: data.streak.current_days })}
             tone="neutral"
           />
           <View style={styles.thisWeek}>
