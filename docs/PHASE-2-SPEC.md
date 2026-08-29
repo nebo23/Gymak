@@ -65,8 +65,12 @@ database, or is arithmetic over those numbers that the user could redo by hand.
 | **Step 1** | Backend data layer: schema, the seeded exercise library, the plan generator                          | T-15 … T-17 | A profile can be turned into a stored, readable weekly plan      |
 | **Step 2** | Backend logging layer: sessions, sets, body weight, records, the dashboard aggregate                 | T-18 … T-22 | A full workout can be started, logged, finished and read back    |
 | **Step 3** | React Native client: tab shell, dashboard, plan, the active-workout screen, history, weight, library | T-23 … T-30 | A real device completes a whole workout end to end, offline-free |
+| **Step 4** | Engineering infrastructure: a mobile runner that can render, generated API types, CI, Docker             | T-32 … T-35 | Every gate above runs on a pull request instead of from memory   |
 
-Steps run in order. Do not begin step 3 while any step-1 or step-2 test is red.
+Steps 1 to 3 run in order. Do not begin step 3 while any step-1 or step-2 test is red.
+Step 4 depends on none of them and blocks none of them: it changes no backend logic and
+no screen. T-31 sits outside the steps — it is optional, and §13.1 decision 3 recommends
+deferring it to Phase 3.
 
 ### 0.4 Entry conditions — do not start T-15 until every one of these is true
 
@@ -1188,7 +1192,7 @@ explicit re-deferral (§10.3 item 12).
 
 ## 12 · Task pack
 
-Seventeen tasks in dependency order. Each block is written to be pasted **on its own**, with this
+Twenty-one tasks in dependency order. Each block is written to be pasted **on its own**, with this
 document available in the context. Do not paste two at once.
 
 > **The two operational rules from Phase 1 still apply.** Never write a task prompt from memory —
@@ -1675,6 +1679,133 @@ Requirements:
 
 Done when: a Facebook account signs in on a device, and signing in with the same
 verified email by Google lands on one account with both methods in /auth/me.
+```
+
+### T-32 · Merge the Arabic plural fix into the review branch
+
+```text
+Merge fix/i18n-arabic-plurals into claude/gymak-weight-tracker-review-76pvgl.
+
+Files: none. This is a merge, not an edit.
+
+Requirements:
+- Run the mobile gate on the branch tip (657ab43) BEFORE merging, not only after.
+  657ab43 landed after the gate was last run on 5b633e3, so it is unverified.
+- Merge with a merge commit (--no-ff), not a fast-forward: the two commits are a
+  fix and the follow-up the first one's search method could not reach, and that
+  shape is worth keeping in the graph.
+- Re-run the gate after the merge. A clean merge is not evidence of a green tree.
+- Do not merge on a red gate. Report the output instead.
+
+Done when: npm run typecheck and npm test are green both before and after the
+merge, with the same test count, and the merge commit's message says why the fix
+took two passes.
+```
+
+### T-33 · Replace vitest with jest, so a component can be rendered at all
+
+```text
+Move the mobile suite from vitest to jest-expo, and prove the harness works.
+
+Files: mobile/package.json, mobile/jest.config.js, mobile/jest.setup.js,
+mobile/src/test-utils/render.tsx, mobile/tsconfig.json, the six existing
+src/**/*.test.ts files, mobile/src/components/GStat.test.tsx (new), and delete
+mobile/vitest.config.ts
+
+Dependencies (owner-approved, beyond A.2): jest, jest-expo,
+@testing-library/react-native, @types/jest. Remove vitest.
+
+Requirements:
+- vitest.config.ts scoped the suite to pure functions and said so: "component/
+  screen code needs React Native's runtime". 24 screens and 24 components
+  therefore have zero automated coverage. jest-expo supplies that runtime.
+- jest.setup.js mocks only modules that reach for a native binary:
+  expo-secure-store (backed by a real Map -- useTheme and i18n both read back
+  what they wrote), expo-router, expo-localization, @react-native-firebase/*,
+  @react-native-google-signin. Not expo-haptics: it is not used anywhere.
+- src/test-utils/render.tsx wraps in I18nProvider + ThemeProvider in the same
+  order as app/_layout.tsx, and takes a REQUIRED locale. Required, because a
+  harness that can only render the default locale gives a green suite that never
+  reads the language most users read.
+- Migrating the six existing files means deleting their `import ... from "vitest"`
+  line. Nothing else. If a test fails after the move, that is a real regression
+  or a missing mock -- never a reason to edit the test.
+- One component test, proving the harness is real: render GStat in both locales
+  and assert the streak unit inflects. Include 11, where Arabic reverts to a
+  singular-looking form; a one/other "fix" passes 1 and 3 and fails there.
+
+Done when: npm test passes with at least the 70 tests that existed before, plus
+the new ones, and regressing arabicPluralCategory to one/other makes exactly the
+Arabic cases fail while English stays green.
+```
+
+### T-34 · Generate the mobile API types from openapi.json
+
+```text
+Stop hand-writing mobile request and response types; generate them.
+
+Files: mobile/package.json, mobile/src/api/schema.d.ts (generated),
+mobile/src/api/*.ts, mobile/src/api/schema.drift.test.ts (new)
+
+Dependency (owner-approved, beyond A.2): openapi-typescript (dev).
+
+Requirements:
+- An api:generate script emitting src/api/schema.d.ts from
+  ../backend/openapi.json. That document is already committed and already has a
+  backend drift test; nothing guarded the client side of it.
+- Every request and response type in src/api/*.ts reads from the generated
+  schema. Types only -- no logic changes, and every exported NAME stays the same
+  so no screen is touched.
+- Where the generated type is WEAKER than the hand-written one, do not alias it.
+  Three response fields are bare dicts on the backend models
+  (DashboardResponse.weight, DashboardResponse.program_stale,
+  ProgramResponse.stale) and six profile fields are bare strings. Keep the
+  precise shapes and anchor each with a type-level assertion that stops
+  compiling when the backend models them properly.
+- Properties carrying a server-side default come back marked required, because
+  openapi-typescript emits one type per schema and cannot tell a request from a
+  response. Restore those per field, not by disabling --default-non-nullable,
+  which would make every defaulted response field optional.
+- A test that fails when the committed schema.d.ts differs from a fresh
+  generation -- the mobile twin of backend/tests/unit/test_openapi_contract.py.
+
+Done when: npm run api:generate produces no diff, npm run typecheck is green,
+and renaming a field in openapi.json fails the drift test AND, after
+regenerating, fails typecheck at the real call sites.
+```
+
+### T-35 · CI and Docker
+
+```text
+Make the gate something CI runs, and make a fresh clone able to start.
+
+Files: docker-compose.yml, db/init/01-roles.sql, backend/Dockerfile,
+backend/.dockerignore, .github/workflows/pr.yml, backend/README.md
+
+Requirements:
+- docker-compose.yml with PostgreSQL 16, whose init script creates gymak_migrator
+  and gymak_app with the same grants backend/README.md documents by hand and
+  tests/conftest.py provisions -- all three must not diverge. No container_name:
+  the older `docker run --name gymak-db` container may still exist.
+- backend/Dockerfile: multi-stage, non-root, no build toolchain in the runtime
+  image. .dockerignore must exclude .env -- every COPY layer is readable by
+  anyone who can pull the image, and docker history shows it even after deletion.
+- .github/workflows/pr.yml: lint (ruff check, ruff format --check, mypy --strict),
+  backend unit, backend integration under testcontainers with the coverage gate,
+  and mobile (typecheck, jest, schema.d.ts drift).
+- The coverage gate belongs in whichever job can actually carry it. Measure
+  before deciding: --cov-fail-under=80 is a whole-suite number.
+- One more check: fail when docs/PHASE-2-SPEC.md's table-row count DROPS against
+  the base commit (grep -c '^|'). Its tables have been destroyed three times
+  (027517a, restored by 8486092 and again by 5249b1c). A floor, not an exact
+  match -- adding rows is normal.
+- Do not run migrations from the app's entrypoint: alembic connects as
+  gymak_migrator and the app as gymak_app.
+
+Done when: docker compose up -d db gives a database alembic upgrade head runs on
+from a fresh volume with zero SQL typed by hand, the built image serves
+GET /api/v1/health as a non-root user, and the spec-table check fails on 027517a
+while passing on the restore that followed it.
 ```
 
 ---
