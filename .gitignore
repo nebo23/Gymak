@@ -8,7 +8,11 @@ node_modules/
 dist/
 *-service-account*.json
 
-backend/.coverage
+# coverage.py has no data_file set, so .coverage lands in whatever directory
+# pytest was invoked from -- backend/ for the per-task gate, the repo root when
+# someone runs it from there. Only the first was ignored, so the root one showed
+# up as an untracked file.
+**/.coverage
 
 *.jks
 *.keystore
