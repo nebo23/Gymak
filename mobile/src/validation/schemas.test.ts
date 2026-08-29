@@ -1,10 +1,8 @@
 /**
  * §7.1's imperial-input round trip: "a user who enters 5'10" does not see
  * 177.7 cm come back as 5'9.9"." These pure functions have no React Native
- * dependency, so they run under plain Node via vitest.
+ * dependency, so they run under plain Node — no renderer, no native module.
  */
-import { describe, expect, it } from "vitest";
-
 import { cmToFeetInches, feetInchesToCm, kgToLbs, lbsToKg } from "./schemas";
 
 describe("feetInchesToCm / cmToFeetInches round trip", () => {

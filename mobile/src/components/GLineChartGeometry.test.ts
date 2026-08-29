@@ -4,8 +4,6 @@
  * (non-zero-based, both ends inside it). These cases are what "proves it"
  * rather than asserts it.
  */
-import { describe, expect, it } from "vitest";
-
 import {
   addDaysIso,
   buildContinuousSegments,

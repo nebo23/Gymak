@@ -3,8 +3,6 @@
  * value is still the untouched server default, and never overwrites a real
  * one. These four cases are the ones that matter — see T-23's report.
  */
-import { describe, expect, it } from "vitest";
-
 import { SERVER_DEFAULT_TIMEZONE, shouldSyncDeviceTimezone } from "./timezoneSync";
 
 describe("shouldSyncDeviceTimezone", () => {

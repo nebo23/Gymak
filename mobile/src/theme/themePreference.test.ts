@@ -1,5 +1,3 @@
-import { describe, expect, it } from "vitest";
-
 import {
   DEFAULT_THEME_PREFERENCE,
   THEME_PREFERENCES,

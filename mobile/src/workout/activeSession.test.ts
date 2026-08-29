@@ -1,14 +1,10 @@
 /**
  * Pure-function coverage for the active-workout session state (§8.3). The
- * Zustand store and the screen itself are exercised on-device per §10.2 --
- * vitest.config.ts scopes this project's suite to `src/**\/*.test.ts` for
- * exactly that reason (see its own comment). These are the functions
- * activeSession.ts's store actions delegate to for every state transition
- * that matters: pre-fill, the unsent-set gate, wall-clock rest arithmetic,
- * and resuming on the right exercise.
+ * Zustand store and the screen itself are exercised on-device per §10.2.
+ * These are the functions activeSession.ts's store actions delegate to for
+ * every state transition that matters: pre-fill, the unsent-set gate,
+ * wall-clock rest arithmetic, and resuming on the right exercise.
  */
-import { describe, expect, it } from "vitest";
-
 import {
   FALLBACK_REST_SECONDS,
   computePrefill,
