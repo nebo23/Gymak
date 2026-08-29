@@ -1,0 +1,95 @@
+# A database a fresh clone can actually run migrations against.
+#
+# WHY THIS FILE EXISTS
+# backend/README.md's setup was: `docker run` a bare postgres:16, then paste two
+# `docker exec ... psql -c "CREATE ROLE ..."` commands by hand, choosing two
+# passwords and threading them into .env yourself. Every one of those steps is a
+# step someone can get subtly wrong, and the failure mode is not obvious -- a
+# missing `CREATE ON DATABASE` grant surfaces much later as "Must have CREATE
+# privilege on current database to create this extension" from inside Alembic.
+# `db/init/` below runs the exact same SQL automatically, once, on first start.
+#
+# THE ROLES ARE NOT DECORATIVE (Appendix A.5 item 1)
+# gymak_migrator owns the schema and runs Alembic; gymak_app is DML-only and
+# serves the application. Neither is a superuser and neither holds BYPASSRLS,
+# because both attributes bypass row-level security regardless of policy, which
+# would make the profiles/refresh_tokens barriers in §4.7 decorative while still
+# appearing to work. app/database.py asserts this at startup and refuses to
+# serve otherwise, so getting it wrong here does not fail quietly.
+#
+# The passwords below are DEVELOPMENT-ONLY and deliberately literal: this file
+# describes a throwaway local database on a private port, and a fake secret that
+# looks real is worse than an obvious one. Nothing here is used by staging or
+# production, which take their URLs from the environment.
+
+services:
+  db:
+    image: postgres:16
+    # No `container_name:`. A fixed name makes the service a singleton across
+    # every project on the machine, and README.md's older `docker run --name
+    # gymak-db` container may well still exist -- compose would then refuse to
+    # start rather than run alongside it. Compose's own project-scoped naming
+    # (`gymak-db-1`) avoids that, and lets a second copy be brought up on
+    # another port with `-p <name>` when someone needs one.
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gymak
+    ports:
+      # 5433 on the host, not 5432: README's own troubleshooting note says a
+      # local Postgres already holding 5432 is the common case, and a port
+      # collision here reads as an unrelated connection error later. Override
+      # with GYMAK_DB_PORT when 5433 is taken too -- by the older `docker run`
+      # container from README.md step 1, most likely.
+      - "${GYMAK_DB_PORT:-5433}:5432"
+    volumes:
+      - gymak-db-data:/var/lib/postgresql/data
+      # Scripts in this directory are executed by the postgres entrypoint ONCE,
+      # when the data directory is empty. Re-running them on an existing volume
+      # would fail on `CREATE ROLE` -- which is why they are here rather than in
+      # a command that runs on every start.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # `pg_isready` alone returns true while the init scripts are still
+      # running, so a dependent service can start against a database that has no
+      # roles yet. Querying for the role is what actually proves setup finished.
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U postgres -d gymak && psql -U postgres -d gymak -tAc \"SELECT 1 FROM pg_roles WHERE rolname='gymak_migrator'\" | grep -q 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # The application image. Not started by `docker compose up -d db`, which is
+  # all the migration workflow needs -- bring it up explicitly with
+  # `docker compose up api` once .env is filled in. It is defined here so that
+  # the image builds in CI and so a reviewer can run the whole stack.
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    # backend/.env supplies the JWT keypair, the reset-code pepper and the
+    # Firebase service account -- none of which have safe defaults, so the app
+    # refuses to start without them rather than degrading silently.
+    env_file:
+      - ./backend/.env
+    environment:
+      # Overrides whatever host-facing URLs .env carries: inside the compose
+      # network the database is `db:5432`, not `localhost:5433`.
+      DATABASE_URL: postgresql+asyncpg://gymak_app:gymak_app_dev_password@db:5432/gymak
+      MIGRATOR_DATABASE_URL: postgresql+asyncpg://gymak_migrator:gymak_migrator_dev_password@db:5432/gymak
+    ports:
+      - "8000:8000"
+    profiles:
+      # Keeps `docker compose up -d` (no arguments) to just the database, which
+      # is the common case and the one that needs no secrets.
+      - api
+
+volumes:
+  gymak-db-data:

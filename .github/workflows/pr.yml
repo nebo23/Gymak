@@ -1,0 +1,243 @@
+# What a pull request has to pass.
+#
+# Everything here already existed as a command someone was expected to remember
+# and run by hand -- backend/README.md's "Code quality gate" section says so in
+# as many words ("There is no CI config in this repository yet; this is the gate
+# every task is expected to run before its diff is considered done"). 1107
+# backend tests, mypy --strict over the whole tree, and an OpenAPI contract
+# check are worth very little if the thing that runs them is a person under time
+# pressure.
+
+name: PR
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# A force-push or a new commit makes the previous run's answer irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  lint:
+    name: lint + typecheck (backend)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      # Three separate steps, not one chained command: when this fails, the
+      # collapsed step name in the UI should already say WHICH of the three it
+      # was, without opening the log.
+      - name: ruff check
+        run: ruff check .
+
+      # `ruff check` and `ruff format --check` are different tools -- lint rules
+      # versus layout. A.5 item 4 added the second one precisely because
+      # formatting drifted between tasks while only the first was being run.
+      - name: ruff format --check
+        run: ruff format --check .
+
+      # Whole tree, app and tests alike, zero ignores (A.5 item 17 is closed).
+      - name: mypy --strict
+        run: mypy --strict .
+
+  # ---------------------------------------------------------------------------
+  backend-unit:
+    name: backend unit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      # WHY --cov-fail-under=0 HERE, AND ONLY HERE
+      # pyproject's addopts carry --cov-fail-under=80, and that 80 is a
+      # WHOLE-SUITE number. tests/unit alone measures 64% -- verified, not
+      # estimated: `pytest tests/unit` reports "TOTAL 3718 1347 64%", because
+      # the service layer is covered from tests/integration. Leaving the flag
+      # on would make this job fail permanently, and the only ways to "fix"
+      # that are to lower the real gate or to delete the split. The 80% gate is
+      # enforced, unweakened, in backend-integration below, which runs the
+      # whole suite. This job exists to fail FAST -- about 15 seconds against
+      # that job's 12 minutes -- not to be the coverage authority.
+      #
+      # tests/conftest.py still starts a testcontainers Postgres for this run:
+      # it does so in pytest_configure, for the whole session, regardless of
+      # which directory was selected. So this job needs Docker too. That is a
+      # property of the current fixtures, not a choice made here.
+      - name: pytest (unit)
+        run: pytest tests/unit --cov-fail-under=0
+
+  # ---------------------------------------------------------------------------
+  backend-integration:
+    name: backend integration + coverage gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      # The full suite, exactly as CLAUDE.md's per-task gate defines it. The
+      # coverage gate (--cov-fail-under=80) and the perf deselection both come
+      # from pyproject's addopts, so nothing is passed here that could drift
+      # from what a developer runs locally. testcontainers brings up
+      # postgres:16 and tests/conftest.py provisions gymak_migrator and
+      # gymak_app inside it -- the same two roles, with the same grants, that
+      # docker-compose.yml's db/init/01-roles.sql creates for a local database.
+      - name: pytest (full suite, coverage gate)
+        run: pytest
+
+      # The two module gates that pytest-cov structurally cannot express:
+      # coverage.py's fail_under is one global number, not per-file. Spec 10.3
+      # item 2 requires 95% on these two specifically, and backend/README.md
+      # documents running them against the .coverage file the run above wrote.
+      - name: coverage gate - plan_generator.py (95%)
+        run: coverage report --include="app/services/plan_generator.py" --fail-under=95
+
+      - name: coverage gate - services/metrics.py (95%)
+        run: coverage report --include="app/services/metrics.py" --fail-under=95
+
+  # ---------------------------------------------------------------------------
+  mobile:
+    name: mobile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      # `npm ci`, never `npm install`: ci installs the lockfile exactly and
+      # fails if package.json and the lock have diverged, which is the only way
+      # the openapi-typescript `overrides` entry is guaranteed to be honoured
+      # the same way here as on a developer's machine.
+      - name: npm ci
+        run: npm ci
+
+      - name: typecheck
+        run: npm run typecheck
+
+      # jest, not vitest. The runner changed so component and screen code can
+      # be rendered at all; the streak-label regression test is the first thing
+      # that depended on it.
+      - name: test
+        run: npm test
+
+      # src/api/schema.d.ts is generated from backend/openapi.json and
+      # committed. src/api/schema.drift.test.ts already asserts this inside the
+      # jest run above -- this step is deliberately redundant, because the two
+      # fail differently: the test proves the committed file is stale, this
+      # prints the exact diff a reviewer needs. It also survives someone
+      # skipping or deleting that test.
+      - name: OpenAPI types are not stale
+        run: |
+          npm run api:generate
+          if ! git diff --exit-code -- src/api/schema.d.ts; then
+            echo "::error file=mobile/src/api/schema.d.ts::Stale generated types. Run 'npm run api:generate' in mobile/ and commit the result."
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Small, and the reason it exists is specific.
+  #
+  # docs/PHASE-2-SPEC.md is the single source of truth for this phase, and its
+  # tables have been destroyed three times in this branch's own history:
+  #
+  #   027517a  "docs: reformat PHASE-2-SPEC.md tables to prose"      329 -> 0
+  #   8486092  "docs: restore PHASE-2-SPEC.md with its tables intact"  0 -> 329
+  #   5249b1c  "docs: restore spec tables from known-good commit ..."  0 -> 329
+  #
+  # Row counts verified against the tree at each commit, not inferred from the
+  # commit messages. Twice the loss reached a commit and had to be undone by a
+  # later one. A diff that deletes 329 table rows does not look alarming in
+  # review when it sits inside a large documentation change; a red check does.
+  #
+  # Deliberately a FLOOR, not an exact match: adding rows is normal work, and a
+  # check that fires on every legitimate addition is one people learn to click
+  # past.
+  spec-tables:
+    name: spec tables intact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The base commit has to be in the local history to count its rows.
+          fetch-depth: 0
+
+      - name: Table rows must not decrease
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          SPEC=docs/PHASE-2-SPEC.md
+
+          # `|| true` on every count: grep exits 1 when it matches nothing, and
+          # "zero rows" is exactly the state this check exists to catch. It must
+          # never be mistaken for a failure of the check itself.
+          head_rows=$(grep -c '^|' "$SPEC" || true)
+
+          if [ -z "${BASE_SHA:-}" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "No usable base commit; reporting the count only."
+            echo "$SPEC: ${head_rows} table rows."
+            exit 0
+          fi
+
+          base_rows=$(git show "${BASE_SHA}:${SPEC}" 2>/dev/null | grep -c '^|' || true)
+
+          echo "base ${BASE_SHA}: ${base_rows} rows"
+          echo "head:             ${head_rows} rows"
+
+          if [ "$head_rows" -lt "$base_rows" ]; then
+            echo "::error file=${SPEC}::Table rows dropped from ${base_rows} to ${head_rows}. The spec's tables have been silently destroyed three times before. If this is intentional, say so in the PR description and remove this check in the same PR."
+            exit 1
+          fi
+
+          echo "OK: ${head_rows} >= ${base_rows}."

@@ -71,49 +71,59 @@ Google sign-in itself needs testing.
 Do these in order the first time. Each step exists because skipping it fails in a way that
 looks like a different problem than it is.
 
-### 1. Start a permanent Postgres container
-
-`testcontainers` (used by `pytest`) only exists for the duration of a test run — it is not a
-database you can point `uvicorn` at. Create a container that stays up across sessions instead.
-Port 5432 may already be taken by another local Postgres install; check first:
+### 1. Start Postgres
 
 ```bash
-netstat -ano | findstr :5432
+docker compose up -d db      # from the repository root, not backend/
 ```
 
-If that prints anything, use 5433 (and update `DATABASE_URL` accordingly) instead of 5432:
+That is the whole step. `docker-compose.yml` at the repository root brings up
+`postgres:16` on host port **5433** (5432 is commonly taken by another local Postgres
+install; check with `netstat -ano | findstr :5432`). Set `GYMAK_DB_PORT` if 5433 is taken
+too — most likely by the older `docker run --name gymak-db` container these instructions
+used to create, which can be removed once this works:
 
 ```bash
-docker run -d --name gymak-db -p 5433:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=gymak postgres:16
+GYMAK_DB_PORT=5434 docker compose up -d db
 ```
 
-In later sessions the container already exists, so just start it again:
+The container keeps its data in a named volume, so it survives `docker compose down` and
+across sessions. `docker compose down -v` is what actually discards the database.
 
-```bash
-docker start gymak-db
+### 2. Create the two roles — already done
+
+`db/init/01-roles.sql` runs automatically the first time the volume is created, so there
+is nothing to paste. It creates exactly what the two `docker exec ... psql` commands here
+used to, byte for byte:
+
+```sql
+CREATE ROLE gymak_migrator LOGIN PASSWORD '...' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+GRANT CONNECT, CREATE ON DATABASE gymak TO gymak_migrator;
+GRANT CREATE, USAGE ON SCHEMA public TO gymak_migrator;
+
+CREATE ROLE gymak_app LOGIN PASSWORD '...' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+GRANT CONNECT ON DATABASE gymak TO gymak_app;
+GRANT USAGE ON SCHEMA public TO gymak_app;
 ```
 
-### 2. Create the two roles
+The passwords are the development-only literals in that file; point `DATABASE_URL` and
+`MIGRATOR_DATABASE_URL` in `.env` at them:
 
-**A.5 items 1 and 11 are closed as of this version**: the migrator and application roles are
-split. `gymak_migrator` owns the schema and runs Alembic; `gymak_app` is DML-only and serves
-the application. Neither is a PostgreSQL superuser, or any role holding `BYPASSRLS` — both
-attributes silently bypass every row-level security policy, which would leave the `profiles`
-and `refresh_tokens` barriers in §4.7 purely decorative while still appearing to work.
-`app/database.py`'s startup assertion refuses to serve the app against either attribute, and
-now also refuses a connection that can `CREATE` anything in schema `public` — the exact
-capability that would let a connection be `gymak_migrator` instead of `gymak_app` by mistake.
-This is also why both roles must be created separately from `POSTGRES_USER` above: that user
-is a superuser by default.
-
-There is no local `psql` client on a fresh machine, so run it inside the container instead:
-
-```bash
-docker exec gymak-db psql -U postgres -d gymak -c "CREATE ROLE gymak_migrator LOGIN PASSWORD '<choose-one>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS; GRANT CONNECT, CREATE ON DATABASE gymak TO gymak_migrator; GRANT CREATE, USAGE ON SCHEMA public TO gymak_migrator;"
-docker exec gymak-db psql -U postgres -d gymak -c "CREATE ROLE gymak_app LOGIN PASSWORD '<choose-a-different-one>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS; GRANT CONNECT ON DATABASE gymak TO gymak_app; GRANT USAGE ON SCHEMA public TO gymak_app;"
+```
+DATABASE_URL=postgresql+asyncpg://gymak_app:gymak_app_dev_password@localhost:5433/gymak
+MIGRATOR_DATABASE_URL=postgresql+asyncpg://gymak_migrator:gymak_migrator_dev_password@localhost:5433/gymak
 ```
 
-Point `MIGRATOR_DATABASE_URL` in `.env` at `gymak_migrator`, and `DATABASE_URL` at `gymak_app`.
+**A.5 items 1 and 11**: the migrator and application roles are split. `gymak_migrator` owns
+the schema and runs Alembic; `gymak_app` is DML-only and serves the application. Neither is a
+PostgreSQL superuser, or any role holding `BYPASSRLS` — both attributes silently bypass every
+row-level security policy, which would leave the `profiles` and `refresh_tokens` barriers in
+§4.7 purely decorative while still appearing to work. `app/database.py`'s startup assertion
+refuses to serve the app against either attribute, and now also refuses a connection that can
+`CREATE` anything in schema `public` — the exact capability that would let a connection be
+`gymak_migrator` instead of `gymak_app` by mistake. This is also why both roles must be created
+separately from `POSTGRES_USER`: that user is a superuser by default.
+
 `gymak_migrator` creates — and therefore owns — every table when the migrations run, which is
 why the migration still sets `FORCE ROW LEVEL SECURITY` on `profiles` and `refresh_tokens`
 rather than merely `ENABLE`: Postgres exempts a table's owner from its own policies, and
@@ -123,10 +133,10 @@ too. `gymak_app` itself is never the owner of anything post-split, so `FORCE` is
 it specifically; it is belt-and-braces for the owner role, not decorative.
 
 `gymak_app`'s actual data access — `SELECT`/`INSERT`/`UPDATE`/`DELETE` on specific tables — is
-granted by the migration itself (`737d03a7c353`), not by the command above, because by the
-time that migration runs, `gymak_migrator` is the table owner and the only role with authority
-to grant on those tables. This command only grants what the bootstrap superuser (`postgres`),
-not `gymak_migrator`, has authority over: schema- and database-level access.
+granted by the migration itself (`737d03a7c353`), not by the SQL above, because by the time
+that migration runs, `gymak_migrator` is the table owner and the only role with authority
+to grant on those tables. The init script only grants what the bootstrap superuser
+(`postgres`), not `gymak_migrator`, has authority over: schema- and database-level access.
 
 ### 3. Run the migrations
 
@@ -307,8 +317,8 @@ route or request/response shape changes (spec §11.3 item 6).
 
 ## Code quality gate
 
-There is no CI config in this repository yet; this is the gate every task is expected to run
-before its diff is considered done (spec rule 0.2.7), in this order:
+This is the gate every task is expected to run before its diff is considered done (spec rule
+0.2.7), in this order:
 
 ```bash
 ruff check .
@@ -331,6 +341,34 @@ rules vs. layout), so both are required, in either order relative to each other,
 `mypy` and `pytest` so a formatting-only diff is never mixed into a behavioural one.
 
 Run `ruff format .` (without `--check`) to actually reformat, rather than just report drift.
+
+### The same gate, in CI
+
+`.github/workflows/pr.yml` runs all of it on every pull request, so the list above is now a
+way to get a fast answer locally rather than the only thing standing between a mistake and
+`master`. Five jobs:
+
+| Job | Runs | Notes |
+|---|---|---|
+| `lint` | `ruff check` · `ruff format --check` · `mypy --strict .` | Three separate steps, so a red X names which tool failed without opening the log. |
+| `backend unit` | `pytest tests/unit --cov-fail-under=0` | ~15s. Fast signal only. |
+| `backend integration` | `pytest`, then the two 95% module gates | The real coverage gate lives here. ~12 minutes. |
+| `mobile` | `npm ci` · `npm run typecheck` · `npm test` · `schema.d.ts` drift | jest, not vitest. |
+| `spec tables intact` | `grep -c '^\|' docs/PHASE-2-SPEC.md` vs. the base commit | See below. |
+
+**Why the coverage gate is not in the unit job.** `--cov-fail-under=80` is a whole-suite
+number. `tests/unit` alone measures **64%** — the service layer is covered from
+`tests/integration` — so putting the gate there would fail permanently, and the only ways to
+"fix" that would be to lower the real gate or drop the split. It is enforced unweakened in the
+integration job, which runs the whole suite. Both backend jobs need Docker regardless:
+`tests/conftest.py` starts a testcontainers Postgres in `pytest_configure`, for the whole
+session, no matter which directory was selected.
+
+**Why a check counts table rows in a spec document.** `docs/PHASE-2-SPEC.md`'s tables have been
+destroyed three times in this repository's history — `027517a` reformatted 329 table rows to
+prose, and `8486092` and `5249b1c` are both commits whose only purpose was restoring them. A
+diff that deletes 329 rows does not look alarming inside a large documentation change; a red
+check does. It is a floor, not an exact match, so adding rows is never blocked.
 
 ## Environment variables
 

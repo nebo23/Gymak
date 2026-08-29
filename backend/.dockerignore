@@ -1,0 +1,34 @@
+# Build context hygiene. Everything here either does not belong in an image, or
+# would silently make the build non-reproducible by shipping a machine's local
+# state into it.
+
+# SECRETS. `.env` holds JWT_PRIVATE_KEY_PEM, RESET_CODE_PEPPER and the Firebase
+# service account JSON. It must never enter a build context: every COPY layer is
+# readable by anyone who can pull the image, and `docker history` shows it even
+# if a later layer deletes the file. `.env.example` is the documented shape and
+# is safe, so it is NOT excluded.
+.env
+.env.*
+!.env.example
+
+# A local virtualenv is built for this machine's OS and CPU. Copying it in would
+# shadow the interpreter's own site-packages with Windows binaries inside a
+# Linux image -- a failure that surfaces at import time, far from its cause.
+.venv/
+venv/
+
+# Tool caches: large, machine-specific, and regenerated on demand.
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+
+# Version control and editor state.
+.git/
+.gitignore
+.idea/
+.vscode/
