@@ -1,7 +1,7 @@
 /**
- * §5.10 (PUT/GET/DELETE /body-weight), P2-FR-009/010, P2-ADR-06. See
- * backend/app/schemas/metrics.py's `BodyWeight*` models for the
- * authoritative shapes -- read directly from that file, not inferred.
+ * §5.10 (PUT/GET/DELETE /body-weight), P2-FR-009/010, P2-ADR-06. Types are
+ * generated from backend/openapi.json via `schema.d.ts`; the authoritative
+ * source is backend/app/schemas/metrics.py's `BodyWeight*` models.
  *
  * `entries`/`moving_average_7d` deliberately carry only `measured_on`/
  * `weight_kg` (schemas/metrics.py's own documented reasoning: neither DELETE
@@ -10,50 +10,25 @@
  * returns is the fuller row shape instead.
  */
 import { client } from "./client";
+import type { components, paths } from "./schema";
 
-export interface BodyWeightPoint {
-  measured_on: string;
-  weight_kg: number;
-}
+type Schemas = components["schemas"];
 
-export interface BodyWeightSummary {
-  first: number | null;
-  latest: number | null;
-  change_kg: number | null;
-  entry_count: number;
-}
+export type BodyWeightPoint = Schemas["BodyWeightPoint"];
+export type BodyWeightSummary = Schemas["BodyWeightSummaryData"];
+export type BodyWeightListResponse = Schemas["BodyWeightListResponse"];
+export type BodyWeightEntryData = Schemas["BodyWeightEntryData"];
+export type BodyWeightUpsertResponse = Schemas["BodyWeightUpsertResponse"];
 
-export interface BodyWeightListResponse {
-  entries: BodyWeightPoint[];
-  moving_average_7d: BodyWeightPoint[];
-  summary: BodyWeightSummary;
-}
-
-export interface BodyWeightEntryData {
-  id: string;
-  measured_on: string;
-  weight_kg: number;
-  note: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface BodyWeightUpsertResponse {
-  entry: BodyWeightEntryData;
-  /** §5.10: true when this entry was the newest and therefore updated
-   * `profiles.weight_kg` too (P2-ADR-06). The caller invalidates its own
-   * cached profile/dashboard queries on every successful write regardless --
-   * simpler than branching on this flag, and never wrong to over-invalidate
-   * a query that didn't actually change. */
-  profile_weight_updated: boolean;
-}
-
-export interface BodyWeightRangeParams {
-  /** ISO date, inclusive. Omit for the server's own 90-day default. */
-  from?: string;
-  /** ISO date, inclusive. Omit for "today" in the caller's own timezone. */
-  to?: string;
-}
+/**
+ * Query parameters, not a body: they live under `paths` in the generated
+ * schema rather than `components.schemas`, so they are read from there. Both
+ * are optional -- omitting `from` takes the server's own 90-day default and
+ * omitting `to` means "today" in the caller's timezone.
+ */
+export type BodyWeightRangeParams = NonNullable<
+  paths["/api/v1/body-weight"]["get"]["parameters"]["query"]
+>;
 
 export async function listBodyWeight(
   params: BodyWeightRangeParams = {},

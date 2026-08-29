@@ -1,47 +1,26 @@
 /**
- * §5.2 (GET /exercises, GET /exercises/{id}), P2-FR-001. See
- * backend/app/schemas/exercise.py for the authoritative shapes. `name` (and, on the
+ * §5.2 (GET /exercises, GET /exercises/{id}), P2-FR-001. Types are generated
+ * from backend/openapi.json (see `schema.d.ts`); backend/app/schemas/exercise.py
+ * is the authoritative source they come from. `name` (and, on the
  * detail response, `instructions`) arrive already resolved to the caller's profile
  * language (§5.2's own exception to "the server never sends display text") -- never
  * re-translated on the device.
  */
 import { client } from "./client";
+import type { components, paths } from "./schema";
 
-export interface ExerciseListItem {
-  id: string;
-  slug: string;
-  name: string;
-  primary_muscle: string;
-  secondary_muscles: string[];
-  equipment: string;
-  movement_pattern: string;
-  is_compound: boolean;
-  difficulty: string;
-  /** True for a row this user created. The server derives it from `user_id` and never
-   * sends the owner id itself. Drives the list badge and whether edit/delete show. */
-  is_custom: boolean;
-}
+type Schemas = components["schemas"];
 
-export interface ExerciseDetailData extends ExerciseListItem {
-  instructions: string;
-}
+export type ExerciseListItem = Schemas["ExerciseListItem"];
+export type ExerciseDetailData = Schemas["ExerciseDetail"];
+export type ExerciseListResponse = Schemas["ExerciseListResponse"];
+export type ExerciseDetailResponse = Schemas["ExerciseDetailResponse"];
 
-export interface ExerciseListResponse {
-  items: ExerciseListItem[];
-  /** Opaque; pass back verbatim as `cursor` for the next page. Null on the last page. */
-  next_cursor: string | null;
-}
-
-export interface ExerciseDetailResponse {
-  exercise: ExerciseDetailData;
-}
-
-export interface ExerciseListParams {
-  q?: string;
-  muscle?: string;
-  equipment?: string;
-  cursor?: string;
-}
+/** Query parameters, read from `paths` rather than `components.schemas` —
+ * FastAPI does not model query strings as a component. */
+export type ExerciseListParams = NonNullable<
+  paths["/api/v1/exercises"]["get"]["parameters"]["query"]
+>;
 
 /** §5.2. Filters combine with AND. `q` must be the user's untouched raw text --
  * T-16b's Arabic-aware normalisation (alef/yeh/teh-marbuta folding, harakat/tatweel
@@ -75,50 +54,18 @@ export async function getExercise(exerciseId: string): Promise<ExerciseDetailRes
 // module for one scoped GET. Shapes mirror backend/app/schemas/metrics.py's
 // RecordEntryData exactly.
 
-export interface RecordExerciseRef {
-  id: string;
-  slug: string;
-  name: string;
-}
-
-export interface HeaviestSetData {
-  weight_kg: number;
-  reps: number;
-  session_id: string;
-  local_date: string;
-}
-
-export interface BestE1rmData {
-  value_kg: number;
-  weight_kg: number;
-  reps: number;
-  local_date: string;
-}
-
-export interface BestSessionVolumeData {
-  volume_kg: number;
-  session_id: string;
-  local_date: string;
-}
-
-export interface ExerciseRecordData {
-  exercise: RecordExerciseRef;
-  heaviest_set: HeaviestSetData;
-  best_e1rm: BestE1rmData;
-  best_session_volume: BestSessionVolumeData;
-  total_sets: number;
-}
-
-interface RecordsResponse {
-  records: ExerciseRecordData[];
-}
+export type RecordExerciseRef = Schemas["RecordExerciseRef"];
+export type HeaviestSetData = Schemas["HeaviestSetData"];
+export type BestE1rmData = Schemas["BestE1rmData"];
+export type BestSessionVolumeData = Schemas["BestSessionVolumeData"];
+export type ExerciseRecordData = Schemas["RecordEntryData"];
 
 /** §5.11: "Exercises the user has never performed are omitted entirely rather than
  * returned with nulls." `exercise_id` narrows the response to at most one entry, so
  * this resolves straight to that entry, or `null` when the user has never logged it
  * -- absence, not zeros, matching the spec's own wording exactly. */
 export async function getExerciseRecord(exerciseId: string): Promise<ExerciseRecordData | null> {
-  const response = await client.get<RecordsResponse>("/records", {
+  const response = await client.get<Schemas["RecordsResponse"]>("/records", {
     params: { exercise_id: exerciseId },
   });
   return response.data.records[0] ?? null;
@@ -184,23 +131,25 @@ export const MOVEMENT_PATTERNS = [
 
 export const DIFFICULTIES = ["beginner", "intermediate", "advanced"] as const;
 
-export interface ExerciseCreateInput {
-  name: string;
-  primary_muscle: string;
-  equipment: string;
-  movement_pattern: string;
-  difficulty: string;
-  is_compound?: boolean;
-  secondary_muscles?: string[];
+/**
+ * `instructions` and `is_compound` carry server-side defaults ("" and false),
+ * and openapi-typescript marks any defaulted property required — it emits one
+ * type per schema and cannot tell a request the client sends from a response
+ * the server fills in. Both are restored to optional here, which is what the
+ * create form actually sends. See profile.ts for the long version of why this
+ * is done per-field rather than by turning the generator flag off.
+ */
+export type ExerciseCreateInput = Omit<
+  Schemas["ExerciseCreateRequest"],
+  "instructions" | "is_compound"
+> & {
   instructions?: string;
-}
+  is_compound?: boolean;
+};
 
-export type ExerciseUpdateInput = Partial<ExerciseCreateInput>;
+export type ExerciseUpdateInput = Schemas["ExerciseUpdateRequest"];
 
-export interface ExerciseDeleteResponse {
-  id: string;
-  is_active: boolean;
-}
+export type ExerciseDeleteResponse = Schemas["ExerciseDeleteResponse"];
 
 /** POST /exercises. 201 with the created row, already language-resolved. */
 export async function createExercise(

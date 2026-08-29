@@ -1,58 +1,47 @@
 /**
- * §5.2-5.7, §5.10: every auth and account call. Types mirror the backend's
- * committed openapi.json exactly (TokenPairResponse, AuthMeResponse, etc.) —
- * there is no account.ts in §3's file list, so account deletion (§5.10)
+ * §5.2-5.7, §5.10: every auth and account call. Types are now GENERATED from
+ * the committed openapi.json (see `schema.d.ts`) rather than transcribed to
+ * mirror it — there is no account.ts in §3's file list, so account deletion (§5.10)
  * lives here alongside the other session-terminating calls (logout,
  * logout-all).
  */
 import { client } from "./client";
-import type { ProfileData } from "./profile";
+import type { components } from "./schema";
+import type { Language, ProfileData } from "./profile";
 
+type Schemas = components["schemas"];
+
+/** The only provider wired in §5.4. Apple is out of scope for this phase. */
 export type SocialProvider = "google";
 
-export interface UserSummary {
-  id: string;
-  email: string;
-  onboarding_completed: boolean;
-}
+export type UserSummary = Schemas["UserSummary"];
+export type TokenPairResponse = Schemas["TokenPairResponse"];
+export type SocialSignInResponse = Schemas["SocialSignInResponse"];
+export type AuthMeUser = Schemas["AuthMeUser"];
+export type DeleteAccountResponse = Schemas["DeleteAccountResponse"];
 
-export interface TokenPairResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-  refresh_token: string;
-  refresh_expires_in: number;
-  user: UserSummary;
-}
-
-export interface SocialSignInResponse extends TokenPairResponse {
-  is_new_user: boolean;
-}
-
-export interface AuthMeUser {
-  id: string;
-  email: string;
-  email_verified: boolean;
-  created_at: string;
-  auth_methods: string[];
-}
-
-export interface AuthMeResponse {
-  user: AuthMeUser;
-  onboarding_completed: boolean;
+/**
+ * `profile` is narrowed to the six-union `ProfileData` from profile.ts rather
+ * than left as the schema's own (which types the vocabulary fields as bare
+ * strings) -- otherwise signing in would hand the app a profile whose
+ * `gender` no longer fits the pickers that render it. See profile.ts's note.
+ */
+export type AuthMeResponse = Omit<Schemas["AuthMeResponse"], "profile"> & {
   profile: ProfileData | null;
-}
+};
 
-export interface RegisterInput {
-  email: string;
-  password: string;
-  language?: "ar" | "en";
-}
+/**
+ * `language` carries a server-side default ("ar"), and openapi-typescript
+ * marks any defaulted property required because it emits one type per schema
+ * and cannot tell a request from a response. Restored to optional here, and
+ * narrowed to the same union profile.ts uses. Same reasoning as
+ * ProfileCreateInput -- the note there is the long version.
+ */
+export type RegisterInput = Omit<Schemas["RegisterRequest"], "language"> & {
+  language?: Language;
+};
 
-export interface LoginInput {
-  email: string;
-  password: string;
-}
+export type LoginInput = Schemas["LoginRequest"];
 
 export async function register(input: RegisterInput): Promise<TokenPairResponse> {
   const response = await client.post<TokenPairResponse>("/auth/register", input);
@@ -95,16 +84,24 @@ export async function logoutAll(): Promise<void> {
   await client.post("/auth/logout-all");
 }
 
-export async function forgotPassword(email: string): Promise<{ message: string }> {
-  const response = await client.post("/auth/password/forgot", { email });
+export async function forgotPassword(
+  email: string,
+): Promise<Schemas["ForgotPasswordResponse"]> {
+  const response = await client.post<Schemas["ForgotPasswordResponse"]>(
+    "/auth/password/forgot",
+    { email },
+  );
   return response.data;
 }
 
 export async function verifyResetCode(
   email: string,
   code: string,
-): Promise<{ reset_token: string; expires_in: number }> {
-  const response = await client.post("/auth/password/verify-code", { email, code });
+): Promise<Schemas["VerifyCodeResponse"]> {
+  const response = await client.post<Schemas["VerifyCodeResponse"]>(
+    "/auth/password/verify-code",
+    { email, code },
+  );
   return response.data;
 }
 
@@ -118,11 +115,6 @@ export async function resetPassword(resetToken: string, newPassword: string): Pr
 export async function getMe(): Promise<AuthMeResponse> {
   const response = await client.get<AuthMeResponse>("/auth/me");
   return response.data;
-}
-
-export interface DeleteAccountResponse {
-  deletion_requested_at: string;
-  purge_after_days: number;
 }
 
 /** §5.10: `password` is omitted for social-only accounts, required otherwise. */

@@ -1,145 +1,56 @@
 /**
  * §5.6 (POST /workouts, GET /workouts/active), §5.7 (POST .../sets), §5.8
  * (POST .../finish, .../abandon), §5.9 (GET /workouts, GET /workouts/{id}) --
- * P2-FR-005/006/007/008. See backend/app/schemas/workout.py for the
- * authoritative shapes. PATCH/DELETE on a set are still unwrapped -- no
- * screen calls them yet.
+ * P2-FR-005/006/007/008. Types are generated from backend/openapi.json (see
+ * `schema.d.ts`); backend/app/schemas/workout.py remains the authoritative
+ * source they are generated from. PATCH/DELETE on a set are still unwrapped
+ * -- no screen calls them yet.
  */
 import { client } from "./client";
+import type { components, paths } from "./schema";
 
-export interface WorkoutSessionSummary {
-  id: string;
-  status: string;
-  started_at: string;
-  local_date: string;
-  program_day_id: string | null;
-}
+type Schemas = components["schemas"];
 
-export interface WorkoutStartResponse {
-  session: WorkoutSessionSummary;
-}
-
-export interface SetDerived {
-  volume_kg: number;
-  e1rm_kg: number;
-}
-
-export interface WorkoutSetData {
-  id: string;
-  exercise_id: string;
-  set_index: number;
-  reps: number;
-  weight_kg: number;
-  rpe: number | null;
-  is_warmup: boolean;
-  logged_at: string;
-  derived: SetDerived;
-}
-
-export interface SessionTotalsData {
-  sets: number;
-  volume_kg: number;
-}
-
-export interface SetRecordData {
-  kind: string;
-  previous: number;
-}
-
-export interface WorkoutSetActionResponse {
-  set: WorkoutSetData;
-  session_totals: SessionTotalsData;
-  is_record: SetRecordData | null;
-}
-
-export interface WorkoutSetCreateInput {
-  exercise_id: string;
-  reps: number;
-  weight_kg: number;
-  /** Omitted from the request entirely (not sent as null) when absent -- §8.4's
-   * disclosure toggle hides the field client-side, and the wire shape mirrors that:
-   * a hidden field is a field that was never asked about. */
-  rpe?: number;
-  is_warmup: boolean;
-}
-
-export interface WorkoutFinishedSummary {
-  id: string;
-  status: string;
-  started_at: string;
-  ended_at: string | null;
-  duration_seconds: number | null;
-  total_volume_kg: number | null;
-  set_count: number;
-  exercise_count: number;
-}
-
-export interface RecordSetItem {
-  exercise_id: string;
-  kind: string;
-  value: number;
-}
-
-export interface WorkoutFinishResponse {
-  session: WorkoutFinishedSummary;
-  records_set: RecordSetItem[];
-}
-
-export interface WorkoutAbandonResponse {
-  session: WorkoutFinishedSummary;
-}
-
-export interface SessionDetailExerciseRef {
-  id: string;
-  slug: string;
-  name: string;
-  primary_muscle: string;
-}
-
-export interface SessionDetailExerciseGroup {
-  exercise: SessionDetailExerciseRef;
-  sets: WorkoutSetData[];
-}
-
-export interface WorkoutDetailData {
-  id: string;
-  status: string;
-  started_at: string;
-  ended_at: string | null;
-  local_date: string;
-  duration_seconds: number | null;
-  total_volume_kg: number | null;
-  notes: string | null;
-  program_day_id: string | null;
-  label_key: string | null;
-  set_count: number;
-  exercise_count: number;
-  records_set: RecordSetItem[];
-  exercises: SessionDetailExerciseGroup[];
-}
-
-export interface WorkoutDetailResponse {
-  session: WorkoutDetailData;
-}
+export type WorkoutSessionSummary = Schemas["WorkoutSessionSummary"];
+export type WorkoutStartResponse = Schemas["WorkoutStartResponse"];
+export type SetDerived = Schemas["SetDerived"];
+export type WorkoutSetData = Schemas["WorkoutSetData"];
+export type SessionTotalsData = Schemas["SessionTotalsData"];
+export type SetRecordData = Schemas["SetRecordData"];
+export type WorkoutSetActionResponse = Schemas["WorkoutSetActionResponse"];
+export type WorkoutFinishedSummary = Schemas["WorkoutFinishedSummary"];
+export type RecordSetItem = Schemas["RecordSetItem"];
+export type WorkoutFinishResponse = Schemas["WorkoutFinishResponse"];
+export type WorkoutAbandonResponse = Schemas["WorkoutAbandonResponse"];
+export type SessionDetailExerciseRef = Schemas["SessionDetailExerciseRef"];
+export type SessionDetailExerciseGroup = Schemas["SessionDetailExerciseGroup"];
+export type WorkoutDetailData = Schemas["WorkoutDetailData"];
+export type WorkoutDetailResponse = Schemas["WorkoutDetailResponse"];
 
 /** §5.9's seven summary fields -- no `sets`, no `notes`; `GET /workouts/{id}`
  * is what carries those. */
-export interface WorkoutHistoryItem {
-  id: string;
-  local_date: string;
-  status: string;
-  duration_seconds: number | null;
-  total_volume_kg: number | null;
-  set_count: number;
-  label_key: string | null;
-}
+export type WorkoutHistoryItem = Schemas["WorkoutHistoryItem"];
+export type WorkoutHistoryResponse = Schemas["WorkoutHistoryResponse"];
 
-export interface WorkoutHistoryResponse {
-  items: WorkoutHistoryItem[];
-  /** Opaque; pass back verbatim as `cursor` for the next page. Null on the
-   * last page. */
-  next_cursor: string | null;
-}
+/**
+ * `is_warmup` carries a server-side default (false) and openapi-typescript
+ * therefore marks it required; the client has always sent it explicitly, so
+ * it is left required here too rather than loosened. `rpe` stays optional —
+ * §8.4's disclosure toggle hides the field client-side and the wire shape
+ * mirrors that: a hidden field is one that was never asked about, so it is
+ * omitted from the request entirely rather than sent as null.
+ */
+export type WorkoutSetCreateInput = Schemas["WorkoutSetCreateRequest"];
+
+/**
+ * §5.9 history filters. `from`/`to`/`status` exist on the endpoint but no
+ * screen offers filter UI, so `listWorkouts` still wraps `cursor` only —
+ * the type is taken whole so that the day a screen does offer them, the
+ * names and shapes are already the server's, not a guess.
+ */
+export type WorkoutHistoryParams = NonNullable<
+  paths["/api/v1/workouts"]["get"]["parameters"]["query"]
+>;
 
 /** §5.6. Omit `programDayId` entirely for an empty session. Throws (axios) with
  * `code: "SESSION_ALREADY_ACTIVE"` and `detail: "<active session id>"` when one is
