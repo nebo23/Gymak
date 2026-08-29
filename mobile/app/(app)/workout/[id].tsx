@@ -38,7 +38,7 @@ type Translate = (key: string, options?: Record<string, unknown>) => string;
 // formatter, not worth reaching into a committed screen to share.
 function formatDuration(totalSeconds: number, t: Translate): string {
   const minutes = Math.round(totalSeconds / 60);
-  if (minutes < 60) return t("workout.active.summaryDurationMinutes", { minutes });
+  if (minutes < 60) return t("workout.active.summaryDurationMinutes", { count: minutes });
   return t("workout.active.summaryDurationHoursMinutes", {
     hours: Math.floor(minutes / 60),
     minutes: minutes % 60,

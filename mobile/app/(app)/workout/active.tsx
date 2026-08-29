@@ -79,7 +79,7 @@ import type { Theme } from "../../../src/theme/tokens";
 
 function formatDuration(totalSeconds: number, t: (key: string, options?: Record<string, unknown>) => string): string {
   const minutes = Math.round(totalSeconds / 60);
-  if (minutes < 60) return t("workout.active.summaryDurationMinutes", { minutes });
+  if (minutes < 60) return t("workout.active.summaryDurationMinutes", { count: minutes });
   return t("workout.active.summaryDurationHoursMinutes", {
     hours: Math.floor(minutes / 60),
     minutes: minutes % 60,

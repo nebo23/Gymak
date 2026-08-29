@@ -105,7 +105,7 @@ export default function NewPassword() {
     <GScreen header={{ title: t("auth.newPassword.title"), onBack: () => router.back() }}>
       {retrySeconds !== null && retrySeconds > 0 ? (
         <GErrorBanner
-          message={t("auth.rateLimited.retryIn", { seconds: retrySeconds })}
+          message={t("auth.rateLimited.retryIn", { count: retrySeconds })}
           testID="new-password-rate-limited"
         />
       ) : requestError ? (

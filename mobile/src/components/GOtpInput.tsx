@@ -121,7 +121,16 @@ export const GOtpInput = forwardRef<GOtpInputHandle, GOtpInputProps>(function GO
         editable={!disabled}
         style={styles.hiddenInput}
         accessibilityLabel={accessibilityLabel ?? t("components.otp.label")}
-        accessibilityValue={{ text: t("components.otp.progress", { count: value.length, total: OTP_LENGTH }) }}
+        accessibilityValue={{
+          text: t("components.otp.progress", {
+            // The noun agrees with the TOTAL ("3 of 8 characters"), not with
+            // how many are typed -- so the typed count must not be named
+            // `count`, or `i18n-js` would inflect the sentence on the wrong
+            // number. Arabic makes the difference audible: 8 takes «أحرف».
+            entered: value.length,
+            total: t("units.character", { count: OTP_LENGTH }),
+          }),
+        }}
         accessibilityState={{ disabled }}
       />
       <View

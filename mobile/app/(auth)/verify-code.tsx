@@ -129,7 +129,7 @@ export default function VerifyCode() {
 
       {retrySeconds !== null && retrySeconds > 0 ? (
         <GErrorBanner
-          message={t("auth.rateLimited.retryIn", { seconds: retrySeconds })}
+          message={t("auth.rateLimited.retryIn", { count: retrySeconds })}
           testID="verify-code-rate-limited"
         />
       ) : requestError ? (
@@ -168,7 +168,7 @@ export default function VerifyCode() {
           variant="ghost"
           label={
             resendCooldown > 0
-              ? t("auth.verifyCode.resendIn", { seconds: resendCooldown })
+              ? t("auth.verifyCode.resendIn", { count: resendCooldown })
               : t("auth.verifyCode.resend")
           }
           onPress={handleResend}

@@ -90,7 +90,7 @@ export default function ForgotPassword() {
     <GScreen header={{ title: t("auth.forgotPassword.title"), onBack: () => router.back() }}>
       {retrySeconds !== null && retrySeconds > 0 ? (
         <GErrorBanner
-          message={t("auth.rateLimited.retryIn", { seconds: retrySeconds })}
+          message={t("auth.rateLimited.retryIn", { count: retrySeconds })}
           testID="forgot-password-rate-limited"
         />
       ) : requestError ? (

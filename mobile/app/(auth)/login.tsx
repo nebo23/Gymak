@@ -145,7 +145,7 @@ export default function Login() {
 
       {retrySeconds !== null && retrySeconds > 0 ? (
         <GErrorBanner
-          message={t("auth.rateLimited.retryIn", { seconds: retrySeconds })}
+          message={t("auth.rateLimited.retryIn", { count: retrySeconds })}
           testID="login-rate-limited"
         />
       ) : requestError ? (
